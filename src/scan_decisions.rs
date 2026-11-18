@@ -68,7 +68,7 @@ pub struct ScanState {
 
 impl ScanState {
     pub const START_DELAY_10MS: u16 = 50;
-    pub const NEXT_CHANNEL_DELAY_10MS: u16 = 20;
+    pub const NEXT_CHANNEL_DELAY_10MS: u16 = 9;
     pub const TIME_RESUME_DELAY_10MS: u16 = 500;
     pub const CARRIER_RESUME_DELAY_10MS: u16 = 360;
 

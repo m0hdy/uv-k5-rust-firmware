@@ -245,6 +245,35 @@ fn continue_decisions_match_scan_kind_and_incoming_code_state() {
 }
 
 #[test]
+fn channel_advance_uses_the_pinned_90ms_delay_for_both_scan_kinds() {
+    for kind in [ScanKind::Frequency, ScanKind::Memory] {
+        let mut state = start(kind, ResumeMode::Time);
+        ticks(
+            &mut state,
+            ScanState::START_DELAY_10MS,
+            FunctionState::Other,
+        );
+        assert_eq!(
+            state.apply(ScanEvent::Continue {
+                function: FunctionState::Other,
+                code_type_off: false,
+            }),
+            ScanAction::Advance
+        );
+
+        assert_eq!(state.remaining_10ms(), 9);
+        ticks(&mut state, 8, FunctionState::Other);
+        assert_eq!(state.remaining_10ms(), 1);
+        assert!(!state.is_scheduled());
+        state.apply(ScanEvent::Tick {
+            function: FunctionState::Other,
+        });
+        assert_eq!(state.remaining_10ms(), 0);
+        assert!(state.is_scheduled());
+    }
+}
+
+#[test]
 fn continue_without_an_expired_schedule_does_not_change_scan_state() {
     let mut state = start(ScanKind::Frequency, ResumeMode::Time);
     assert_eq!(
