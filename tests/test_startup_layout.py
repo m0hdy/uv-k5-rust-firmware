@@ -51,6 +51,10 @@ def make_elf(
     flash_segment_type=1,
     flash_load_address=0,
     vector_file_offset_delta=0,
+    vector_address=0,
+    vector_size=VECTOR_SIZE,
+    vector_kind=1,
+    vector_flags=2,
     symbol_overrides=None,
     duplicate_allocated_stack=False,
 ):
@@ -145,9 +149,9 @@ def make_elf(
     sections = [
         bytes(ELF32_SECTION_HEADER.size),
         ELF32_SECTION_HEADER.pack(
-            section_name_offsets[".vector_table"], 1, 2, 0,
+            section_name_offsets[".vector_table"], vector_kind, vector_flags, vector_address,
             data_offset + vector_file_offset_delta,
-            VECTOR_SIZE, 0, 0, 4, 0,
+            vector_size, 0, 0, 4, 0,
         ),
         ELF32_SECTION_HEADER.pack(
             section_name_offsets[".text"], text_kind, 6, text_address, text_file_offset,
@@ -261,6 +265,22 @@ class StartupLayoutTests(unittest.TestCase):
             "ELF symbol __vector_table_end has an invalid value",
             symbol_overrides={"__vector_table_end": VECTOR_SIZE - 4},
         )
+
+    def test_vector_table_must_cover_the_first_48_flash_words(self):
+        for options in ({"vector_address": 4}, {"vector_size": VECTOR_SIZE - 4}):
+            with self.subTest(**options):
+                self.check_fails(
+                    "vector table must occupy the first 48 words of application flash",
+                    **options,
+                )
+
+    def test_vector_table_must_be_allocated_progbits(self):
+        for options in ({"vector_kind": 8}, {"vector_flags": 0}):
+            with self.subTest(**options):
+                self.check_fails(
+                    "vector table must be an allocated PROGBITS section",
+                    **options,
+                )
 
     def test_data_load_must_cover_all_initialized_bytes(self):
         self.check_fails(
