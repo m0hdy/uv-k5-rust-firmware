@@ -1,6 +1,7 @@
 #![no_std]
 
 pub mod channel_codec;
+pub mod channel_validity;
 pub mod scan_decisions;
 pub mod tuning_signalling;
 
