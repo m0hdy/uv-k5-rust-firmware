@@ -73,6 +73,7 @@ pub struct ScanState {
     schedule_listen: bool,
     keep_result: bool,
     reception_state: ReceptionState,
+    detection_latched: bool,
 }
 
 impl ScanState {
@@ -92,6 +93,7 @@ impl ScanState {
             schedule_listen: false,
             keep_result: false,
             reception_state: ReceptionState::None,
+            detection_latched: false,
         }
     }
 
@@ -119,6 +121,10 @@ impl ScanState {
         self.reception_state
     }
 
+    pub const fn is_detection_latched(&self) -> bool {
+        self.detection_latched
+    }
+
     pub fn apply(&mut self, event: ScanEvent) -> ScanAction {
         match event {
             ScanEvent::Start {
@@ -133,6 +139,7 @@ impl ScanState {
                 self.remaining_10ms = Self::START_DELAY_10MS;
                 self.schedule_listen = false;
                 self.reception_state = ReceptionState::None;
+                self.detection_latched = false;
                 if store_backup_settings {
                     self.keep_result = false;
                 }
@@ -151,8 +158,9 @@ impl ScanState {
                 ScanAction::None
             }
             ScanEvent::Detected => {
-                if self.active && self.reception_state == ReceptionState::None {
+                if self.active && !self.detection_latched {
                     self.reception_state = ReceptionState::Detected;
+                    self.detection_latched = true;
                     self.remaining_10ms = Self::DETECTION_DELAY_10MS;
                     self.schedule_listen = false;
                 }
@@ -206,9 +214,11 @@ impl ScanState {
                     && (self.kind == Some(ScanKind::Frequency) || code_type_off);
                 if listen {
                     self.apply(ScanEvent::Found);
+                } else {
+                    self.reception_state = ReceptionState::None;
                 }
                 self.pause_mode = false;
-                self.reception_state = ReceptionState::None;
+                self.detection_latched = false;
                 self.schedule_listen = false;
                 if listen {
                     ScanAction::Listen
@@ -234,6 +244,7 @@ impl ScanState {
         self.remaining_10ms = 0;
         self.schedule_listen = false;
         self.reception_state = ReceptionState::None;
+        self.detection_latched = false;
         ScanAction::Stopped(disposition)
     }
 }

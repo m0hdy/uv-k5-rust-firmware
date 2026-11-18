@@ -157,6 +157,7 @@ fn first_detection_restarts_delay_and_clears_a_pending_continuation() {
     assert_eq!(state.remaining_10ms(), 20);
     assert!(!state.is_scheduled());
     assert_eq!(state.reception_state(), ReceptionState::Detected);
+    assert!(state.is_detection_latched());
 
     ticks(&mut state, 5, FunctionState::Incoming);
     state.apply(ScanEvent::Detected);
@@ -166,8 +167,10 @@ fn first_detection_restarts_delay_and_clears_a_pending_continuation() {
 
     state.apply(ScanEvent::Found);
     assert_eq!(state.reception_state(), ReceptionState::Listening);
+    assert!(state.is_detection_latched());
     state.apply(ScanEvent::ReceptionEnded);
     assert_eq!(state.reception_state(), ReceptionState::None);
+    assert!(state.is_detection_latched());
 }
 
 #[test]
@@ -207,6 +210,56 @@ fn carrier_found_before_resume_expiry_restarts_delay_after_reception_ends() {
     state.apply(ScanEvent::ReceptionEnded);
     assert_eq!(state.remaining_10ms(), ScanState::CARRIER_RESUME_DELAY_10MS);
     assert!(!state.is_scheduled());
+}
+
+#[test]
+fn returning_detection_does_not_replace_a_resume_timer_while_latched() {
+    let cases = [
+        (ResumeMode::Time, ScanState::TIME_RESUME_DELAY_10MS),
+        (ResumeMode::Carrier, ScanState::CARRIER_RESUME_DELAY_10MS),
+    ];
+
+    for (resume_mode, expected_delay) in cases {
+        let mut state = start(ScanKind::Memory, resume_mode);
+        state.apply(ScanEvent::Detected);
+        state.apply(ScanEvent::Found);
+        state.apply(ScanEvent::ReceptionEnded);
+        assert_eq!(state.remaining_10ms(), expected_delay);
+        assert_eq!(state.reception_state(), ReceptionState::None);
+        assert!(state.is_detection_latched());
+
+        state.apply(ScanEvent::Detected);
+        assert_eq!(state.remaining_10ms(), expected_delay);
+        assert!(state.is_detection_latched());
+    }
+}
+
+#[test]
+fn listen_continuation_clears_the_detection_latch_for_a_fresh_detection() {
+    for resume_mode in [ResumeMode::Time, ResumeMode::Carrier] {
+        let mut state = start(ScanKind::Memory, resume_mode);
+        ticks(
+            &mut state,
+            ScanState::START_DELAY_10MS,
+            FunctionState::Other,
+        );
+        assert_eq!(
+            state.apply(ScanEvent::Continue {
+                function: FunctionState::Incoming,
+                code_type_off: true,
+            }),
+            ScanAction::Listen
+        );
+        assert!(state.keeps_last_result());
+        assert_eq!(state.reception_state(), ReceptionState::Listening);
+        assert!(!state.is_detection_latched());
+
+        state.apply(ScanEvent::ReceptionEnded);
+        assert_eq!(state.reception_state(), ReceptionState::None);
+        state.apply(ScanEvent::Detected);
+        assert_eq!(state.remaining_10ms(), ScanState::DETECTION_DELAY_10MS);
+        assert!(state.is_detection_latched());
+    }
 }
 
 #[test]
@@ -356,7 +409,15 @@ fn continue_decisions_match_scan_kind_and_incoming_code_state() {
         );
         assert!(!state.is_scheduled());
         assert!(!state.is_paused());
-        assert_eq!(state.reception_state(), ReceptionState::None);
+        assert_eq!(
+            state.reception_state(),
+            if expected == ScanAction::Listen {
+                ReceptionState::Listening
+            } else {
+                ReceptionState::None
+            }
+        );
+        assert!(!state.is_detection_latched());
         assert_eq!(
             state.remaining_10ms(),
             if expected == ScanAction::Advance {
@@ -391,7 +452,8 @@ fn listen_continuation_applies_found_before_clearing_pause_and_keeps_result() {
     );
     assert_eq!(state.remaining_10ms(), 500);
     assert!(state.keeps_last_result());
-    assert_eq!(state.reception_state(), ReceptionState::None);
+    assert_eq!(state.reception_state(), ReceptionState::Listening);
+    assert!(!state.is_detection_latched());
     assert!(state.is_active());
     assert_eq!(
         state.apply(ScanEvent::Stop),
@@ -401,34 +463,38 @@ fn listen_continuation_applies_found_before_clearing_pause_and_keeps_result() {
 
 #[test]
 fn advance_clears_detection_state_for_a_fresh_next_channel_window() {
-    let mut state = start(ScanKind::Memory, ResumeMode::Time);
-    ticks(
-        &mut state,
-        ScanState::START_DELAY_10MS,
-        FunctionState::Other,
-    );
-    state.apply(ScanEvent::Detected);
-    ticks(
-        &mut state,
-        ScanState::DETECTION_DELAY_10MS,
-        FunctionState::Incoming,
-    );
-    assert!(state.is_scheduled());
+    for resume_mode in [ResumeMode::Time, ResumeMode::Carrier] {
+        let mut state = start(ScanKind::Memory, resume_mode);
+        ticks(
+            &mut state,
+            ScanState::START_DELAY_10MS,
+            FunctionState::Other,
+        );
+        state.apply(ScanEvent::Detected);
+        ticks(
+            &mut state,
+            ScanState::DETECTION_DELAY_10MS,
+            FunctionState::Incoming,
+        );
+        assert!(state.is_scheduled());
 
-    assert_eq!(
-        state.apply(ScanEvent::Continue {
-            function: FunctionState::Incoming,
-            code_type_off: false,
-        }),
-        ScanAction::Advance
-    );
-    assert_eq!(state.reception_state(), ReceptionState::None);
-    assert_eq!(state.remaining_10ms(), ScanState::NEXT_CHANNEL_DELAY_10MS);
+        assert_eq!(
+            state.apply(ScanEvent::Continue {
+                function: FunctionState::Incoming,
+                code_type_off: false,
+            }),
+            ScanAction::Advance
+        );
+        assert_eq!(state.reception_state(), ReceptionState::None);
+        assert!(!state.is_detection_latched());
+        assert_eq!(state.remaining_10ms(), ScanState::NEXT_CHANNEL_DELAY_10MS);
 
-    state.apply(ScanEvent::Detected);
-    assert_eq!(state.reception_state(), ReceptionState::Detected);
-    assert_eq!(state.remaining_10ms(), ScanState::DETECTION_DELAY_10MS);
-    assert!(!state.is_scheduled());
+        state.apply(ScanEvent::Detected);
+        assert_eq!(state.reception_state(), ReceptionState::Detected);
+        assert!(state.is_detection_latched());
+        assert_eq!(state.remaining_10ms(), ScanState::DETECTION_DELAY_10MS);
+        assert!(!state.is_scheduled());
+    }
 }
 
 #[test]
