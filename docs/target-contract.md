@@ -164,6 +164,62 @@ confirmed for the device.
   raw linked payload. It has no address field in the packer and must not be
   passed to the raw OpenOCD write path as though it were a flash image.
 
+### Automated image budget gate
+
+The host-side gate at `scripts/check_memory_budget.py` validates ELF32
+`PT_LOAD` ranges and the raw payload generated from that ELF. It uses
+file-backed load ranges (`p_paddr`/`p_filesz`) for flash load bytes and
+execution/memory ranges (`p_vaddr`/`p_memsz`) for runtime placement. This
+includes initialized RAM data's flash load image and the complete RAM extent
+of `.data`/`.bss`. Non-loadable debug data and ELF file length do not
+contribute to either budget. The raw payload must start at the application
+origin, end at the last file-backed load byte, and match the ELF load bytes;
+gaps between load ranges use objcopy's zero-filled padding. File-backed flash
+XIP segments must have matching VMA and LMA. Raw payload bytes are independently
+limited to 61,440; packed-container length is reported separately and is not
+limited by that raw-image cap.
+
+The current Rust integration policy reserves 2,048 bytes for stack at the top
+of RAM (`0x20003800`–`0x20003FFF`). This is a conservative budget reservation,
+not a measured stack high-water mark or a value established by the older C
+startup. The gate requires callers to pass exactly `--stack-reservation 0x800`;
+it has no default and rejects any other reservation. Static RAM ranges may not
+overlap the reserved stack, and static RAM bytes plus the reservation must fit
+in the 16 KiB region. Change the policy only with documented stack analysis
+and matching checker and fixture updates.
+
+From the repository root, run the focused fixtures with:
+
+```sh
+python3 -m unittest discover -s tests -v
+```
+
+For a candidate application image, create the raw payload from its ELF and run
+the checker before any flashable artifact is uploaded or published:
+
+```sh
+arm-none-eabi-objcopy -O binary firmware.elf firmware.bin
+python3 scripts/check_memory_budget.py \
+  --elf firmware.elf \
+  --raw firmware.bin \
+  --stack-reservation 0x800 \
+  --packed firmware.packed.bin
+```
+
+Omit `--packed` if no packed container exists. The checker rejects malformed
+or truncated ELF input, missing flash load content, invalid raw-image origin,
+span or bytes, out-of-region or overlapping load/runtime ranges, XIP
+VMA/LMA disagreement, stack overlap, and either raw-flash or RAM-plus-stack
+overflow. Its report includes loadable segment ranges and used/remaining flash
+and RAM. CI runs the fixture suite; the current target build remains a
+non-flashable bootstrap and does not run the image gate against that
+non-application ELF. Any future flashable publishing job must gate the exact
+ELF/raw pair successfully before its flashable artifact-upload or release
+step. Its linker map and budget report must be uploaded on an always-run path
+after the gate so a gate failure still retains the diagnostics; the current
+target report step already runs after a successful build even if a later gate
+step fails.
+
 Sources: [linker memory regions and data load/run placement](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/firmware.ld#L1-L12), [`.data`/`.bss` placement](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/firmware.ld#L34-L68), [raw image writer invocation](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/Makefile#L432-L436).
 
 ## Image formats and build tools
