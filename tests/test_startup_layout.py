@@ -402,6 +402,14 @@ class StartupLayoutTests(unittest.TestCase):
         with self.assertRaisesRegex(StartupError, "linker map is missing __stack_end"):
             validate(self.elf_path, self.map_path)
 
+    def test_map_direct_stack_end_must_match_elf_boundary(self):
+        self.elf_path.write_bytes(make_elf())
+        self.map_path.write_text(make_map(stack_end=STACK_START), encoding="utf-8")
+        with self.assertRaisesRegex(
+            StartupError, "linker map __stack_end address does not match the ELF"
+        ):
+            validate(self.elf_path, self.map_path)
+
     def test_map_stack_top_expression_uses_resolved_elf_symbol(self):
         self.elf_path.write_bytes(make_elf())
         self.map_path.write_text(

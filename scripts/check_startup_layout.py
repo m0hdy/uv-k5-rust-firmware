@@ -131,23 +131,31 @@ def _parse_elf(path: Path) -> tuple[dict, dict, list, int]:
     return sections, symbols, segments, entry
 
 
-def _check_map(path: Path) -> None:
+def _check_map(path: Path, expected_symbols: dict[str, int]) -> None:
     text = path.read_text(encoding="utf-8", errors="replace")
-    expected_symbols = (
-        "__vector_table_start",
-        "__vector_table_end",
-        "__stack_start",
-        "__stack_end",
-        "__stack_top",
-    )
-    for name in expected_symbols:
+    for name, expected in expected_symbols.items():
         match = re.search(
-            rf"^\s*\S+\s+\S+\s+\S+\s+\S+\s+{re.escape(name)}\b",
+            rf"^\s*(\S+)\s+\S+\s+\S+\s+\S+\s+{re.escape(name)}\s*=\s*(.*?)\s*$",
             text,
             re.MULTILINE,
         )
         if match is None:
-            raise StartupError(f"linker map is missing {name}")
+            if not re.search(
+                rf"^\s*\S+\s+\S+\s+\S+\s+\S+\s+{re.escape(name)}\b",
+                text,
+                re.MULTILINE,
+            ):
+                raise StartupError(f"linker map is missing {name}")
+            continue
+        if match[2] == ".":
+            try:
+                map_address = int(match[1], 16)
+            except ValueError as error:
+                raise StartupError(
+                    f"linker map has an invalid address for {name}"
+                ) from error
+            if map_address != expected:
+                raise StartupError(f"linker map {name} address does not match the ELF")
 
 
 def validate(elf_path: Path, map_path: Path) -> None:
@@ -350,7 +358,7 @@ def validate(elf_path: Path, map_path: Path) -> None:
             raise StartupError(
                 f"allocated section {name} is not covered by a {kind}PT_LOAD segment"
             )
-    _check_map(map_path)
+    _check_map(map_path, expected_symbols)
 
 
 def main(argv: list[str] | None = None) -> int:
