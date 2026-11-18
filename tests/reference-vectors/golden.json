@@ -1,0 +1,293 @@
+{
+  "reference_commit": "7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3",
+  "cases": [
+    {
+      "category": "channel",
+      "name": "first_memory_valid",
+      "input": "channel=0,band=0,scanlist1=0,scanlist2=0,check=0,list=0,priority1=0,priority2=0",
+      "expected": 1
+    },
+    {
+      "category": "channel",
+      "name": "last_memory_valid",
+      "input": "channel=199,band=6,scanlist1=0,scanlist2=0,check=0,list=0,priority1=0,priority2=0",
+      "expected": 1
+    },
+    {
+      "category": "channel",
+      "name": "first_frequency_invalid",
+      "input": "channel=200,band=0,scanlist1=0,scanlist2=0,check=0,list=0,priority1=0,priority2=0",
+      "expected": 0
+    },
+    {
+      "category": "channel",
+      "name": "last_noaa_invalid",
+      "input": "channel=216,band=0,scanlist1=0,scanlist2=0,check=0,list=0,priority1=0,priority2=0",
+      "expected": 0
+    },
+    {
+      "category": "channel",
+      "name": "uint16_max_invalid",
+      "input": "channel=65535,band=0,scanlist1=0,scanlist2=0,check=0,list=0,priority1=0,priority2=0",
+      "expected": 0
+    },
+    {
+      "category": "channel",
+      "name": "invalid_band",
+      "input": "channel=199,band=15,scanlist1=0,scanlist2=0,check=0,list=0,priority1=0,priority2=0",
+      "expected": 0
+    },
+    {
+      "category": "channel",
+      "name": "not_in_scanlist",
+      "input": "channel=1,band=0,scanlist1=0,scanlist2=0,check=1,list=0,priority1=10,priority2=11",
+      "expected": 0
+    },
+    {
+      "category": "channel",
+      "name": "scanlist_member",
+      "input": "channel=2,band=0,scanlist1=1,scanlist2=0,check=1,list=0,priority1=10,priority2=11",
+      "expected": 1
+    },
+    {
+      "category": "channel",
+      "name": "priority_channel_excluded",
+      "input": "channel=3,band=0,scanlist1=1,scanlist2=0,check=1,list=0,priority1=3,priority2=11",
+      "expected": 0
+    },
+    {
+      "category": "channel",
+      "name": "unsupported_scanlist_ignored",
+      "input": "channel=4,band=0,scanlist1=0,scanlist2=0,check=1,list=2,priority1=10,priority2=11",
+      "expected": 1
+    },
+    {
+      "category": "channel",
+      "name": "scanlist2_member",
+      "input": "channel=5,band=0,scanlist1=0,scanlist2=1,check=1,list=1,priority1=10,priority2=11",
+      "expected": 1
+    },
+    {
+      "category": "channel",
+      "name": "scanlist2_priority_excluded",
+      "input": "channel=6,band=0,scanlist1=0,scanlist2=1,check=1,list=1,priority1=10,priority2=6",
+      "expected": 0
+    },
+    {
+      "category": "ctcss",
+      "name": "first_tone",
+      "input": "tenths_hz=670",
+      "expected": 0
+    },
+    {
+      "category": "ctcss",
+      "name": "last_tone",
+      "input": "tenths_hz=2541",
+      "expected": 49
+    },
+    {
+      "category": "ctcss",
+      "name": "below_range",
+      "input": "tenths_hz=-1",
+      "expected": 255
+    },
+    {
+      "category": "ctcss",
+      "name": "above_range",
+      "input": "tenths_hz=9999",
+      "expected": 255
+    },
+    {
+      "category": "dcs",
+      "name": "first_normal_word",
+      "input": "type=2,option=0",
+      "expected": 7747603
+    },
+    {
+      "category": "dcs",
+      "name": "last_normal_word",
+      "input": "type=2,option=103",
+      "expected": 2161132
+    },
+    {
+      "category": "dcs",
+      "name": "first_reverse_word",
+      "input": "type=3,option=0",
+      "expected": 641004
+    },
+    {
+      "category": "dcs",
+      "name": "decode_first_reverse_word",
+      "input": "word=641004",
+      "expected": 7
+    },
+    {
+      "category": "dcs",
+      "name": "decode_invalid_word",
+      "input": "word=0",
+      "expected": 255
+    },
+    {
+      "category": "frequency",
+      "name": "rx_below_lower",
+      "input": "ticks=1799999",
+      "expected": -1
+    },
+    {
+      "category": "frequency",
+      "name": "rx_at_lower",
+      "input": "ticks=1800000",
+      "expected": 0
+    },
+    {
+      "category": "frequency",
+      "name": "rx_chip_gap_lower",
+      "input": "ticks=63000000",
+      "expected": -1
+    },
+    {
+      "category": "frequency",
+      "name": "rx_at_chip_gap_upper",
+      "input": "ticks=84000000",
+      "expected": 0
+    },
+    {
+      "category": "frequency",
+      "name": "rx_at_upper",
+      "input": "ticks=130000000",
+      "expected": 0
+    },
+    {
+      "category": "frequency",
+      "name": "rx_above_upper",
+      "input": "ticks=130000001",
+      "expected": -1
+    },
+    {
+      "category": "frequency",
+      "name": "tx_default_lower",
+      "input": "lock=default,ticks=13700000",
+      "expected": 0
+    },
+    {
+      "category": "frequency",
+      "name": "tx_default_last_tick",
+      "input": "lock=default,ticks=17399999",
+      "expected": 0
+    },
+    {
+      "category": "frequency",
+      "name": "tx_default_next_band",
+      "input": "lock=default,ticks=17400000",
+      "expected": -1
+    },
+    {
+      "category": "frequency",
+      "name": "tx_fcc_lower",
+      "input": "lock=fcc,ticks=14400000",
+      "expected": 0
+    },
+    {
+      "category": "frequency",
+      "name": "tx_fcc_upper",
+      "input": "lock=fcc,ticks=14800000",
+      "expected": -1
+    },
+    {
+      "category": "frequency",
+      "name": "tx_unlocked_band_edge",
+      "input": "lock=none,ticks=17400000",
+      "expected": 0
+    },
+    {
+      "category": "frequency",
+      "name": "tx_all_locked",
+      "input": "lock=all,ticks=14400000",
+      "expected": -1
+    },
+    {
+      "category": "frequency",
+      "name": "round_half_step",
+      "input": "ticks=14500125,step=250",
+      "expected": 14500250
+    },
+    {
+      "category": "frequency",
+      "name": "round_833_channel",
+      "input": "ticks=14502000,step=833",
+      "expected": 14501666
+    },
+    {
+      "category": "settings",
+      "name": "standard",
+      "input": {
+        "profile": "standard",
+        "feature_defines": [
+          "ENABLE_WIDE_RX",
+          "ENABLE_VOX",
+          "ENABLE_DTMF_CALLING",
+          "ENABLE_RSSI_BAR",
+          "ENABLE_AUDIO_BAR",
+          "ENABLE_AM_FIX"
+        ],
+        "values": "see capture_settings() in tools/reference-vectors/capture.c"
+      },
+      "expected": {
+        "0x0e70": "0705040000000302",
+        "0x0e78": "2802010301050001",
+        "0x0e90": "0c03040507010002",
+        "0x0e98": "ffffffffffffffff",
+        "0x0ea0": "ff824cffffffffff",
+        "0x0ea8": "0001050002ffffff",
+        "0x0ed0": "002a23010a1e323c",
+        "0x0ed8": "465000ffffffffff",
+        "0x0f18": "01010a0b000c0dff",
+        "0x0f40": "0000000000000097"
+      }
+    },
+    {
+      "category": "settings",
+      "name": "boundary",
+      "input": {
+        "profile": "boundary",
+        "feature_defines": [
+          "ENABLE_WIDE_RX",
+          "ENABLE_VOX",
+          "ENABLE_DTMF_CALLING",
+          "ENABLE_RSSI_BAR",
+          "ENABLE_AUDIO_BAR",
+          "ENABLE_AM_FIX"
+        ],
+        "values": "see capture_settings() in tools/reference-vectors/capture.c"
+      },
+      "expected": {
+        "0x0e70": "c7090a0001010904",
+        "0x0e78": "9a03020402090100",
+        "0x0e90": "1d0e0e0e0e020103",
+        "0x0e98": "ffffffffffffffff",
+        "0x0ea0": "ff963cffffffffff",
+        "0x0ea8": "00020a0104ffffff",
+        "0x0ed0": "014144033c646464",
+        "0x0ed8": "646401ffffffffff",
+        "0x0f18": "0200c7c701c7c7ff",
+        "0x0f40": "07010001010101e9"
+      }
+    },
+    {
+      "category": "firmware_container_checksum",
+      "name": "byte_ramp_12k",
+      "input": {
+        "raw_pattern": "bytes 0x00..0xff repeated 48 times",
+        "raw_length": 12288,
+        "author": "Golden",
+        "version": "1.0"
+      },
+      "expected": {
+        "raw_sha256": "8dec5fb0de8a0b457c0cf7be559e4ef488e9cf39d5ddb0ff7464b23372ab21fa",
+        "packed_length": 12306,
+        "packed_sha256": "5158959dc6f66a05c3113fe8cfbeae062d4b0ed9ee5114436aa940457eb9f597",
+        "appended_crc_bytes": "cec1"
+      }
+    }
+  ]
+}
