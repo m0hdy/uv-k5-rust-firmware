@@ -130,6 +130,27 @@ fn boundary_settings() -> Settings {
     settings
 }
 
+fn zero_channel_record() -> ChannelRecord {
+    ChannelRecord {
+        rx_frequency: 0,
+        tx_offset: 0,
+        rx_code: 0,
+        tx_code: 0,
+        rx_code_type: 0,
+        tx_code_type: 0,
+        tx_offset_direction: 0,
+        modulation: 0,
+        frequency_reverse: false,
+        channel_bandwidth: false,
+        output_power: 0,
+        busy_channel_lock: 0,
+        dtmf_decoding_enabled: false,
+        dtmf_ptt_id_tx_mode: 0,
+        step_setting: 0,
+        scrambling_type: 0,
+    }
+}
+
 #[test]
 fn settings_profiles_match_pinned_c_eeprom_blocks_byte_for_byte() {
     let fixtures = [
@@ -212,37 +233,85 @@ fn channel_record_matches_pinned_c_eeprom_layout() {
 }
 
 #[test]
-fn channel_record_rejects_unrepresentable_fields_and_reserved_bits() {
-    let mut channel = ChannelRecord {
-        rx_frequency: 0,
-        tx_offset: 0,
-        rx_code: 0,
-        tx_code: 0,
-        rx_code_type: 16,
-        tx_code_type: 0,
-        tx_offset_direction: 0,
-        modulation: 0,
-        frequency_reverse: false,
-        channel_bandwidth: false,
-        output_power: 0,
-        busy_channel_lock: 0,
-        dtmf_decoding_enabled: false,
-        dtmf_ptt_id_tx_mode: 0,
-        step_setting: 0,
-        scrambling_type: 0,
+fn channel_record_packed_field_maxima_preserve_adjacent_bits() {
+    let channel = ChannelRecord {
+        rx_code_type: 0x0f,
+        tx_code_type: 0x0f,
+        tx_offset_direction: 0x0f,
+        modulation: 0x0f,
+        output_power: 0x03,
+        busy_channel_lock: 0x0f,
+        dtmf_ptt_id_tx_mode: 0x07,
+        ..zero_channel_record()
     };
-    assert_eq!(
-        channel.encode(),
-        Err(CodecError::InvalidField("rx_code_type"))
-    );
+    let bytes = channel.encode().unwrap();
 
-    channel.rx_code_type = 0;
-    let mut bytes = channel.encode().unwrap();
+    assert_eq!(bytes[10], 0xff);
+    assert_eq!(bytes[11], 0xff);
+    assert_eq!(bytes[12], 0xfc);
+    assert_eq!(bytes[13], 0x0e);
+    assert_eq!(ChannelRecord::decode(&bytes), Ok(channel));
+}
+
+#[test]
+fn channel_record_rejects_first_unrepresentable_packed_field_values_and_reserved_bits() {
+    type InvalidFieldCase = (&'static str, fn(&mut ChannelRecord));
+    let invalid_fields: [InvalidFieldCase; 7] = [
+        ("rx_code_type", |channel| channel.rx_code_type = 0x10),
+        ("tx_code_type", |channel| channel.tx_code_type = 0x10),
+        ("tx_offset_direction", |channel| {
+            channel.tx_offset_direction = 0x10
+        }),
+        ("modulation", |channel| channel.modulation = 0x10),
+        ("output_power", |channel| channel.output_power = 0x04),
+        ("busy_channel_lock", |channel| {
+            channel.busy_channel_lock = 0x10
+        }),
+        ("dtmf_ptt_id_tx_mode", |channel| {
+            channel.dtmf_ptt_id_tx_mode = 0x08
+        }),
+    ];
+    for (field, set_unrepresentable_value) in invalid_fields {
+        let mut channel = zero_channel_record();
+        set_unrepresentable_value(&mut channel);
+        assert_eq!(channel.encode(), Err(CodecError::InvalidField(field)));
+    }
+
+    let mut bytes = zero_channel_record().encode().unwrap();
     bytes[13] = 0x10;
     assert_eq!(
         ChannelRecord::decode(&bytes),
         Err(CodecError::InvalidField("channel DTMF reserved bits"))
     );
+}
+
+#[test]
+fn settings_codec_enforces_rssi_calibration_boundaries_on_encode_and_decode() {
+    for (s0, s9, valid) in [
+        (90, 76, false),
+        (91, 76, true),
+        (159, 76, true),
+        (160, 76, false),
+        (130, 50, false),
+        (130, 51, true),
+        (130, 120, true),
+        (130, 121, false),
+    ] {
+        let expected = if valid {
+            Ok(())
+        } else {
+            Err(CodecError::InvalidField("RSSI calibration"))
+        };
+        let mut settings = standard_settings();
+        settings.rssi_s0_level = s0;
+        settings.rssi_s9_level = s9;
+        assert_eq!(settings.encode().map(|_| ()), expected, "S0={s0}, S9={s9}");
+
+        let mut image = standard_settings().encode().unwrap();
+        image.blocks[4][1] = s0;
+        image.blocks[4][2] = s9;
+        assert_eq!(image.decode().map(|_| ()), expected, "S0={s0}, S9={s9}");
+    }
 }
 
 #[test]
