@@ -226,13 +226,11 @@ def validate(elf_path: Path, map_path: Path) -> None:
                 raise StartupError(f"PT_LOAD[{index}] load range is outside application flash")
             if virtual < FLASH_END and physical != virtual:
                 raise StartupError(f"PT_LOAD[{index}] flash VMA and LMA do not match")
-    for name, section, file_backed in (
-        (".data", data_section, True),
-        (".bss", bss_section, False),
-    ):
-        address, file_offset, size = section[3], section[4], section[5]
-        if size == 0:
+    for name, section in sections.items():
+        if not section[2] & SHF_ALLOC or not section[5] or name == ".stack":
             continue
+        address, file_offset, size = section[3], section[4], section[5]
+        file_backed = section[1] != SHT_NOBITS
         if not any(
             0 <= address - virtual
             and address - virtual + size <= memory_size
@@ -245,8 +243,10 @@ def validate(elf_path: Path, map_path: Path) -> None:
             )
             for virtual, _, segment_file_offset, segment_file_size, memory_size in segments
         ):
-            kind = "file-backed" if file_backed else "RAM"
-            raise StartupError(f"{name} is not covered by a {kind} PT_LOAD segment")
+            kind = "file-backed " if file_backed else ""
+            raise StartupError(
+                f"allocated section {name} is not covered by a {kind}PT_LOAD segment"
+            )
     _check_map(map_path)
 
 

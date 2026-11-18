@@ -41,6 +41,9 @@ def make_elf(
     bss_flags=3,
     text_address=0xC0,
     flash_memory_size=FLASH_FILE_SIZE,
+    flash_segment_file_size=FLASH_FILE_SIZE,
+    flash_segment_type=1,
+    vector_file_offset_delta=0,
 ):
     header_size = ELF32_HEADER.size
     program_offset = header_size
@@ -57,7 +60,8 @@ def make_elf(
         bss_address = RAM_START + data_size
     program_headers = (
         ELF32_PROGRAM_HEADER.pack(
-            1, data_offset, 0, 0, len(flash), flash_memory_size, 5, 4
+            flash_segment_type, data_offset, 0, 0, flash_segment_file_size,
+            flash_memory_size, 5, 4
         )
         + ELF32_PROGRAM_HEADER.pack(
             1, data_load_offset, RAM_START, FLASH_FILE_SIZE, data_size,
@@ -67,7 +71,12 @@ def make_elf(
             1, stack_offset, STACK_START, STACK_START, 0, STACK_SIZE, 6, 4
         )
     )
-    payload = bytes(flash) + initialized_data
+    payload = bytearray(bytes(flash) + initialized_data)
+    if vector_file_offset_delta:
+        vector_end = vector_file_offset_delta + len(vector)
+        if len(payload) < vector_end:
+            payload.extend(bytes(vector_end - len(payload)))
+        payload[vector_file_offset_delta:vector_end] = vector
     section_names = b"\0.vector_table\0.text\0.data\0.bss\0.stack\0.shstrtab\0.strtab\0.symtab\0"
     symbol_names = b"\0Reset_Handler\0"
     names_offset = data_offset + len(payload)
@@ -85,7 +94,8 @@ def make_elf(
     sections = [
         bytes(ELF32_SECTION_HEADER.size),
         ELF32_SECTION_HEADER.pack(
-            section_name_offsets[".vector_table"], 1, 2, 0, data_offset,
+            section_name_offsets[".vector_table"], 1, 2, 0,
+            data_offset + vector_file_offset_delta,
             VECTOR_SIZE, 0, 0, 4, 0,
         ),
         ELF32_SECTION_HEADER.pack(
@@ -123,7 +133,7 @@ def make_elf(
         header_size, program_size, 3, ELF32_SECTION_HEADER.size, len(sections), 6,
     )
     return (
-        header + program_headers + payload + section_names + symbol_names
+        header + program_headers + bytes(payload) + section_names + symbol_names
         + symbol_table + b"".join(sections)
     )
 
@@ -213,6 +223,25 @@ class StartupLayoutTests(unittest.TestCase):
         self.check_fails(
             "execution range is outside flash and RAM",
             flash_memory_size=FLASH_END + 1,
+        )
+
+    def test_vector_table_must_be_covered_by_a_load_segment(self):
+        self.check_fails(
+            "allocated section .vector_table is not covered by a file-backed PT_LOAD",
+            flash_segment_type=0,
+        )
+
+    def test_text_must_be_covered_by_a_load_segment(self):
+        self.check_fails(
+            "allocated section .text is not covered by a file-backed PT_LOAD",
+            flash_segment_file_size=VECTOR_SIZE,
+            flash_memory_size=VECTOR_SIZE,
+        )
+
+    def test_allocated_section_file_offset_must_match_load_segment(self):
+        self.check_fails(
+            "allocated section .vector_table is not covered by a file-backed PT_LOAD",
+            vector_file_offset_delta=FLASH_FILE_SIZE + 4,
         )
 
     def test_map_stack_end_must_match_ram_end(self):
