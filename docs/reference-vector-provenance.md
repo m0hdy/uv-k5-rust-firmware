@@ -4,12 +4,17 @@
 
 The outputs in [`tests/reference-vectors/golden.json`](../tests/reference-vectors/golden.json) were generated from the optional C reference at commit
 [`7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3`](https://github.com/egzumer/uv-k5-firmware-custom/commit/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3).
-The capture code is independently authored. It compiles the reference's
-`dcs.c` and `frequencies.c`, extracts `RADIO_CheckValidChannel` and
-`SETTINGS_SaveSettings` to a temporary file for compilation against independent
-host mocks, and executes the reference's `fw-pack.py`. It does not vendor or
-modify the reference. The temporary extracted functions and compiled artifacts
-are deleted after capture.
+The capture harness and its selected inputs are independently authored. It
+compiles the reference's `dcs.c` and `frequencies.c`, extracts
+`RADIO_CheckValidChannel` and `SETTINGS_SaveSettings` to a temporary file, and
+executes the reference's `fw-pack.py`. The settings host mock is a minimized,
+modified subset of the pinned `EEPROM_Config_t` declaration in `settings.h`;
+its source notice and the Apache-2.0 license copy are in
+[`settings_capture_support.h`](../tools/reference-vectors/settings_capture_support.h)
+and [`LICENSE-APACHE-2.0`](../tools/reference-vectors/LICENSE-APACHE-2.0).
+Other host state and test inputs are independently authored. The harness does
+not vendor or modify the reference; temporary extracted functions and compiled
+artifacts are deleted after capture.
 
 | Output category | Pinned source and generator | Cases and output |
 | --- | --- | --- |
@@ -19,15 +24,28 @@ are deleted after capture.
 | EEPROM settings encoding | [`settings.c`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/settings.c#L470-L595): `SETTINGS_SaveSettings`. | Standard and boundary profiles capture the ten 8-byte write blocks at their EEPROM offsets. A host mock records the writes; no physical EEPROM is accessed. Feature defines follow the pinned Makefile defaults for `ENABLE_WIDE_RX`, `ENABLE_VOX`, `ENABLE_DTMF_CALLING`, `ENABLE_RSSI_BAR`, `ENABLE_AUDIO_BAR`, and `ENABLE_AM_FIX`, as defined in the [pinned Makefile](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/Makefile#L12-L37). Input assignments are in [`capture.c`](../tools/reference-vectors/capture.c). |
 | Firmware container checksum | [`fw-pack.py`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/fw-pack.py#L20-L38). | The pinned script receives a 12,288-byte `00..ff` repeating payload, author `Golden`, version `1.0`; expected raw and packed SHA-256, packed length, and appended CRC bytes are recorded. This is the updater-container CRC, not a settings checksum. |
 
-The fixture records computed outputs rather than copied code, tables, bitmaps,
-or other upstream source data. The inspected C files carry Dual Tachyon
-copyright and Apache-2.0 notices; the pinned repository root is Apache-2.0.
-No upstream implementation or table is included in this repository. The
-host data structures and test values in `settings_capture_support.h` and
-`capture.c` are independently authored mock state and inputs; the harness
-includes the pinned `misc.h`/`frequencies.h` definitions and extracts the
-`TxLockModes_t` enum from pinned `settings.h` into its temporary build
-directory; none of those upstream definitions are copied into the repository.
+The fixture's item-specific reuse decision is to retain this exact set of
+independently selected inputs and computed outputs as behavioral test data.
+It contains no copied implementation, table, bitmap, or upstream vector set.
+Attribution for the generated results is the pinned
+[`egzumer/uv-k5-firmware-custom`](https://github.com/egzumer/uv-k5-firmware-custom)
+revision above; the inspected C sources identify Copyright 2023 Dual Tachyon
+and Apache-2.0, and the repository root is Apache-2.0. The inspected
+`fw-pack.py` has no file-level notice; its repository root license is
+Apache-2.0. This decision applies only to `golden.json` and is not blanket
+clearance for other source material or generated data.
+
+The host state and inputs in `capture.c` are independently authored. The
+`EEPROM_Config_t` mock in `settings_capture_support.h` is not independent: it is
+a minimized, modified subset of the declaration in pinned `settings.h`. It
+retains the source's Copyright 2023 Dual Tachyon and Apache-2.0 notice, marks
+the subset as modified, and is accompanied by a copy of the Apache-2.0 license
+at `tools/reference-vectors/LICENSE-APACHE-2.0`. The capture harness includes
+pinned `misc.h`/`frequencies.h` definitions and extracts the `TxLockModes_t`
+enum from pinned `settings.h` into its temporary build directory; those
+temporary upstream definitions are not included in this repository. The mock
+decision covers only the identified test-only subset, not any other upstream
+declarations.
 The EEPROM mock only accepts the ten expected 8-byte writes at their
 documented offsets, rejects any unexpected write address or count before
 copying its bytes, checks bounds and null data, and verifies the final count.
@@ -79,8 +97,12 @@ upstream vector table.
 The updated 39-case fixture has SHA-256
 `361172955485ba9d7b6cd3b26cafc0f73cc8ed9e56ee84d79c36b8da6049c748`.
 
-This repository has no firmware CI workflow. The separate default C build
-evidence is recorded in [issue #11's evidence comment](https://github.com/m0hdy/uv-k5-rust-firmware/issues/11#issuecomment-6982758020);
+The repository's standard Rust CI is defined in
+[`.github/workflows/rust-quality.yml`](../.github/workflows/rust-quality.yml):
+it runs formatting, Clippy, host tests, and a Cortex-M0 release build with ELF
+and map artifacts. It does not run these reference vectors. The separate
+default C build evidence is recorded in [issue #11's evidence
+comment](https://github.com/m0hdy/uv-k5-rust-firmware/issues/11#issuecomment-6982758020);
 it is not a CI run of these vectors. In this sandbox, individual files were
 read from the pinned revision and their Git object IDs verified. Captures with
 GCC and Clang both matched the fixture. A full clean upstream checkout was

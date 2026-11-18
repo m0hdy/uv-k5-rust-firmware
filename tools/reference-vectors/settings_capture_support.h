@@ -1,3 +1,11 @@
+/*
+ * Modified, test-only subset of EEPROM_Config_t from upstream settings.h:
+ * https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/settings.h
+ *
+ * Copyright 2023 Dual Tachyon
+ * Licensed under the Apache License, Version 2.0; see LICENSE-APACHE-2.0.
+ * The upstream declaration has been reduced and modified for host capture.
+ */
 #ifndef SETTINGS_CAPTURE_SUPPORT_H
 #define SETTINGS_CAPTURE_SUPPORT_H
 
