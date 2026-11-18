@@ -234,6 +234,13 @@ class StartupLayoutTests(unittest.TestCase):
     def test_entry_must_be_reset_handler(self):
         self.check_fails("entry point is not Reset_Handler", entry=0xC3)
 
+    def test_entry_must_select_thumb_even_when_reset_vector_does(self):
+        self.check_fails(
+            "ELF entry point must select Thumb state",
+            entry=0xC0,
+            reset_address=0xC0,
+        )
+
     def test_reset_vector_must_be_thumb_reset_handler(self):
         self.check_fails("reset vector is not the Thumb", reset_vector=0xC0)
 

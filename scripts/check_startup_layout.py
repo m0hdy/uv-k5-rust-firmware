@@ -189,6 +189,8 @@ def validate(elf_path: Path, map_path: Path) -> None:
         raise StartupError("reset vector is not the Thumb Reset_Handler address")
     if entry != reset_address:
         raise StartupError("ELF entry point is not Reset_Handler")
+    if entry & 1 == 0:
+        raise StartupError("ELF entry point must select Thumb state")
     data_section = sections[".data"]
     bss_section = sections[".bss"]
     if (
