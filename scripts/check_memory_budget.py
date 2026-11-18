@@ -39,9 +39,19 @@ class Segment:
     file_data: bytes
 
 
+@dataclass(frozen=True)
+class Section:
+    name: str
+    kind: int
+    address: int
+    size: int
+    load_address: int | None
+
+
 @dataclass
 class Report:
     segments: list[Segment]
+    sections: list[Section]
     flash_load_bytes: int
     ram_static_bytes: int
     raw_bytes: int
@@ -49,7 +59,9 @@ class Report:
     errors: list[str]
 
 
-def validate_allocated_sections(data: bytes, fields: tuple, segments: list[Segment]) -> bool:
+def validate_allocated_sections(
+    data: bytes, fields: tuple, segments: list[Segment]
+) -> tuple[list[Section], bool]:
     offset, entry_size, count, string_index = (
         fields[6], fields[11], fields[12], fields[13]
     )
@@ -71,6 +83,7 @@ def validate_allocated_sections(data: bytes, fields: tuple, segments: list[Segme
         raise BudgetError("ELF section-name string table is malformed")
     names = data[string_offset : string_offset + string_size]
     allocated = []
+    reported_sections = []
     linked_stack = False
     stack_start = RAM_END - REQUIRED_STACK_RESERVATION
     for section in sections:
@@ -92,6 +105,7 @@ def validate_allocated_sections(data: bytes, fields: tuple, segments: list[Segme
                     "linked .stack must be writable, allocated NOBITS in the exact reserved range"
                 )
             linked_stack = True
+            reported_sections.append(Section(name, kind, address, size, None))
         elif flags & SHF_ALLOC and size:
             allocated.append((name, kind, address, file_offset, size))
 
@@ -112,13 +126,21 @@ def validate_allocated_sections(data: bytes, fields: tuple, segments: list[Segme
                     and file_offset == segment.file_offset + delta
                 )
             ):
+                load_address = (
+                    segment.physical_address + delta
+                    if kind != SHT_NOBITS
+                    else None
+                )
                 break
         else:
             raise BudgetError(f"allocated section {name} is not covered by a PT_LOAD segment")
-    return linked_stack
+        reported_sections.append(
+            Section(name, kind, address, size, load_address)
+        )
+    return reported_sections, linked_stack
 
 
-def parse_elf(path: Path) -> tuple[list[Segment], bool]:
+def parse_elf(path: Path) -> tuple[list[Segment], list[Section], bool]:
     data = path.read_bytes()
     if len(data) < ELF32_HEADER.size:
         raise BudgetError("ELF is truncated before its ELF32 header")
@@ -177,7 +199,8 @@ def parse_elf(path: Path) -> tuple[list[Segment], bool]:
 
     if not segments:
         raise BudgetError("ELF has no PT_LOAD segments")
-    return segments, validate_allocated_sections(data, fields, segments)
+    sections, has_linked_stack = validate_allocated_sections(data, fields, segments)
+    return segments, sections, has_linked_stack
 
 
 def in_region(start: int, size: int, region_start: int, region_end: int) -> bool:
@@ -207,7 +230,7 @@ def analyze(
     stack_reservation: int,
     packed_path: Path | None = None,
 ) -> Report:
-    segments, has_linked_stack = parse_elf(elf_path)
+    segments, sections, has_linked_stack = parse_elf(elf_path)
     raw_data = raw_path.read_bytes()
     raw_bytes = len(raw_data)
     packed_bytes = packed_path.stat().st_size if packed_path is not None else None
@@ -393,7 +416,9 @@ def analyze(
             f"maximum is {RAM_END - RAM_START} bytes"
         )
 
-    return Report(segments, flash_bytes, ram_bytes, raw_bytes, packed_bytes, errors)
+    return Report(
+        segments, sections, flash_bytes, ram_bytes, raw_bytes, packed_bytes, errors
+    )
 
 
 def format_report(report: Report, stack_reservation: int) -> str:
@@ -413,7 +438,29 @@ def format_report(report: Report, stack_reservation: int) -> str:
             if report.packed_bytes is not None
             else "Packed container: not supplied"
         ),
+        "Allocated sections (informational; PT_LOAD totals remain authoritative):",
     ]
+    for section in report.sections:
+        runtime_region = "FLASH" if section.address < FLASH_END else "RAM"
+        runtime_start = section.address
+        runtime_end = runtime_start + section.size
+        details = [
+            f"runtime {runtime_region} "
+            f"[0x{runtime_start:08x},0x{runtime_end:08x})"
+        ]
+        if section.load_address is not None:
+            load_start = section.load_address
+            load_end = load_start + section.size
+            details.append(
+                f"flash load [0x{load_start:08x},0x{load_end:08x})"
+            )
+        elif section.name == ".stack":
+            details.append("reserved separately")
+        else:
+            details.append("no flash load (zero-filled)")
+        lines.append(
+            f"Section {section.name}: {section.size} bytes; " + "; ".join(details)
+        )
     for segment in report.segments:
         lines.append(
             f"PT_LOAD[{segment.index}]: LMA 0x{segment.physical_address:08x} "

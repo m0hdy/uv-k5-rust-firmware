@@ -1,0 +1,45 @@
+name: Cortex-M0 Clippy
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clippy:
+    name: Target Clippy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          import tomllib
+
+          with open("rust-toolchain.toml", "rb") as toolchain_file:
+              toolchain = tomllib.load(toolchain_file)["toolchain"]
+
+          command = [
+              "rustup",
+              "toolchain",
+              "install",
+              toolchain["channel"],
+              "--profile",
+              toolchain["profile"],
+          ]
+          for component in toolchain.get("components", []):
+              command.extend(["--component", component])
+          for target in toolchain.get("targets", []):
+              command.extend(["--target", target])
+          subprocess.run(command, check=True)
+          PY
+      - name: Run Cortex-M0 release Clippy
+        run: cargo clippy --locked --target thumbv6m-none-eabi --release -- -D warnings

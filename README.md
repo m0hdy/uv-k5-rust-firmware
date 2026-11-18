@@ -30,6 +30,11 @@ the optional real-image memory-gate fixtures also use GNU ARM binutils.
 
 ## Continuous integration
 
+The `Copilot Setup Steps` workflow installs the Rust tools from
+`rust-toolchain.toml`, GNU ARM binutils, and Graphify with its Copilot skill for
+Actions-backed Copilot cloud agent sessions. This setup applies only to those
+sessions; it does not change local development or the normal quality checks.
+
 The `Rust quality` workflow runs on pushes and pull requests. Its stable required
 checks are `Rust quality / Host checks` (formatting, Clippy, and host tests) and
 `Rust quality / Cortex-M0 release build`. Each job installs the toolchain,
