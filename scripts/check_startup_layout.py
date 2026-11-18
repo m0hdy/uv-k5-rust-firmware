@@ -83,10 +83,13 @@ def _parse_elf(path: Path) -> tuple[dict, dict, list, int]:
     ):
         raise StartupError("ELF section-name string table is malformed")
     section_names = data[name_section[4] : name_section[4] + name_section[5]]
-    sections = {
-        _read_c_string(section_names, section[0]): section
-        for section in raw_sections[1:]
-    }
+    sections = {}
+    for section in raw_sections[1:]:
+        name = _read_c_string(section_names, section[0])
+        previous = sections.get(name)
+        if previous is not None and (previous[2] & SHF_ALLOC or section[2] & SHF_ALLOC):
+            raise StartupError(f"duplicate allocated section name {name}")
+        sections[name] = section
 
     symbols = {}
     for section in raw_sections:
@@ -130,6 +133,29 @@ def _parse_elf(path: Path) -> tuple[dict, dict, list, int]:
 
 def _check_map(path: Path) -> None:
     text = path.read_text(encoding="utf-8", errors="replace")
+    expected_symbols = (
+        "__vector_table_start",
+        "__vector_table_end",
+        "__stack_start",
+        "__stack_end",
+        "__stack_top",
+    )
+    for name in expected_symbols:
+        match = re.search(
+            rf"^\s*\S+\s+\S+\s+\S+\s+\S+\s+{re.escape(name)}\b",
+            text,
+            re.MULTILINE,
+        )
+        if match is None:
+            raise StartupError(f"linker map is missing {name}")
+
+
+def validate(elf_path: Path, map_path: Path) -> None:
+    sections, symbols, segments, entry = _parse_elf(elf_path)
+    for required in (".vector_table", ".text", ".data", ".bss", ".stack"):
+        if required not in sections:
+            raise StartupError(f"ELF is missing required section {required}")
+
     expected_symbols = {
         "__vector_table_start": FLASH_START,
         "__vector_table_end": FLASH_START + VECTOR_SIZE,
@@ -138,20 +164,9 @@ def _check_map(path: Path) -> None:
         "__stack_top": RAM_END,
     }
     for name, expected in expected_symbols.items():
-        match = re.search(
-            rf"^\s*([0-9a-fA-F]+)\s+\S+\s+\S+\s+\S+\s+{re.escape(name)}\b",
-            text,
-            re.MULTILINE,
-        )
-        if match is None or int(match.group(1), 16) != expected:
-            raise StartupError(f"linker map has an invalid or missing {name}")
-
-
-def validate(elf_path: Path, map_path: Path) -> None:
-    sections, symbols, segments, entry = _parse_elf(elf_path)
-    for required in (".vector_table", ".text", ".data", ".bss", ".stack"):
-        if required not in sections:
-            raise StartupError(f"ELF is missing required section {required}")
+        symbol = symbols.get(name)
+        if symbol is None or symbol[3] == 0 or symbol[0] != expected:
+            raise StartupError(f"ELF symbol {name} has an invalid value")
 
     vector = sections[".vector_table"]
     if (

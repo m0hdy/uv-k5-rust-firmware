@@ -50,6 +50,7 @@ def make_elf(
     flash_segment_type=1,
     vector_file_offset_delta=0,
     symbol_overrides=None,
+    duplicate_allocated_stack=False,
 ):
     header_size = ELF32_HEADER.size
     program_offset = header_size
@@ -96,6 +97,11 @@ def make_elf(
     symbol_name_offsets = {}
     symbol_values = {
         "Reset_Handler": reset_address,
+        "__vector_table_start": 0,
+        "__vector_table_end": VECTOR_SIZE,
+        "__stack_start": STACK_START,
+        "__stack_end": RAM_END,
+        "__stack_top": RAM_END,
         "__data_load": data_load_address,
         "__data_start": data_address,
         "__data_end": data_address + data_size,
@@ -164,6 +170,14 @@ def make_elf(
             len(symbol_table), 7, 1, 4, ELF32_SYMBOL.size,
         ),
     ]
+    if duplicate_allocated_stack:
+        invalid_stack = ELF32_SECTION_HEADER.pack(
+            section_name_offsets[".stack"], 8, 3, 0x40000000, stack_offset,
+            STACK_SIZE, 0, 0, 8, 0,
+        )
+        valid_stack = sections.pop(5)
+        sections.insert(5, invalid_stack)
+        sections.append(valid_stack)
     ident = b"\x7fELF" + bytes([1, 1, 1]) + bytes(9)
     header = ELF32_HEADER.pack(
         ident, 2, 40, 1, entry, program_offset, section_offset, 0,
@@ -212,6 +226,18 @@ class StartupLayoutTests(unittest.TestCase):
         self.elf_path.write_bytes(make_elf(data_size=0, bss_size=0))
         self.map_path.write_text(make_map(), encoding="utf-8")
         validate(self.elf_path, self.map_path)
+
+    def test_duplicate_allocated_section_names_are_rejected(self):
+        self.check_fails(
+            "duplicate allocated section name \\.stack",
+            duplicate_allocated_stack=True,
+        )
+
+    def test_vector_table_symbols_must_match_elf_layout(self):
+        self.check_fails(
+            "ELF symbol __vector_table_end has an invalid value",
+            symbol_overrides={"__vector_table_end": VECTOR_SIZE - 4},
+        )
 
     def test_data_load_must_cover_all_initialized_bytes(self):
         self.check_fails(
@@ -365,22 +391,42 @@ class StartupLayoutTests(unittest.TestCase):
             data_load_address=0,
         )
 
-    def test_map_stack_end_must_match_ram_end(self):
-        self.elf_path.write_bytes(make_elf())
-        self.map_path.write_text(make_map(stack_end=RAM_END - 4), encoding="utf-8")
-        with self.assertRaisesRegex(StartupError, "invalid or missing __stack_end"):
-            validate(self.elf_path, self.map_path)
-
-    def test_map_stack_top_must_match_ram_end(self):
+    def test_map_stack_end_entry_is_required(self):
         self.elf_path.write_bytes(make_elf())
         self.map_path.write_text(
-            make_map().replace(
-                "20004000 20004000 0 1 __stack_top",
-                "20003800 20003800 0 1 __stack_top",
+            "\n".join(
+                line for line in make_map().splitlines() if "__stack_end" not in line
             ),
             encoding="utf-8",
         )
-        with self.assertRaisesRegex(StartupError, "invalid or missing __stack_top"):
+        with self.assertRaisesRegex(StartupError, "linker map is missing __stack_end"):
+            validate(self.elf_path, self.map_path)
+
+    def test_map_stack_top_expression_uses_resolved_elf_symbol(self):
+        self.elf_path.write_bytes(make_elf())
+        self.map_path.write_text(
+            make_map().replace(
+                "20004000 20004000 0 1 __stack_top = .",
+                "20004000 20003800 0 1 __stack_top = ORIGIN(STACK)+LENGTH(STACK)",
+            ),
+            encoding="utf-8",
+        )
+        validate(self.elf_path, self.map_path)
+
+    def test_incorrect_elf_stack_top_is_rejected_despite_map_location_counter(self):
+        self.elf_path.write_bytes(
+            make_elf(symbol_overrides={"__stack_top": STACK_START})
+        )
+        self.map_path.write_text(
+            make_map().replace(
+                "20004000 20004000 0 1 __stack_top = .",
+                "20004000 20003800 0 1 __stack_top = ORIGIN(STACK)+LENGTH(STACK)",
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(
+            StartupError, "ELF symbol __stack_top has an invalid value"
+        ):
             validate(self.elf_path, self.map_path)
 
 
