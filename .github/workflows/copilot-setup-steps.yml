@@ -1,0 +1,89 @@
+name: Copilot Setup Steps
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+      - rust-toolchain.toml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+      - rust-toolchain.toml
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          import tomllib
+
+          with open("rust-toolchain.toml", "rb") as toolchain_file:
+              toolchain = tomllib.load(toolchain_file)["toolchain"]
+
+          command = [
+              "rustup",
+              "toolchain",
+              "install",
+              toolchain["channel"],
+              "--profile",
+              toolchain["profile"],
+          ]
+          for component in toolchain.get("components", []):
+              command.extend(["--component", component])
+          for target in toolchain.get("targets", []):
+              command.extend(["--target", target])
+          subprocess.run(command, check=True)
+          PY
+      - name: Install Graphify in an isolated user environment
+        run: |
+          python3 -m venv "$HOME/.local/share/graphify-venv"
+          "$HOME/.local/share/graphify-venv/bin/python" -m pip install \
+            --disable-pip-version-check \
+            --no-input \
+            graphifyy==0.9.112
+          echo "$HOME/.local/share/graphify-venv/bin" >> "$GITHUB_PATH"
+      - name: Install Graphify Copilot skill
+        run: |
+          cd "$HOME"
+          graphify --help
+          graphify install --platform copilot
+          test -s "$HOME/.copilot/skills/graphify/SKILL.md"
+          test -s "$HOME/.copilot/skills/graphify/references/query.md"
+          find "$HOME/.copilot/skills/graphify" -type f -print
+      - name: Verify Rust tools
+        run: |
+          rustfmt --version
+          cargo clippy --version
+          rustup target list --installed | grep -Fx thumbv6m-none-eabi
+      - name: Install GNU ARM binutils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binutils-arm-none-eabi
+          arm-none-eabi-as --version | head -n 1
+          arm-none-eabi-ld --version | head -n 1
+          arm-none-eabi-objcopy --version | head -n 1
+      - name: Fetch locked dependencies
+        run: cargo fetch --locked
+      - name: Check formatting and lint
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+      - name: Run host regression tests
+        env:
+          ARM_BINUTILS_PREFIX: arm-none-eabi-
+        run: |
+          cargo test --locked --all-targets
+          python3 -m unittest discover -s tests -v
+      - name: Build Cortex-M0 release
+        run: cargo build --locked --target thumbv6m-none-eabi --release
