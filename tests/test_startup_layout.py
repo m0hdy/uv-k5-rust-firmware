@@ -40,6 +40,7 @@ def make_elf(
     data_flags=3,
     bss_flags=3,
     text_address=0xC0,
+    text_kind=1,
     text_offset_in_ram_segment=None,
     ram_segment_file_size=None,
     ram_segment_memory_size=None,
@@ -135,7 +136,7 @@ def make_elf(
             VECTOR_SIZE, 0, 0, 4, 0,
         ),
         ELF32_SECTION_HEADER.pack(
-            section_name_offsets[".text"], 1, 6, text_address, text_file_offset,
+            section_name_offsets[".text"], text_kind, 6, text_address, text_file_offset,
             0x40, 0, 0, 4, 0,
         ),
         ELF32_SECTION_HEADER.pack(
@@ -244,6 +245,17 @@ class StartupLayoutTests(unittest.TestCase):
             reset_address=0x101,
         )
 
+    def test_reset_handler_requires_file_backed_text(self):
+        self.check_fails("file-backed executable", text_kind=8)
+
+    def test_reset_handler_cannot_extend_past_text(self):
+        self.check_fails(
+            "file-backed executable",
+            entry=0xF1,
+            reset_vector=0xF1,
+            reset_address=0xF1,
+        )
+
     def test_reset_handler_must_execute_from_flash(self):
         self.check_fails(
             "Reset_Handler must execute from application flash",
@@ -313,6 +325,12 @@ class StartupLayoutTests(unittest.TestCase):
         self.check_fails(
             "execution range is outside flash and RAM",
             flash_memory_size=FLASH_END + 1,
+        )
+
+    def test_flash_load_cannot_overlap_another_flash_execution_range(self):
+        self.check_fails(
+            "flash load range overlaps .* flash execution range",
+            flash_memory_size=FLASH_FILE_SIZE + 4,
         )
 
     def test_vector_table_must_be_covered_by_a_load_segment(self):

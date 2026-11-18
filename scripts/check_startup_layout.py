@@ -169,16 +169,20 @@ def validate(elf_path: Path, map_path: Path) -> None:
     if reset_symbol is None:
         raise StartupError("ELF is missing Reset_Handler")
     reset_address = reset_symbol[0]
+    reset_size = reset_symbol[1]
+    reset_start = reset_address & ~1
     if reset_symbol[2] & 0xF != 2 or reset_symbol[3] == 0:
         raise StartupError("Reset_Handler must be a defined function symbol")
-    if not FLASH_START <= (reset_address & ~1) < FLASH_END:
+    if not FLASH_START <= reset_start < FLASH_END:
         raise StartupError("Reset_Handler must execute from application flash")
     text = sections[".text"]
     if (
-        text[2] & (SHF_ALLOC | SHF_EXECINSTR) != (SHF_ALLOC | SHF_EXECINSTR)
-        or not (text[3] <= (reset_address & ~1) < text[3] + text[5])
+        text[1] != SHT_PROGBITS
+        or text[2] & (SHF_ALLOC | SHF_EXECINSTR) != (SHF_ALLOC | SHF_EXECINSTR)
+        or reset_size < 2
+        or not (text[3] <= reset_start < reset_start + reset_size <= text[3] + text[5])
     ):
-        raise StartupError("Reset_Handler must reside in the allocated executable section")
+        raise StartupError("Reset_Handler must reside in file-backed executable .text")
     if stack_pointer != INITIAL_SP:
         raise StartupError("initial stack pointer does not match the target contract")
     if reset_vector & 1 == 0 or (reset_vector & ~1) != (reset_address & ~1):
@@ -259,6 +263,8 @@ def validate(elf_path: Path, map_path: Path) -> None:
         raise StartupError("stack section must reserve the exact writable RAM-top range")
 
     load_ranges = []
+    execution_ranges = []
+    flash_execution_ranges = []
     for index, (virtual, physical, file_offset, file_size, memory_size) in enumerate(segments):
         if memory_size:
             if not (
@@ -266,6 +272,10 @@ def validate(elf_path: Path, map_path: Path) -> None:
                 or RAM_START <= virtual <= virtual + memory_size <= RAM_END
             ):
                 raise StartupError(f"PT_LOAD[{index}] execution range is outside flash and RAM")
+            execution_range = (virtual, virtual + memory_size, index)
+            execution_ranges.append(execution_range)
+            if virtual < FLASH_END:
+                flash_execution_ranges.append(execution_range)
             if RAM_START <= virtual and virtual + memory_size <= RAM_END:
                 if file_size and overlaps(
                     (virtual, virtual + file_size), (STACK_START, RAM_END)
@@ -290,6 +300,18 @@ def validate(elf_path: Path, map_path: Path) -> None:
     load_overlaps = find_overlaps(load_ranges, "PT_LOAD flash load/file")
     if load_overlaps:
         raise StartupError(load_overlaps[0])
+    execution_overlaps = find_overlaps(execution_ranges, "PT_LOAD execution/memory")
+    if execution_overlaps:
+        raise StartupError(execution_overlaps[0])
+    for load_start, load_end, load_index in load_ranges:
+        for flash_start, flash_end, flash_index in flash_execution_ranges:
+            if load_index != flash_index and overlaps(
+                (load_start, load_end), (flash_start, flash_end)
+            ):
+                raise StartupError(
+                    f"PT_LOAD[{load_index}] flash load range overlaps "
+                    f"PT_LOAD[{flash_index}] flash execution range"
+                )
     for name, section in sections.items():
         if not section[2] & SHF_ALLOC or not section[5] or name == ".stack":
             continue
