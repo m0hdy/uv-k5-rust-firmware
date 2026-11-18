@@ -127,6 +127,7 @@ jobs:
             --elf target/thumbv6m-none-eabi/release/uv-k5-rust-firmware \
             --map target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
       - name: Record target report hashes
+        if: always() && steps.target-build.outcome == 'success'
         run: |
           {
             echo '### Cortex-M0 target report SHA-256'
