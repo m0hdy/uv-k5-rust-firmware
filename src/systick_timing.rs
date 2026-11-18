@@ -41,11 +41,7 @@ pub const fn elapsed_after_sample(
     previous: u32,
     current: u32,
 ) -> Option<u32> {
-    if reload > SYS_TICK_LOAD_MAX
-        || previous > reload
-        || current > reload
-        || current == previous
-    {
+    if reload > SYS_TICK_LOAD_MAX || previous > reload || current > reload || current == previous {
         return None;
     }
 

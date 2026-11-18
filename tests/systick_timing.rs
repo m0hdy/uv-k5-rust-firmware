@@ -2,8 +2,8 @@
 mod systick_timing;
 
 use systick_timing::{
-    SYS_TICK_LOAD_MAX, SYS_TICK_MULTIPLIER, SYS_TICK_PERIOD_TICKS, delay_target_ticks,
-    elapsed_after_sample, reload_value,
+    SYS_TICK_MULTIPLIER, SYS_TICK_PERIOD_TICKS, delay_target_ticks, elapsed_after_sample,
+    reload_value,
 };
 
 #[test]
@@ -34,15 +34,15 @@ fn elapsed_arithmetic_matches_countdown_and_wrap_boundaries() {
     assert_eq!(elapsed_after_sample(0, reload, 2, reload - 1), Some(3));
     assert_eq!(elapsed_after_sample(0, reload, 2, reload), Some(2));
     assert_eq!(elapsed_after_sample(0, reload, 0, reload), Some(0));
-    assert_eq!(elapsed_after_sample(10, reload, reload, reload - 1), Some(11));
+    assert_eq!(
+        elapsed_after_sample(10, reload, reload, reload - 1),
+        Some(11)
+    );
 }
 
 #[test]
 fn elapsed_arithmetic_preserves_u32_accumulator_wrapping() {
-    assert_eq!(
-        elapsed_after_sample(u32::MAX - 1, 479_999, 10, 8),
-        Some(0)
-    );
+    assert_eq!(elapsed_after_sample(u32::MAX - 1, 479_999, 10, 8), Some(0));
     assert_eq!(elapsed_after_sample(0, 479_999, 10, 10), None);
 }
 
