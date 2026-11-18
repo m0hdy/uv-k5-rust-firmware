@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
 import json
@@ -261,7 +262,9 @@ def run_vectors(
         if _type_sensitive_equal(actual, case.expected):
             matched += 1
         else:
-            mismatches.append(Mismatch(case.vector_id, case.expected, actual))
+            mismatches.append(
+                Mismatch(case.vector_id, deepcopy(case.expected), deepcopy(actual))
+            )
     return RunReport(
         len(fixture.cases),
         matched,
@@ -292,7 +295,7 @@ def _type_sensitive_equal(actual, expected):
 
 
 def _format_value(value: JsonValue) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return json.dumps(value, separators=(",", ":"))
 
 
 def format_report(report: RunReport) -> str:

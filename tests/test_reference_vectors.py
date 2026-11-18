@@ -58,6 +58,34 @@ class ReferenceVectorRunnerTests(unittest.TestCase):
         self.assertEqual(report.mismatches[0].vector_id, checksum_case.vector_id)
         self.assertFalse(report.complete)
 
+    def test_mismatch_values_are_snapshotted_per_vector(self):
+        shared_result = {}
+
+        def evaluate(case):
+            shared_result.clear()
+            shared_result["returned_for"] = case.name
+            return shared_result
+
+        report = run_vectors(self.fixture, {Category.SETTINGS: evaluate})
+        actual_by_id = {mismatch.vector_id: mismatch.actual for mismatch in report.mismatches}
+        self.assertEqual(actual_by_id["settings/standard"], {"returned_for": "standard"})
+        self.assertEqual(actual_by_id["settings/boundary"], {"returned_for": "boundary"})
+
+    def test_mismatch_with_mixed_type_keys_formats(self):
+        report = run_vectors(
+            self.fixture,
+            {
+                Category.SETTINGS: lambda case: {
+                    **case.expected,
+                    123: "unexpected",
+                }
+            },
+        )
+
+        diagnostic = format_report(report)
+        self.assertIn("Mismatch settings/standard", diagnostic)
+        self.assertIn('"123":"unexpected"', diagnostic)
+
     def test_invalid_settings_write_is_rejected(self):
         data = json.loads((ROOT / "tests/reference-vectors/golden.json").read_text())
         settings_case = next(case for case in data["cases"] if case["category"] == "settings")
