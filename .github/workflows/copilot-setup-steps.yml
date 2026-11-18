@@ -82,6 +82,8 @@ jobs:
       - name: Run host regression tests
         env:
           ARM_BINUTILS_PREFIX: arm-none-eabi-
-        run: python3 -m unittest discover -s tests -v
+        run: |
+          cargo test --locked --all-targets
+          python3 -m unittest discover -s tests -v
       - name: Build Cortex-M0 release
         run: cargo build --locked --target thumbv6m-none-eabi --release
