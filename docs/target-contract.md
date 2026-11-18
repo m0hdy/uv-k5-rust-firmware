@@ -207,8 +207,16 @@ documented stack analysis and matching checker and fixture updates.
 From the repository root, run the focused fixtures with:
 
 ```sh
+python3 scripts/check_startup_layout.py \
+  --elf target/thumbv6m-none-eabi/release/uv-k5-rust-firmware \
+  --map target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
 python3 -m unittest discover -s tests -v
 ```
+
+The startup-layout check validates the ELF entry and Reset vector, Thumb bit,
+initial SP, vector-table size and address, allocated section and load-segment
+ranges, stack reservation, and corresponding linker-map symbols. Its positive
+and negative fixtures are in `tests/test_startup_layout.py`.
 
 For the same real-image regression CI runs, install GNU ARM binutils
 (`binutils-arm-none-eabi` on Ubuntu) and run the test command with
@@ -233,13 +241,12 @@ span or bytes, out-of-region or overlapping load/runtime ranges, XIP
 VMA/LMA disagreement, stack overlap, and either raw-flash or RAM-plus-stack
 overflow. Its report includes loadable segment ranges and used/remaining flash
 and RAM. CI runs the fixture suite; the current target build remains a
-non-flashable bootstrap and does not run the image gate against that
-non-application ELF. Any future flashable publishing job must gate the exact
-ELF/raw pair successfully before its flashable artifact-upload or release
-step. Its linker map and budget report must be uploaded on an always-run path
-after the gate so a gate failure still retains the diagnostics; the current
-target report step already runs after a successful build even if a later gate
-step fails.
+non-flashable bootstrap and does not generate a raw payload. The image gate is
+exercised by the host fixtures and can be run against any explicitly generated
+ELF/raw pair. Any future flashable publishing job must gate the exact ELF/raw
+pair successfully before its flashable artifact-upload or release step. The
+current target report upload retains the ELF and map after a successful build,
+including when startup-layout validation fails.
 
 Sources: [linker memory regions and data load/run placement](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/firmware.ld#L1-L12), [`.data`/`.bss` placement](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/firmware.ld#L34-L68), [raw image writer invocation](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/Makefile#L432-L436).
 

@@ -113,7 +113,7 @@ No current build or test command consumes this variable.
 ## File ownership
 
 This repository owns its Cargo and toolchain configuration, the host-testable
-Rust library in `src/lib.rs`, and the target-only entry stub in
+Rust library in `src/lib.rs`, and the target-only entry in
 `src/bin/firmware.rs`. The target integration's single owner maintains reset
 and vectors in `src/bin/startup.S`, the memory layout in `linker/firmware.ld`,
 and the offline ELF/map and image checks in `scripts/`. There is no second
