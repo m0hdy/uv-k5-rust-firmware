@@ -6,21 +6,10 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "frequencies.h"
 #include "misc.h"
 
 #define SETTINGS_H
-
-enum TxLockModes_t {
-	F_LOCK_DEF,
-	F_LOCK_FCC,
-	F_LOCK_CE,
-	F_LOCK_GB,
-	F_LOCK_430,
-	F_LOCK_438,
-	F_LOCK_ALL,
-	F_LOCK_NONE,
-	F_LOCK_LEN
-};
 
 typedef struct {
 	uint8_t CHAN_1_CALL;
@@ -72,6 +61,7 @@ typedef struct {
 } EEPROM_Config_t;
 
 extern EEPROM_Config_t gEeprom;
+extern ChannelAttributes_t gMR_ChannelAttributes[207];
 extern bool gSetting_350TX;
 extern bool gSetting_200TX;
 extern bool gSetting_500TX;
@@ -87,5 +77,6 @@ extern enum BacklightOnRxTx_t gSetting_backlight_on_tx_rx;
 
 void EEPROM_WriteBuffer(uint16_t address, const void *data);
 void SETTINGS_SaveSettings(void);
+bool RADIO_CheckValidChannel(uint16_t channel, bool checkScanList, uint8_t scanList);
 
 #endif

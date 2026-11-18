@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "dcs.h"
@@ -6,6 +7,7 @@
 #include "settings_capture_support.h"
 
 EEPROM_Config_t gEeprom;
+ChannelAttributes_t gMR_ChannelAttributes[207];
 bool gSetting_350TX;
 bool gSetting_200TX;
 bool gSetting_500TX;
@@ -20,23 +22,67 @@ bool gSetting_AM_fix;
 enum BacklightOnRxTx_t gSetting_backlight_on_tx_rx;
 
 static uint8_t eeprom[UINT16_MAX + 1u];
-static uint16_t write_addresses[16];
 static size_t write_count;
+static const uint16_t expected_write_addresses[] = {
+	0x0E70, 0x0E78, 0x0E90, 0x0E98, 0x0EA0,
+	0x0EA8, 0x0ED0, 0x0ED8, 0x0F18, 0x0F40
+};
 
 void EEPROM_WriteBuffer(uint16_t address, const void *data)
 {
+	if (write_count >= sizeof(expected_write_addresses) / sizeof(expected_write_addresses[0])) {
+		fprintf(stderr, "unexpected EEPROM write count %zu at address 0x%04x\n", write_count + 1, address);
+		exit(EXIT_FAILURE);
+	}
+	if (address != expected_write_addresses[write_count]) {
+		fprintf(stderr, "unexpected EEPROM write %zu at address 0x%04x (expected 0x%04x)\n",
+			write_count + 1, address, expected_write_addresses[write_count]);
+		exit(EXIT_FAILURE);
+	}
+	if (address > sizeof(eeprom) - 8u) {
+		fprintf(stderr, "EEPROM write at address 0x%04x exceeds mock storage\n", address);
+		exit(EXIT_FAILURE);
+	}
+	if (data == NULL) {
+		fprintf(stderr, "EEPROM write at address 0x%04x has null data\n", address);
+		exit(EXIT_FAILURE);
+	}
 	memcpy(&eeprom[address], data, 8);
-	write_addresses[write_count++] = address;
+	write_count++;
 }
 
 static void emit_settings(const char *profile)
 {
+	if (write_count != sizeof(expected_write_addresses) / sizeof(expected_write_addresses[0])) {
+		fprintf(stderr, "unexpected EEPROM write count %zu (expected %zu)\n",
+			write_count, sizeof(expected_write_addresses) / sizeof(expected_write_addresses[0]));
+		exit(EXIT_FAILURE);
+	}
 	for (size_t i = 0; i < write_count; i++) {
-		printf("settings\t%s\t0x%04x\t", profile, write_addresses[i]);
+		printf("settings\t%s\t0x%04x\t", profile, expected_write_addresses[i]);
 		for (size_t j = 0; j < 8; j++)
-			printf("%02x", eeprom[write_addresses[i] + j]);
+			printf("%02x", eeprom[expected_write_addresses[i] + j]);
 		putchar('\n');
 	}
+}
+
+static void capture_channel(const char *name, uint16_t channel, uint8_t band,
+	bool scanlist1, bool scanlist2, bool checkScanList, uint8_t scanList,
+	uint8_t priorityCh1, uint8_t priorityCh2)
+{
+	ChannelAttributes_t *attributes = &gMR_ChannelAttributes[channel <= 199 ? channel : 0];
+	attributes->__val = 0;
+	attributes->band = band;
+	attributes->scanlist1 = scanlist1;
+	attributes->scanlist2 = scanlist2;
+	gEeprom.SCANLIST_PRIORITY_CH1[0] = priorityCh1;
+	gEeprom.SCANLIST_PRIORITY_CH2[0] = priorityCh2;
+	gEeprom.SCANLIST_PRIORITY_CH1[1] = priorityCh1;
+	gEeprom.SCANLIST_PRIORITY_CH2[1] = priorityCh2;
+	printf("channel\t%s\tchannel=%u,band=%u,scanlist1=%u,scanlist2=%u,check=%u,list=%u,priority1=%u,priority2=%u\t%d\n",
+		name, channel, band, scanlist1, scanlist2, checkScanList, scanList,
+		priorityCh1, priorityCh2,
+		RADIO_CheckValidChannel(channel, checkScanList, scanList));
 }
 
 static void capture_settings(const char *profile, bool boundary)
@@ -118,6 +164,19 @@ static void emit_value(const char *category, const char *name, const char *input
 
 int main(void)
 {
+	capture_channel("first_memory_valid", 0, BAND1_50MHz, false, false, false, 0, 0, 0);
+	capture_channel("last_memory_valid", 199, BAND7_470MHz, false, false, false, 0, 0, 0);
+	capture_channel("first_frequency_invalid", 200, BAND1_50MHz, false, false, false, 0, 0, 0);
+	capture_channel("last_noaa_invalid", 216, BAND1_50MHz, false, false, false, 0, 0, 0);
+	capture_channel("uint16_max_invalid", UINT16_MAX, BAND1_50MHz, false, false, false, 0, 0, 0);
+	capture_channel("invalid_band", 199, 15, false, false, false, 0, 0, 0);
+	capture_channel("not_in_scanlist", 1, BAND1_50MHz, false, false, true, 0, 10, 11);
+	capture_channel("scanlist_member", 2, BAND1_50MHz, true, false, true, 0, 10, 11);
+	capture_channel("priority_channel_excluded", 3, BAND1_50MHz, true, false, true, 0, 3, 11);
+	capture_channel("unsupported_scanlist_ignored", 4, BAND1_50MHz, false, false, true, 2, 10, 11);
+	capture_channel("scanlist2_member", 5, BAND1_50MHz, false, true, true, 1, 10, 11);
+	capture_channel("scanlist2_priority_excluded", 6, BAND1_50MHz, false, true, true, 1, 10, 6);
+
 	emit_value("ctcss", "first_tone", "tenths_hz=670", DCS_GetCtcssCode(670));
 	emit_value("ctcss", "last_tone", "tenths_hz=2541", DCS_GetCtcssCode(2541));
 	emit_value("ctcss", "below_range", "tenths_hz=-1", DCS_GetCtcssCode(-1));

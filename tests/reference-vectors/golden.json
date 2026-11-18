@@ -2,6 +2,78 @@
   "reference_commit": "7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3",
   "cases": [
     {
+      "category": "channel",
+      "name": "first_memory_valid",
+      "input": "channel=0,band=0,scanlist1=0,scanlist2=0,check=0,list=0,priority1=0,priority2=0",
+      "expected": 1
+    },
+    {
+      "category": "channel",
+      "name": "last_memory_valid",
+      "input": "channel=199,band=6,scanlist1=0,scanlist2=0,check=0,list=0,priority1=0,priority2=0",
+      "expected": 1
+    },
+    {
+      "category": "channel",
+      "name": "first_frequency_invalid",
+      "input": "channel=200,band=0,scanlist1=0,scanlist2=0,check=0,list=0,priority1=0,priority2=0",
+      "expected": 0
+    },
+    {
+      "category": "channel",
+      "name": "last_noaa_invalid",
+      "input": "channel=216,band=0,scanlist1=0,scanlist2=0,check=0,list=0,priority1=0,priority2=0",
+      "expected": 0
+    },
+    {
+      "category": "channel",
+      "name": "uint16_max_invalid",
+      "input": "channel=65535,band=0,scanlist1=0,scanlist2=0,check=0,list=0,priority1=0,priority2=0",
+      "expected": 0
+    },
+    {
+      "category": "channel",
+      "name": "invalid_band",
+      "input": "channel=199,band=15,scanlist1=0,scanlist2=0,check=0,list=0,priority1=0,priority2=0",
+      "expected": 0
+    },
+    {
+      "category": "channel",
+      "name": "not_in_scanlist",
+      "input": "channel=1,band=0,scanlist1=0,scanlist2=0,check=1,list=0,priority1=10,priority2=11",
+      "expected": 0
+    },
+    {
+      "category": "channel",
+      "name": "scanlist_member",
+      "input": "channel=2,band=0,scanlist1=1,scanlist2=0,check=1,list=0,priority1=10,priority2=11",
+      "expected": 1
+    },
+    {
+      "category": "channel",
+      "name": "priority_channel_excluded",
+      "input": "channel=3,band=0,scanlist1=1,scanlist2=0,check=1,list=0,priority1=3,priority2=11",
+      "expected": 0
+    },
+    {
+      "category": "channel",
+      "name": "unsupported_scanlist_ignored",
+      "input": "channel=4,band=0,scanlist1=0,scanlist2=0,check=1,list=2,priority1=10,priority2=11",
+      "expected": 1
+    },
+    {
+      "category": "channel",
+      "name": "scanlist2_member",
+      "input": "channel=5,band=0,scanlist1=0,scanlist2=1,check=1,list=1,priority1=10,priority2=11",
+      "expected": 1
+    },
+    {
+      "category": "channel",
+      "name": "scanlist2_priority_excluded",
+      "input": "channel=6,band=0,scanlist1=0,scanlist2=1,check=1,list=1,priority1=10,priority2=6",
+      "expected": 0
+    },
+    {
       "category": "ctcss",
       "name": "first_tone",
       "input": "tenths_hz=670",

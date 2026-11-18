@@ -32,6 +32,9 @@ The pinned C repository's `README.md` recommends `arm-none-eabi-gcc` 10.3.1; its
 
 This inventory records the pinned reference examples inspected for provenance. It does not approve any material for import. Before any reference-derived code, table, asset, generated data, or test vector is added, record its exact source location and revision, applicable license and notices, and a reuse decision here. Independently written material should be identified as such; uncertain provenance or obligations mean the material is not approved for reuse.
 
+The golden-output fixture and its source/tool details are inventoried in
+[`reference-vector-provenance.md`](reference-vector-provenance.md).
+
 | Material | Source location and revision | License and notices observed | Current reuse decision |
 | --- | --- | --- | --- |
 | Rust implementation code | The Rust implementation in this repository; list each source path and any source revision if derived from upstream material. | For independent work, record its authorship; for derived work, inspect file-level notices and applicable license terms. | No imported material is approved by this document. Record independently written code as such; otherwise hold pending review. |

@@ -90,11 +90,20 @@ def run_capture(reference):
     compiler = os.environ.get("CC", "cc")
     source = (reference / "settings.c").read_text(encoding="utf-8")
     settings_function = extract_function(source, "void SETTINGS_SaveSettings(void)")
+    settings_header = (reference / "settings.h").read_text(encoding="utf-8")
+    tx_lock_enum = extract_function(settings_header, "enum TxLockModes_t") + ";"
+    radio_source = (reference / "radio.c").read_text(encoding="utf-8")
+    channel_function = extract_function(
+        radio_source, "bool RADIO_CheckValidChannel("
+    )
     with tempfile.TemporaryDirectory(prefix="uvk5-reference-vectors-") as directory:
         directory = Path(directory)
         settings_source = directory / "settings_capture.c"
+        lock_modes_header = directory / "lock_modes.h"
+        lock_modes_header.write_text(tx_lock_enum + "\n", encoding="utf-8")
         settings_source.write_text(
-            f'#include "{SUPPORT}"\n{settings_function}\n', encoding="utf-8"
+            f'#include "{SUPPORT}"\n{settings_function}\n{channel_function}\n',
+            encoding="utf-8",
         )
         binary = directory / "capture"
         command = [
@@ -106,6 +115,8 @@ def run_capture(reference):
             str(SUPPORT.parent),
             "-include",
             str(SUPPORT),
+            "-include",
+            str(lock_modes_header),
             *[f"-D{feature}" for feature in FEATURES],
             str(DRIVER),
             str(settings_source),
