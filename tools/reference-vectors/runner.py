@@ -99,15 +99,46 @@ def _require_object(value, fields, context):
     return value
 
 
-def _validate_scalar_input(value, context):
+def _validate_scalar_input(value, category, context):
     if not isinstance(value, str) or not value:
         raise VectorFormatError(f"{context} must be a non-empty key=value string")
-    keys = set()
+    assignments = {}
     for assignment in value.split(","):
         key, separator, item = assignment.partition("=")
-        if not separator or not key or not item or key in keys:
+        if not separator or not key or not item or key in assignments:
             raise VectorFormatError(f"{context} contains an invalid assignment {assignment!r}")
-        keys.add(key)
+        assignments[key] = item
+
+    schemas = {
+        Category.CHANNEL: (
+            {
+                "channel", "band", "scanlist1", "scanlist2",
+                "check", "list", "priority1", "priority2",
+            },
+        ),
+        Category.CTCSS: ({"tenths_hz"},),
+        Category.DCS: ({"type", "option"}, {"word"}),
+        Category.FREQUENCY: ({"ticks"}, {"lock", "ticks"}, {"ticks", "step"}),
+    }
+    allowed_schemas = schemas[category]
+    if set(assignments) not in allowed_schemas:
+        expected = " or ".join(", ".join(sorted(schema)) for schema in allowed_schemas)
+        raise VectorFormatError(
+            f"{context} has keys for the wrong {category.value} operation; expected {expected}"
+        )
+
+    for key, item in assignments.items():
+        if key == "lock":
+            if item not in {"default", "fcc", "none", "all"}:
+                raise VectorFormatError(f"{context}.{key} must be a supported lock mode")
+        elif not re.fullmatch(r"-?[0-9]+", item):
+            raise VectorFormatError(f"{context}.{key} must be an integer")
+    if category is Category.DCS and "type" in assignments:
+        if assignments["type"] not in {"2", "3"}:
+            raise VectorFormatError(f"{context}.type must be 2 or 3")
+    if category is Category.FREQUENCY and "step" in assignments:
+        if int(assignments["step"]) <= 0:
+            raise VectorFormatError(f"{context}.step must be a positive integer")
 
 
 def _validate_settings_case(input_value, expected, context):
@@ -188,7 +219,7 @@ def parse_fixture(value: object) -> VectorFixture:
 
         input_value, expected = item["input"], item["expected"]
         if category in SCALAR_CATEGORIES:
-            _validate_scalar_input(input_value, f"{context}.input")
+            _validate_scalar_input(input_value, category, f"{context}.input")
             if type(expected) is not int:
                 raise VectorFormatError(f"{context}.expected must be an integer")
         elif category is Category.SETTINGS:
@@ -227,7 +258,7 @@ def run_vectors(
             unported.setdefault(case.category, []).append(case.vector_id)
             continue
         actual = evaluator(case)
-        if type(actual) is type(case.expected) and actual == case.expected:
+        if _type_sensitive_equal(actual, case.expected):
             matched += 1
         else:
             mismatches.append(Mismatch(case.vector_id, case.expected, actual))
@@ -237,6 +268,27 @@ def run_vectors(
         tuple(mismatches),
         {category: tuple(ids) for category, ids in unported.items()},
     )
+
+
+def _type_sensitive_equal(actual, expected):
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return len(actual) == len(expected) and all(
+            any(
+                type(actual_key) is type(expected_key)
+                and actual_key == expected_key
+                and _type_sensitive_equal(actual_value, expected_value)
+                for actual_key, actual_value in actual.items()
+            )
+            for expected_key, expected_value in expected.items()
+        )
+    if isinstance(expected, list):
+        return len(actual) == len(expected) and all(
+            _type_sensitive_equal(actual_item, expected_item)
+            for actual_item, expected_item in zip(actual, expected)
+        )
+    return actual == expected
 
 
 def _format_value(value: JsonValue) -> str:

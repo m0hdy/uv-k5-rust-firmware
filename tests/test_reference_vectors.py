@@ -34,6 +34,30 @@ class ReferenceVectorRunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(VectorFormatError, "invalid assignment"):
             parse_fixture(data)
 
+    def test_scalar_assignments_must_match_domain_and_operation(self):
+        data = json.loads((ROOT / "tests/reference-vectors/golden.json").read_text())
+        data["cases"][0]["input"] = "tenths_hz=oops"
+        with self.assertRaisesRegex(VectorFormatError, "wrong channel operation"):
+            parse_fixture(data)
+
+    def test_nested_numeric_type_mismatch_is_not_a_match(self):
+        checksum_case = next(
+            case for case in self.fixture.cases
+            if case.category is Category.FIRMWARE_CONTAINER_CHECKSUM
+        )
+        report = run_vectors(
+            self.fixture,
+            {
+                Category.FIRMWARE_CONTAINER_CHECKSUM: lambda case: {
+                    **case.expected,
+                    "packed_length": float(case.expected["packed_length"]),
+                }
+            },
+        )
+        self.assertEqual(len(report.mismatches), 1)
+        self.assertEqual(report.mismatches[0].vector_id, checksum_case.vector_id)
+        self.assertFalse(report.complete)
+
     def test_invalid_settings_write_is_rejected(self):
         data = json.loads((ROOT / "tests/reference-vectors/golden.json").read_text())
         settings_case = next(case for case in data["cases"] if case["category"] == "settings")
