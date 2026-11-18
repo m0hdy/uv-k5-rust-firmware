@@ -2,12 +2,14 @@
 .cpu cortex-m0
 .thumb
 
+.equ .Linitial_sp, 0x20003FF0
+
 .section .vector_table,"a",%progbits
 .balign 4
 .global __vector_table
 .type __vector_table,%object
 __vector_table:
-    .word 0x20003FF0
+    .word .Linitial_sp
     .word Reset_Handler
     .word Default_Handler
     .word Default_Handler
@@ -34,7 +36,7 @@ __vector_table:
 .type Reset_Handler,%function
 .thumb_func
 Reset_Handler:
-    ldr r0, =0x20003FF0
+    ldr r0, =.Linitial_sp
     mov sp, r0
     ldr r0, =__data_load
     ldr r1, =__data_start
