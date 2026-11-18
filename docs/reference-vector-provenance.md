@@ -20,7 +20,7 @@ artifacts are deleted after capture.
 | --- | --- | --- |
 | CTCSS and DCS | [`dcs.c`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/dcs.c#L18-L113): option arrays and `DCS_GetGolayCodeWord`, `DCS_GetCdcssCode`, and `DCS_GetCtcssCode`. | First/last tone, out-of-range tones, first/last DCS option, reverse word, decoded word and invalid word. Exact integer inputs and results are in the fixture. |
 | Receive/transmit range and tuning | [`frequencies.c`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/frequencies.c#L19-L239): band tables, rounding and frequency checks. | Wide-RX chip bounds and gap, TX lock-mode boundaries, and normal/8.33-kHz rounding cases. Frequency values use the C source's 10-Hz ticks. `ENABLE_WIDE_RX` is enabled. |
-| Channel validation | [`radio.c`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/radio.c#L59-L80): `RADIO_CheckValidChannel`; [`misc.h`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/misc.h#L39-L52): channel ranges. | First/last memory, first frequency, last NOAA, uint16 maximum, invalid band, scan-list 1/2 membership, both priority exclusions, and unsupported scan-list index. Inputs/state are independently assigned by `capture_channel()` in `capture.c`. |
+| Channel validation | [`radio.c`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/radio.c#L59-L80): `RADIO_CheckValidChannel`; [`misc.h`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/misc.h#L39-L52): channel ranges. The Rust bridge calls [`channel_validity::is_valid_channel`](../src/channel_validity.rs). | First/last memory, first frequency, last NOAA, uint16 maximum, invalid band, scan-list 1/2 membership, both priority exclusions, and unsupported scan-list index. Inputs/state are independently assigned by `capture_channel()` in `capture.c`. |
 | EEPROM settings encoding | [`settings.c`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/settings.c#L470-L595): `SETTINGS_SaveSettings`. | Standard and boundary profiles capture the ten 8-byte write blocks at their EEPROM offsets. A host mock records the writes; no physical EEPROM is accessed. Feature defines follow the pinned Makefile defaults for `ENABLE_WIDE_RX`, `ENABLE_VOX`, `ENABLE_DTMF_CALLING`, `ENABLE_RSSI_BAR`, `ENABLE_AUDIO_BAR`, and `ENABLE_AM_FIX`, as defined in the [pinned Makefile](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/Makefile#L12-L37). Input assignments are in [`capture.c`](../tools/reference-vectors/capture.c). |
 | Firmware container checksum | [`fw-pack.py`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/fw-pack.py#L20-L38). | The pinned script receives a 12,288-byte `00..ff` repeating payload, author `Golden`, version `1.0`; expected raw and packed SHA-256, packed length, and appended CRC bytes are recorded. This is the updater-container CRC, not a settings checksum. |
 
@@ -73,20 +73,19 @@ reported as unported and are never counted as covered.
 [`tools/reference-vectors/compare_rust.py`](../tools/reference-vectors/compare_rust.py)
 passes compatible fixture inputs to the host-only
 [`examples/reference_vectors.rs`](../examples/reference_vectors.rs) bridge.
-The bridge calls the production library's settings encoder, frequency checks
-and rounding, and CTCSS/DCS functions; the typed runner compares those results
-against the fixture. The command builds/runs Cargo with `--offline`, does not
-invoke the optional C reference, reports every executed and unexecuted case,
-and exits nonzero while any cases remain unported:
+The bridge calls the production library's settings encoder, channel-validity
+predicate, frequency checks and rounding, and CTCSS/DCS functions; the typed
+runner compares those results against the fixture. The command builds/runs
+Cargo with `--offline`, does not invoke the optional C reference, reports
+every executed and unexecuted case, and exits nonzero while any cases remain
+unported:
 
 ```sh
 python3 tools/reference-vectors/compare_rust.py
 ```
 
-Host coverage is 26 of 39 vectors: 15 frequency, 5 DCS, 4 CTCSS, and 2 settings
-profiles. The 12 channel vectors remain unsupported because the library does
-not expose an equivalent to `RADIO_CheckValidChannel`; the separate scan
-decision model is not a substitute. The single
+Host coverage is 38 of 39 vectors: 12 channel, 15 frequency, 5 DCS, 4 CTCSS,
+and 2 settings profiles. The single
 `firmware_container_checksum/byte_ramp_12k` vector remains unsupported because
 the Rust library has no updater-container packing or checksum API. Its payload,
 metadata, packed-image hash, and appended CRC concern the updater container,
@@ -126,7 +125,7 @@ capture used GCC 13.3.0 and Clang 18.1.3, Python 3.12.3, and `crcmod` 1.7.
 Both compilers reproduced the same fixture. These host tools are for reference
 capture only and are not Rust firmware build prerequisites.
 
-The host bridge was run with the following command and evidence:
+The host bridge and suites were run with the following command and evidence:
 
 ```sh
 rustc --version
@@ -138,13 +137,13 @@ python3 -m unittest discover -s tests -v
 ```
 
 The host reported `rustc 1.99.1 (58cf8f9c3 2026-10-13)`, `cargo 1.99.1
-(5f94df478 2026-08-27)`, and `Python 3.12.3`. The bridge reported `26/39
-matched (26 executed)`, with no mismatches; it listed the 12 channel cases and
-one firmware-container checksum case as unported and returned status 1 because
-the fixture is not fully covered. The Rust suite passed 57 tests; the Python
-suite passed 45 tests with two existing ARM-binutils-dependent tests skipped.
-The bridge used Cargo's offline mode. This is host-library evidence only, not
-a device or firmware-image claim.
+(5f94df478 2026-08-27)`, and `Python 3.12.3`. The bridge reported `38/39
+matched (38 executed)`, with no mismatches; only the firmware-container
+checksum case remains unsupported, so the command returns status 1 because the
+fixture is not fully covered. The Rust suite passed 58 tests; the Python suite
+passed 46 tests with two existing ARM-binutils-dependent tests skipped. The
+bridge used Cargo's offline mode. This is host-library evidence only, not a
+device or firmware-image claim.
 
 ## Evidence and limits
 

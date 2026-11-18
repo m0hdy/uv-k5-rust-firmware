@@ -7,6 +7,7 @@ from runner import Category, ROOT, VectorFormatError, format_report, load_fixtur
 
 
 SUPPORTED_CATEGORIES = {
+    Category.CHANNEL,
     Category.CTCSS,
     Category.DCS,
     Category.FREQUENCY,
@@ -22,10 +23,6 @@ PINNED_FEATURE_DEFINES = [
 ]
 SETTINGS_VALUE_DESCRIPTION = "see capture_settings() in tools/reference-vectors/capture.c"
 UNSUPPORTED_REASONS = {
-    Category.CHANNEL: (
-        "the Rust library exposes no equivalent to RADIO_CheckValidChannel; "
-        "scan-decision behavior is not a substitute"
-    ),
     Category.FIRMWARE_CONTAINER_CHECKSUM: (
         "the Rust library has no updater-container packer/checksum API; the fixture "
         "covers a packed image and appended CRC, not an EEPROM/settings checksum"
