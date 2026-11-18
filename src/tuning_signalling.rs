@@ -2,8 +2,8 @@
  * Copyright 2023 Dual Tachyon
  * https://github.com/DualTachyon
  *
- * This file contains portions derived from frequencies.c, dcs.c, and radio.c
- * in the pinned uv-k5-firmware-custom reference at
+ * This file is modified from portions of frequencies.c, dcs.c, and radio.c in
+ * the pinned uv-k5-firmware-custom reference at
  * 7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
