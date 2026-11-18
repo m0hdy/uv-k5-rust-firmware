@@ -2,6 +2,4 @@
 rustflags = [
     "-C",
     "link-arg=-Tlinker/firmware.ld",
-    "-C",
-    "link-arg=--entry=Reset_Handler",
 ]

@@ -15,13 +15,13 @@ from check_startup_layout import (  # noqa: E402
     INITIAL_SP,
     RAM_END,
     RAM_START,
+    SHF_ALLOC,
     STACK_SIZE,
     STACK_START,
     StartupError,
     validate,
 )
 
-ROOT = Path(__file__).resolve().parents[1]
 VECTOR_SIZE = 48 * 4
 FLASH_FILE_SIZE = 0x100
 
@@ -31,34 +31,49 @@ def make_elf(
     entry=0xC1,
     initial_sp=INITIAL_SP,
     reset_vector=0xC1,
+    reset_address=0xC1,
     stack_address=STACK_START,
+    data_address=RAM_START,
+    bss_address=None,
+    data_size=4,
+    bss_size=4,
+    data_flags=3,
+    bss_flags=3,
     text_address=0xC0,
     flash_memory_size=FLASH_FILE_SIZE,
 ):
     header_size = ELF32_HEADER.size
     program_offset = header_size
     program_size = ELF32_PROGRAM_HEADER.size
-    data_offset = header_size + 2 * program_size
+    data_offset = header_size + 3 * program_size
     vector = bytearray(b"\x01\x01\x00\x00" * (VECTOR_SIZE // 4))
     struct.pack_into("<II", vector, 0, initial_sp, reset_vector)
     flash = bytearray(b"\0" * FLASH_FILE_SIZE)
     flash[:VECTOR_SIZE] = vector
-    ram_offset = data_offset + len(flash)
+    data_load_offset = data_offset + len(flash)
+    initialized_data = b"\xa5" * data_size
+    stack_offset = data_load_offset + len(initialized_data)
+    if bss_address is None:
+        bss_address = RAM_START + data_size
     program_headers = (
         ELF32_PROGRAM_HEADER.pack(
             1, data_offset, 0, 0, len(flash), flash_memory_size, 5, 4
         )
         + ELF32_PROGRAM_HEADER.pack(
-            1, ram_offset, RAM_START, RAM_START, 0, RAM_END - RAM_START, 6, 4
+            1, data_load_offset, RAM_START, FLASH_FILE_SIZE, data_size,
+            data_size + bss_size, 6, 4,
+        )
+        + ELF32_PROGRAM_HEADER.pack(
+            1, stack_offset, STACK_START, STACK_START, 0, STACK_SIZE, 6, 4
         )
     )
-    payload = bytes(flash)
+    payload = bytes(flash) + initialized_data
     section_names = b"\0.vector_table\0.text\0.data\0.bss\0.stack\0.shstrtab\0.strtab\0.symtab\0"
     symbol_names = b"\0Reset_Handler\0"
     names_offset = data_offset + len(payload)
     symbols_offset = names_offset + len(section_names) + len(symbol_names)
     symbol_table = ELF32_SYMBOL.pack(0, 0, 0, 0, 0, 0) + ELF32_SYMBOL.pack(
-        1, 0xC1, 42, 0x12, 0, 2
+        1, reset_address, 42, 0x12, 0, 2
     )
     section_offset = symbols_offset + len(symbol_table)
     section_name_offsets = {
@@ -78,13 +93,15 @@ def make_elf(
             0x40, 0, 0, 4, 0,
         ),
         ELF32_SECTION_HEADER.pack(
-            section_name_offsets[".data"], 1, 3, RAM_START, ram_offset, 0, 0, 0, 4, 0,
+            section_name_offsets[".data"], 1, data_flags, data_address, data_load_offset,
+            data_size, 0, 0, 4, 0,
         ),
         ELF32_SECTION_HEADER.pack(
-            section_name_offsets[".bss"], 8, 3, RAM_START, ram_offset, 0, 0, 0, 4, 0,
+            section_name_offsets[".bss"], 8, bss_flags, bss_address, stack_offset,
+            bss_size, 0, 0, 4, 0,
         ),
         ELF32_SECTION_HEADER.pack(
-            section_name_offsets[".stack"], 8, 3, stack_address, ram_offset,
+            section_name_offsets[".stack"], 8, 3, stack_address, stack_offset,
             STACK_SIZE, 0, 0, 8, 0,
         ),
         ELF32_SECTION_HEADER.pack(
@@ -103,7 +120,7 @@ def make_elf(
     ident = b"\x7fELF" + bytes([1, 1, 1]) + bytes(9)
     header = ELF32_HEADER.pack(
         ident, 2, 40, 1, entry, program_offset, section_offset, 0,
-        header_size, program_size, 2, ELF32_SECTION_HEADER.size, len(sections), 6,
+        header_size, program_size, 3, ELF32_SECTION_HEADER.size, len(sections), 6,
     )
     return (
         header + program_headers + payload + section_names + symbol_names
@@ -118,6 +135,7 @@ def make_map(stack_end=RAM_END):
             "      c0       c0        0     1 __vector_table_end = .",
             f"{STACK_START:08x} {STACK_START:08x} 0 1 __stack_start = .",
             f"{stack_end:08x} {stack_end:08x} 0 1 __stack_end = .",
+            f"{RAM_END:08x} {RAM_END:08x} 0 1 __stack_top = .",
         )
     )
 
@@ -149,24 +167,72 @@ class StartupLayoutTests(unittest.TestCase):
     def test_reset_vector_must_be_thumb_reset_handler(self):
         self.check_fails("reset vector is not the Thumb", reset_vector=0xC0)
 
+    def test_reset_handler_must_be_in_executable_text(self):
+        self.check_fails(
+            "Reset_Handler must reside",
+            entry=0x20100001,
+            reset_vector=0x20100001,
+            reset_address=0x20100001,
+        )
+
     def test_initial_stack_pointer_must_match_reference(self):
         self.check_fails("initial stack pointer", initial_sp=RAM_END)
 
     def test_stack_reservation_must_fit_the_ram_top(self):
         self.check_fails("stack section must reserve", stack_address=STACK_START - 4)
 
+    def test_data_must_reside_in_static_ram(self):
+        self.check_fails(
+            ".data must reside in static RAM",
+            data_address=0,
+        )
+
+    def test_bss_must_reside_in_static_ram(self):
+        self.check_fails(
+            ".bss must reside in static RAM",
+            bss_address=0,
+        )
+
+    def test_initialized_data_must_be_writable(self):
+        self.check_fails(
+            ".data must be writable",
+            data_size=1,
+            data_flags=SHF_ALLOC,
+        )
+
     def test_allocated_text_must_fit_application_flash(self):
-        self.check_fails("allocated section .text", text_address=FLASH_END)
+        self.check_fails(
+            "allocated section .text",
+            entry=FLASH_END + 1,
+            reset_vector=FLASH_END + 1,
+            reset_address=FLASH_END + 1,
+            text_address=FLASH_END,
+        )
 
     def test_load_segment_must_fit_application_flash(self):
-        self.check_fails("execution range is outside flash and RAM",
-                         flash_memory_size=FLASH_END + 1)
+        self.check_fails(
+            "execution range is outside flash and RAM",
+            flash_memory_size=FLASH_END + 1,
+        )
 
     def test_map_stack_end_must_match_ram_end(self):
         self.elf_path.write_bytes(make_elf())
         self.map_path.write_text(make_map(stack_end=RAM_END - 4), encoding="utf-8")
         with self.assertRaisesRegex(StartupError, "invalid or missing __stack_end"):
             validate(self.elf_path, self.map_path)
+
+    def test_map_stack_top_must_match_ram_end(self):
+        self.elf_path.write_bytes(make_elf())
+        self.map_path.write_text(
+            make_map().replace(
+                "20004000 20004000 0 1 __stack_top",
+                "20003800 20003800 0 1 __stack_top",
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(StartupError, "invalid or missing __stack_top"):
+            validate(self.elf_path, self.map_path)
+
 
 if __name__ == "__main__":
     unittest.main()

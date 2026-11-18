@@ -120,7 +120,7 @@ def _parse_elf(path: Path) -> tuple[dict, dict, list, int]:
             continue
         if file_size > memory_size or file_offset + file_size > len(data):
             raise StartupError(f"PT_LOAD[{index}] is malformed or truncated")
-        segments.append((virtual, physical, file_size, memory_size))
+        segments.append((virtual, physical, file_offset, file_size, memory_size))
     if not segments:
         raise StartupError("ELF has no PT_LOAD segments")
     return sections, symbols, segments, entry
@@ -133,6 +133,7 @@ def _check_map(path: Path) -> None:
         "__vector_table_end": FLASH_START + VECTOR_SIZE,
         "__stack_start": STACK_START,
         "__stack_end": RAM_END,
+        "__stack_top": RAM_END,
     }
     for name, expected in expected_symbols.items():
         match = re.search(
@@ -168,12 +169,32 @@ def validate(elf_path: Path, map_path: Path) -> None:
     reset_address = reset_symbol[0]
     if reset_symbol[2] & 0xF != 2 or reset_symbol[3] == 0:
         raise StartupError("Reset_Handler must be a defined function symbol")
+    text = sections[".text"]
+    if (
+        text[2] & (SHF_ALLOC | SHF_EXECINSTR) != (SHF_ALLOC | SHF_EXECINSTR)
+        or not (text[3] <= (reset_address & ~1) < text[3] + text[5])
+    ):
+        raise StartupError("Reset_Handler must reside in the allocated executable section")
     if stack_pointer != INITIAL_SP:
         raise StartupError("initial stack pointer does not match the target contract")
     if reset_vector & 1 == 0 or (reset_vector & ~1) != (reset_address & ~1):
         raise StartupError("reset vector is not the Thumb Reset_Handler address")
     if entry != reset_address:
         raise StartupError("ELF entry point is not Reset_Handler")
+    data_section = sections[".data"]
+    bss_section = sections[".bss"]
+    if (
+        data_section[1] != SHT_PROGBITS
+        or data_section[2] & SHF_ALLOC == 0
+        or bss_section[1] != SHT_NOBITS
+        or bss_section[2] & (SHF_ALLOC | SHF_WRITE) != (SHF_ALLOC | SHF_WRITE)
+    ):
+        raise StartupError(".data and .bss must have the expected RAM section types")
+    for name, section in ((".data", data_section), (".bss", bss_section)):
+        if not (RAM_START <= section[3] <= section[3] + section[5] <= STACK_START):
+            raise StartupError(f"{name} must reside in static RAM below the reserved stack")
+    if data_section[5] and data_section[2] & SHF_WRITE == 0:
+        raise StartupError(".data must be writable")
 
     for name, section in sections.items():
         if section[2] & SHF_ALLOC and section[5] and name != ".stack":
@@ -193,7 +214,7 @@ def validate(elf_path: Path, map_path: Path) -> None:
     ):
         raise StartupError("stack section must reserve the exact writable RAM-top range")
 
-    for index, (virtual, physical, file_size, memory_size) in enumerate(segments):
+    for index, (virtual, physical, file_offset, file_size, memory_size) in enumerate(segments):
         if memory_size:
             if not (
                 FLASH_START <= virtual <= virtual + memory_size <= FLASH_END
@@ -205,6 +226,27 @@ def validate(elf_path: Path, map_path: Path) -> None:
                 raise StartupError(f"PT_LOAD[{index}] load range is outside application flash")
             if virtual < FLASH_END and physical != virtual:
                 raise StartupError(f"PT_LOAD[{index}] flash VMA and LMA do not match")
+    for name, section, file_backed in (
+        (".data", data_section, True),
+        (".bss", bss_section, False),
+    ):
+        address, file_offset, size = section[3], section[4], section[5]
+        if size == 0:
+            continue
+        if not any(
+            0 <= address - virtual
+            and address - virtual + size <= memory_size
+            and (
+                not file_backed
+                or (
+                    address - virtual + size <= segment_file_size
+                    and file_offset == segment_file_offset + address - virtual
+                )
+            )
+            for virtual, _, segment_file_offset, segment_file_size, memory_size in segments
+        ):
+            kind = "file-backed" if file_backed else "RAM"
+            raise StartupError(f"{name} is not covered by a {kind} PT_LOAD segment")
     _check_map(map_path)
 
 

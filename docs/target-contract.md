@@ -117,12 +117,13 @@ migration.
 The Rust bootstrap preserves the reference's `0x20003FF0` vector SP rather
 than replacing it with the linker top. Its linker map defines RAM as
 `0x20000000`–`0x20003FFF` and reserves `0x20003800`–`0x20003FFF` for the Rust
-stack budget; `__stack_top` is `0x20004000`. The 16-byte difference remains
-unexplained. The reset routine copies `.data`, clears `.bss`, then calls the
-minimal Rust entry. The 48-word table includes the 16 core vectors and 32
-peripheral slots in the order above. These are source/layout facts only: no
-bootloader handoff, vector relocation, clocks, peripherals, or device behavior
-is assumed or established.
+stack budget; the linker represents those as separate 14 KiB static-RAM and
+2 KiB stack regions, with `__stack_top` at `0x20004000`. The 16-byte SP
+difference remains unexplained. The reset routine copies `.data`, clears
+`.bss`, then calls the minimal Rust entry. The 48-word table includes the 16
+core vectors and 32 peripheral slots in the order above. These are
+source/layout facts only: no bootloader handoff, vector relocation, clocks,
+peripherals, or device behavior is assumed or established.
 
 **Not established:** whether the on-device boot ROM or updater always transfers
 control to address zero, checks an image header or CRC, relocates vectors,
@@ -354,9 +355,10 @@ Target builds and startup-layout checks validate the ELF entry, reset vector,
 initial SP, allocated sections, memory ranges, and linker map. Host tests check
 positive and negative startup-layout fixtures and the memory-budget gate. CI
 records hashes for the target ELF and linker map and retains those files for
-review; it does not produce raw or packed images. No device was flashed, and no
-per-device results are available. Structural checks do not establish bootloader
-acceptance, image safety, or hardware compatibility.
+review; it does not produce raw or packed images. No device was flashed or
+per-device validation attempted; this work is limited to offline structural
+checks and no device-specific result is available. These checks do not
+establish bootloader acceptance, image safety, or hardware compatibility.
 
 Resolve these items before freezing the Rust startup and image interface:
 
