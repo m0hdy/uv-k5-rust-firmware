@@ -1,7 +1,4 @@
-#[path = "../src/channel_codec.rs"]
-mod channel_codec;
-
-use channel_codec::{
+use uv_k5_rust_firmware::channel_codec::{
     CHANNEL_RECORD_LEN, ChannelRecord, CodecError, SETTINGS_BLOCK_OFFSETS, Settings, SettingsImage,
 };
 

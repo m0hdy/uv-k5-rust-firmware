@@ -1,7 +1,4 @@
-#[path = "../src/tuning_signalling.rs"]
-mod tuning_signalling;
-
-use tuning_signalling::{
+use uv_k5_rust_firmware::tuning_signalling::{
     DcsCodeType, SORTED_STEP_INDEXES, SQUELCH_OFF, STEP_FREQUENCIES, SquelchThresholds, TxLockMode,
     TxPermissions, configure_squelch, ctcss_code, dcs_code_word, decode_dcs_code, round_to_step,
     rx_frequency_check, sorted_step_frequency_ticks, step_frequency_ticks, tx_frequency_check,
