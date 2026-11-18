@@ -1,9 +1,85 @@
 # uv-k5-rust-firmware
-Standalone Rust firmware migration target for the UV-K5(8)
 
-## Reference vectors
+Standalone Rust migration target for the UV-K5(8). This bootstrap is not
+flashable: it has no hardware startup/vector table, linker script, packaging,
+or device-size checks.
 
-Deterministic C-reference outputs and their provenance are recorded in
-[`docs/reference-vector-provenance.md`](docs/reference-vector-provenance.md).
-The optional capture harness requires a clean checkout of the pinned C source;
-it is not a Rust build dependency.
+## Requirements and checks
+
+The repository pins Rust 1.99.1 and the `thumbv6m-none-eabi` target in
+`rust-toolchain.toml`. With rustup installed, run these commands from the
+repository root:
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --all-targets -- -D warnings
+cargo test --all-targets
+cargo build --target thumbv6m-none-eabi --release
+```
+
+The crate has no external dependencies or allocator requirement.
+The first three commands run on the host. The last builds the target-only
+`no_std` entry stub; it does not produce a flashable firmware image.
+
+## Continuous integration
+
+The `Rust quality` workflow runs on pushes and pull requests. Its stable required
+checks are `Rust quality / Host checks` (formatting, Clippy, and host tests) and
+`Rust quality / Cortex-M0 release build`. Each job installs the toolchain,
+components, and target from `rust-toolchain.toml`; Cargo commands use the
+tracked lockfile. The target job attaches the ELF and linker map as the
+`cortex-m0-target-report` artifact. Neither file is a flashable image, and this
+bootstrap has no memory-budget gate or image publisher.
+
+To confirm CI failure propagation without committing broken code, run the
+workflow manually and select `host-test` or `target-build` for `failure_probe`.
+That disposable run injects a failing test or target compile error and is
+expected to fail. Locally, make the equivalent temporary injection in a
+disposable worktree:
+
+```sh
+cat >> src/lib.rs <<'RS'
+#[cfg(test)]
+#[test]
+fn intentional_failure_propagates() {
+    assert!(false, "intentional CI failure probe");
+}
+RS
+cargo test --locked --all-targets
+```
+
+For the target probe, append
+`compile_error!("intentional Cortex-M0 build failure probe");` to
+`src/bin/firmware.rs`, then run
+`cargo build --locked --target thumbv6m-none-eabi --release`. Both commands
+must return nonzero; do not commit either injection.
+
+There is no C reference or parity job in the default workflow. The documented
+`UV_K5_C_REFERENCE` environment variable is not consumed by current checks.
+Any future mixed/parity lane must be separately opt-in, require an immutable
+reference revision, and reject a missing, floating, or modified C checkout;
+it must not fall back to an upstream branch. No image may be published until
+the mandatory size gate from issue
+[m0hdy/uv-k5-rust-firmware#26](https://github.com/m0hdy/uv-k5-rust-firmware/issues/26)
+is wired into every flashable job.
+
+## Reference firmware
+
+The default commands above do not require or inspect a C firmware checkout or
+any reference environment variable. For future parity tooling that explicitly
+uses a reference checkout, select it with:
+
+```sh
+export UV_K5_C_REFERENCE=/path/to/reference-firmware
+```
+
+No current build or test command consumes this variable.
+
+## File ownership
+
+This repository owns its Cargo and toolchain configuration, the host-testable
+Rust library in `src/lib.rs`, and the target-only entry stub in
+`src/bin/firmware.rs`. The C firmware remains the reference owner of shared
+source and remains unchanged. The Rust migration's designated integration
+owner is responsible for future Rust-side startup, linker, build/packaging, and
+ABI integration. This bootstrap does not define or publish a flashable artifact.
