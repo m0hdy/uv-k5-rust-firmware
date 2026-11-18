@@ -68,16 +68,41 @@ regenerate the baseline. It validates the pinned commit, case fields, input and
 expected-value types, unique vector IDs, EEPROM write lengths, and checksum
 metadata before running registered domain evaluators. A mismatch reports the
 vector ID with expected and actual values. Domains without an evaluator are
-reported as unported and are never counted as covered. The current Rust
-migration has no evaluators registered, so invoking the runner reports every
-fixture case as unported and exits unsuccessfully rather than claiming parity:
+reported as unported and are never counted as covered.
+
+[`tools/reference-vectors/compare_rust.py`](../tools/reference-vectors/compare_rust.py)
+passes compatible fixture inputs to the host-only
+[`examples/reference_vectors.rs`](../examples/reference_vectors.rs) bridge.
+The bridge calls the production library's settings encoder, frequency checks
+and rounding, and CTCSS/DCS functions; the typed runner compares those results
+against the fixture. The command builds/runs Cargo with `--offline`, does not
+invoke the optional C reference, reports every executed and unexecuted case,
+and exits nonzero while any cases remain unported:
 
 ```sh
-python3 tools/reference-vectors/runner.py
+python3 tools/reference-vectors/compare_rust.py
+```
+
+Host coverage is 26 of 39 vectors: 15 frequency, 5 DCS, 4 CTCSS, and 2 settings
+profiles. The 12 channel vectors remain unsupported because the library does
+not expose an equivalent to `RADIO_CheckValidChannel`; the separate scan
+decision model is not a substitute. The single
+`firmware_container_checksum/byte_ramp_12k` vector remains unsupported because
+the Rust library has no updater-container packing or checksum API. Its payload,
+metadata, packed-image hash, and appended CRC concern the updater container,
+not EEPROM settings or a settings checksum. Neither unsupported domain is
+counted as parity coverage. The opt-in pinned C comparison remains available
+separately through `tools/reference-vectors/compare.py`, with a clean pinned C
+checkout supplied explicitly:
+
+```sh
+UV_K5_C_REFERENCE=/path/to/clean/uv-k5-firmware-custom \
+  python3 tools/reference-vectors/compare.py
 ```
 
 The host test suite validates this reader and runner against the approved
-fixture, including malformed input and a seeded expectation mismatch:
+fixture, including malformed input, a seeded mismatch, and a Rust-bridge
+regression that changes an expected result and requires a mismatch:
 
 ```sh
 python3 -m unittest discover -s tests -v
@@ -100,6 +125,26 @@ The capture uses a host C compiler supporting GNU C2x (`cc` by default, or
 capture used GCC 13.3.0 and Clang 18.1.3, Python 3.12.3, and `crcmod` 1.7.
 Both compilers reproduced the same fixture. These host tools are for reference
 capture only and are not Rust firmware build prerequisites.
+
+The host bridge was run with the following command and evidence:
+
+```sh
+rustc --version
+cargo --version
+python3 --version
+python3 tools/reference-vectors/compare_rust.py
+cargo test --offline --locked --all-targets
+python3 -m unittest discover -s tests -v
+```
+
+The host reported `rustc 1.99.1 (58cf8f9c3 2026-10-13)`, `cargo 1.99.1
+(5f94df478 2026-08-27)`, and `Python 3.12.3`. The bridge reported `26/39
+matched (26 executed)`, with no mismatches; it listed the 12 channel cases and
+one firmware-container checksum case as unported and returned status 1 because
+the fixture is not fully covered. The Rust suite passed 57 tests; the Python
+suite passed 45 tests with two existing ARM-binutils-dependent tests skipped.
+The bridge used Cargo's offline mode. This is host-library evidence only, not
+a device or firmware-image claim.
 
 ## Evidence and limits
 

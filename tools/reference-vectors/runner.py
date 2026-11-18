@@ -314,6 +314,10 @@ def format_report(report: RunReport) -> str:
             )
         )
         lines.append(f"Unported domains (not executed): {domains}")
+        for category, case_ids in sorted(
+            report.unported.items(), key=lambda item: item[0].value
+        ):
+            lines.append(f"  {category.value}: {', '.join(case_ids)}")
     if executed == 0:
         lines.append("No vector cases were executed; this is not parity coverage.")
     elif report.unported:

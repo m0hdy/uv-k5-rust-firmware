@@ -16,6 +16,7 @@ from runner import (  # noqa: E402
     parse_fixture,
     run_vectors,
 )
+from compare_rust import compare_rust, evaluate_rust  # noqa: E402
 
 
 class ReferenceVectorRunnerTests(unittest.TestCase):
@@ -27,6 +28,38 @@ class ReferenceVectorRunnerTests(unittest.TestCase):
         self.assertEqual(
             self.fixture.reference_commit,
             "7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3",
+        )
+
+    def test_rust_bridge_executes_compatible_vectors_and_rejects_changed_expectations(self):
+        actuals = evaluate_rust(self.fixture)
+        report = compare_rust(self.fixture, actuals)
+
+        self.assertEqual(report.total, 39)
+        self.assertEqual(report.matched, 26)
+        self.assertEqual(report.mismatches, ())
+        self.assertEqual(
+            {category: len(case_ids) for category, case_ids in report.unported.items()},
+            {Category.CHANNEL: 12, Category.FIRMWARE_CONTAINER_CHECKSUM: 1},
+        )
+
+        changed = json.loads((ROOT / "tests/reference-vectors/golden.json").read_text())
+        changed_case = next(
+            case for case in changed["cases"] if case["category"] == "frequency"
+        )
+        changed_case["expected"] += 1
+        changed_report = compare_rust(parse_fixture(changed), actuals)
+        self.assertEqual(len(changed_report.mismatches), 1)
+        self.assertEqual(
+            changed_report.mismatches[0].vector_id,
+            f"frequency/{changed_case['name']}",
+        )
+        self.assertEqual(
+            changed_report.mismatches[0].expected,
+            changed_case["expected"],
+        )
+        self.assertEqual(
+            changed_report.mismatches[0].actual,
+            changed_case["expected"] - 1,
         )
 
     def test_invalid_scalar_input_is_rejected(self):
@@ -144,6 +177,7 @@ class ReferenceVectorRunnerTests(unittest.TestCase):
         self.assertIn("0/39 matched (0 executed)", diagnostic)
         self.assertIn("channel (12 cases)", diagnostic)
         self.assertIn("settings (2 cases)", diagnostic)
+        self.assertIn("channel: channel/first_memory_valid", diagnostic)
         self.assertIn("No vector cases were executed; this is not parity coverage.", diagnostic)
         self.assertFalse(report.complete)
 
