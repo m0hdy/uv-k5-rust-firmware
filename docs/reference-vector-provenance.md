@@ -61,6 +61,28 @@ not test settings validation or a settings checksum.
 
 ## Regeneration and test
 
+The host-only consumer at
+[`tools/reference-vectors/runner.py`](../tools/reference-vectors/runner.py)
+loads the checked-in fixture directly; it does not require the C checkout or
+regenerate the baseline. It validates the pinned commit, case fields, input and
+expected-value types, unique vector IDs, EEPROM write lengths, and checksum
+metadata before running registered domain evaluators. A mismatch reports the
+vector ID with expected and actual values. Domains without an evaluator are
+reported as unported and are never counted as covered. The current Rust
+migration has no evaluators registered, so invoking the runner reports every
+fixture case as unported and exits unsuccessfully rather than claiming parity:
+
+```sh
+python3 tools/reference-vectors/runner.py
+```
+
+The host test suite validates this reader and runner against the approved
+fixture, including malformed input and a seeded expectation mismatch:
+
+```sh
+python3 -m unittest discover -s tests -v
+```
+
 Use a clean checkout at the pinned revision. The capture command rejects a
 different `HEAD` or any tracked/untracked working-tree changes before compiling
 or running code:
@@ -113,4 +135,4 @@ regeneration; this limitation is not a pass.
 No firmware image was built or flashed for this capture. Physical-device
 results are inapplicable because the work only records deterministic outputs
 from source functions and uses a host EEPROM mock; device/recovery validation
-remains tracked separately in [issue #12](https://github.com/m0hdy/uv-k5-rust-firmware/issues/12).
+remains tracked separately in [issue #10](https://github.com/m0hdy/uv-k5-rust-firmware/issues/10).
