@@ -2,6 +2,7 @@ use std::error::Error;
 use std::io::{self, Read};
 
 use uv_k5_rust_firmware::channel_codec::{SETTINGS_BLOCK_OFFSETS, Settings};
+use uv_k5_rust_firmware::channel_validity::{ChannelAttributes, is_valid_channel};
 use uv_k5_rust_firmware::tuning_signalling::{
     DcsCodeType, TxLockMode, TxPermissions, ctcss_code, dcs_code_word, decode_dcs_code,
     round_to_step, rx_frequency_check, tx_frequency_check,
@@ -27,6 +28,14 @@ where
         .map_err(Into::into)
 }
 
+fn parse_bool(fields: &[(String, String)], key: &str) -> Result<bool, Box<dyn Error>> {
+    match parse_value::<u8>(fields, key)? {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(invalid_input(format!("{key} must be 0 or 1")).into()),
+    }
+}
+
 fn parse_assignments(input: &str) -> Result<Vec<(String, String)>, Box<dyn Error>> {
     input
         .split(',')
@@ -45,6 +54,19 @@ fn parse_assignments(input: &str) -> Result<Vec<(String, String)>, Box<dyn Error
 fn evaluate_scalar(category: &str, input: &str) -> Result<String, Box<dyn Error>> {
     let fields = parse_assignments(input)?;
     let result = match category {
+        "channel" => u8::from(is_valid_channel(
+            parse_value::<u16>(&fields, "channel")?,
+            ChannelAttributes {
+                band: parse_value::<u8>(&fields, "band")?,
+                scan_list_1: parse_bool(&fields, "scanlist1")?,
+                scan_list_2: parse_bool(&fields, "scanlist2")?,
+            },
+            parse_bool(&fields, "check")?,
+            parse_value::<u8>(&fields, "list")?,
+            parse_value::<u8>(&fields, "priority1")?,
+            parse_value::<u8>(&fields, "priority2")?,
+        ))
+        .to_string(),
         "ctcss" => ctcss_code(parse_value::<i32>(&fields, "tenths_hz")?).to_string(),
         "dcs" if fields.iter().any(|(key, _)| key == "word") => {
             decode_dcs_code(parse_value::<u32>(&fields, "word")?).to_string()

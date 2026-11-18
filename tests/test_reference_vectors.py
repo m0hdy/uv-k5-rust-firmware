@@ -2,7 +2,9 @@ import json
 from copy import deepcopy
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,23 +37,21 @@ class ReferenceVectorRunnerTests(unittest.TestCase):
         report = compare_rust(self.fixture, actuals)
 
         self.assertEqual(report.total, 39)
-        self.assertEqual(report.matched, 26)
+        self.assertEqual(report.matched, 38)
         self.assertEqual(report.mismatches, ())
         self.assertEqual(
             {category: len(case_ids) for category, case_ids in report.unported.items()},
-            {Category.CHANNEL: 12, Category.FIRMWARE_CONTAINER_CHECKSUM: 1},
+            {Category.FIRMWARE_CONTAINER_CHECKSUM: 1},
         )
 
         changed = json.loads((ROOT / "tests/reference-vectors/golden.json").read_text())
-        changed_case = next(
-            case for case in changed["cases"] if case["category"] == "frequency"
-        )
+        changed_case = next(case for case in changed["cases"] if case["category"] == "channel")
         changed_case["expected"] += 1
         changed_report = compare_rust(parse_fixture(changed), actuals)
         self.assertEqual(len(changed_report.mismatches), 1)
         self.assertEqual(
             changed_report.mismatches[0].vector_id,
-            f"frequency/{changed_case['name']}",
+            f"channel/{changed_case['name']}",
         )
         self.assertEqual(
             changed_report.mismatches[0].expected,
@@ -61,6 +61,23 @@ class ReferenceVectorRunnerTests(unittest.TestCase):
             changed_report.mismatches[0].actual,
             changed_case["expected"] - 1,
         )
+
+    def test_rust_bridge_rejects_missing_channel_result(self):
+        omitted_id = "channel/first_memory_valid"
+        output = "\n".join(
+            f"{case.vector_id}\t"
+            f"{'0x0000=0000000000000000' if case.category is Category.SETTINGS else '0'}"
+            for case in self.fixture.cases
+            if case.category is not Category.FIRMWARE_CONTAINER_CHECKSUM
+            and case.vector_id != omitted_id
+        )
+        completed = SimpleNamespace(returncode=0, stdout=output, stderr="")
+
+        with patch("compare_rust.subprocess.run", return_value=completed):
+            with self.assertRaisesRegex(
+                RuntimeError, f"Rust bridge omitted supported vectors: {omitted_id}"
+            ):
+                evaluate_rust(self.fixture)
 
     def test_invalid_scalar_input_is_rejected(self):
         data = json.loads((ROOT / "tests/reference-vectors/golden.json").read_text())
