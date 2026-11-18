@@ -3,6 +3,7 @@ mod keyboard_decisions;
 
 use keyboard_decisions::{
     DEBOUNCE_TICKS, INITIAL_REPEAT_TICKS, Key, KeyEvent, KeyboardDecisions, REPEAT_INTERVAL_TICKS,
+    SAMPLE_PERIOD_MS,
 };
 
 fn press_key(decisions: &mut KeyboardDecisions, key: Key) {
@@ -74,10 +75,20 @@ fn changing_keys_releases_the_old_key_immediately_and_debounces_the_new_one() {
 
 #[test]
 fn repeat_thresholds_are_exact_and_only_up_down_repeat_quickly() {
-    let mut decisions = KeyboardDecisions::new();
-    press_key(&mut decisions, Key::Up);
+    assert_eq!(SAMPLE_PERIOD_MS, 10);
+    assert_eq!(DEBOUNCE_TICKS, 2);
+    assert_eq!(INITIAL_REPEAT_TICKS, 40);
+    assert_eq!(REPEAT_INTERVAL_TICKS, 8);
 
-    for _ in DEBOUNCE_TICKS..INITIAL_REPEAT_TICKS - 1 {
+    let mut decisions = KeyboardDecisions::new();
+    assert_eq!(decisions.sample(Some(Key::Up)), None);
+    assert_eq!(decisions.sample(Some(Key::Up)), None);
+    assert_eq!(
+        decisions.sample(Some(Key::Up)),
+        Some(KeyEvent::Pressed(Key::Up))
+    );
+
+    for _ in 0..37 {
         assert_eq!(decisions.sample(Some(Key::Up)), None);
     }
     assert_eq!(
@@ -85,7 +96,14 @@ fn repeat_thresholds_are_exact_and_only_up_down_repeat_quickly() {
         Some(KeyEvent::Held(Key::Up))
     );
 
-    for _ in 1..REPEAT_INTERVAL_TICKS {
+    for _ in 0..7 {
+        assert_eq!(decisions.sample(Some(Key::Up)), None);
+    }
+    assert_eq!(
+        decisions.sample(Some(Key::Up)),
+        Some(KeyEvent::Held(Key::Up))
+    );
+    for _ in 0..7 {
         assert_eq!(decisions.sample(Some(Key::Up)), None);
     }
     assert_eq!(
@@ -95,14 +113,14 @@ fn repeat_thresholds_are_exact_and_only_up_down_repeat_quickly() {
 
     let mut menu = KeyboardDecisions::new();
     press_key(&mut menu, Key::Menu);
-    for _ in DEBOUNCE_TICKS..INITIAL_REPEAT_TICKS - 1 {
+    for _ in 0..37 {
         assert_eq!(menu.sample(Some(Key::Menu)), None);
     }
     assert_eq!(
         menu.sample(Some(Key::Menu)),
         Some(KeyEvent::Held(Key::Menu))
     );
-    for _ in 1..=REPEAT_INTERVAL_TICKS {
+    for _ in 0..8 {
         assert_eq!(menu.sample(Some(Key::Menu)), None);
     }
     assert_eq!(
