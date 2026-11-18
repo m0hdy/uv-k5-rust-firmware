@@ -205,6 +205,41 @@ def validate(elf_path: Path, map_path: Path) -> None:
     if data_section[5] and data_section[2] & SHF_WRITE == 0:
         raise StartupError(".data must be writable")
 
+    initialization_symbols = {
+        "__data_start": data_section[3],
+        "__data_end": data_section[3] + data_section[5],
+        "__bss_start": bss_section[3],
+        "__bss_end": bss_section[3] + bss_section[5],
+    }
+    for name, expected in initialization_symbols.items():
+        symbol = symbols.get(name)
+        if symbol is None or symbol[3] == 0 or symbol[0] != expected:
+            raise StartupError(f"{name} does not match its section boundary")
+    data_load_symbol = symbols.get("__data_load")
+    if data_load_symbol is None or data_load_symbol[3] == 0:
+        raise StartupError("ELF is missing __data_load")
+    data_load = data_load_symbol[0]
+    if data_load % 4:
+        raise StartupError("__data_load must be 4-byte aligned")
+    if not FLASH_START <= data_load <= FLASH_END:
+        raise StartupError("__data_load must reside in application flash")
+    if data_section[5] and not any(
+        virtual <= data_section[3]
+        and data_section[3] + data_section[5] <= virtual + file_size
+        and data_section[4] == file_offset + data_section[3] - virtual
+        and data_load == physical + data_section[3] - virtual
+        for virtual, physical, file_offset, file_size, _ in segments
+    ):
+        raise StartupError("__data_load does not map the file-backed .data section")
+    for name, symbol in (
+        ("__data_start", symbols["__data_start"]),
+        ("__data_end", symbols["__data_end"]),
+        ("__bss_start", symbols["__bss_start"]),
+        ("__bss_end", symbols["__bss_end"]),
+    ):
+        if symbol[0] % 4:
+            raise StartupError(f"{name} must be 4-byte aligned")
+
     for name, section in sections.items():
         if section[2] & SHF_ALLOC and section[5] and name != ".stack":
             address, size = section[3], section[5]

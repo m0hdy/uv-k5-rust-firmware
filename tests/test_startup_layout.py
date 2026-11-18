@@ -48,6 +48,7 @@ def make_elf(
     flash_segment_file_size=FLASH_FILE_SIZE,
     flash_segment_type=1,
     vector_file_offset_delta=0,
+    symbol_overrides=None,
 ):
     header_size = ELF32_HEADER.size
     program_offset = header_size
@@ -90,12 +91,35 @@ def make_elf(
             payload.extend(bytes(vector_end - len(payload)))
         payload[vector_file_offset_delta:vector_end] = vector
     section_names = b"\0.vector_table\0.text\0.data\0.bss\0.stack\0.shstrtab\0.strtab\0.symtab\0"
-    symbol_names = b"\0Reset_Handler\0"
+    symbol_names = b"\0"
+    symbol_name_offsets = {}
+    symbol_values = {
+        "Reset_Handler": reset_address,
+        "__data_load": data_load_address,
+        "__data_start": data_address,
+        "__data_end": data_address + data_size,
+        "__bss_start": bss_address,
+        "__bss_end": bss_address + bss_size,
+    }
+    if symbol_overrides:
+        symbol_values.update(symbol_overrides)
+    symbol_table_entries = [ELF32_SYMBOL.pack(0, 0, 0, 0, 0, 0)]
+    for name, value in symbol_values.items():
+        symbol_name_offsets[name] = len(symbol_names)
+        symbol_names += name.encode() + b"\0"
+        symbol_table_entries.append(
+            ELF32_SYMBOL.pack(
+                symbol_name_offsets[name],
+                value,
+                42 if name == "Reset_Handler" else 0,
+                0x12 if name == "Reset_Handler" else 0,
+                0,
+                2 if name == "Reset_Handler" else 0xFFF1,
+            )
+        )
     names_offset = data_offset + len(payload)
     symbols_offset = names_offset + len(section_names) + len(symbol_names)
-    symbol_table = ELF32_SYMBOL.pack(0, 0, 0, 0, 0, 0) + ELF32_SYMBOL.pack(
-        1, reset_address, 42, 0x12, 0, 2
-    )
+    symbol_table = b"".join(symbol_table_entries)
     section_offset = symbols_offset + len(symbol_table)
     section_name_offsets = {
         name: section_names.index(name.encode()) for name in (
@@ -182,6 +206,29 @@ class StartupLayoutTests(unittest.TestCase):
         self.elf_path.write_bytes(make_elf())
         self.map_path.write_text(make_map(), encoding="utf-8")
         validate(self.elf_path, self.map_path)
+
+    def test_empty_data_and_bss_sections_pass(self):
+        self.elf_path.write_bytes(make_elf(data_size=0, bss_size=0))
+        self.map_path.write_text(make_map(), encoding="utf-8")
+        validate(self.elf_path, self.map_path)
+
+    def test_data_load_must_cover_all_initialized_bytes(self):
+        self.check_fails(
+            "__data_load does not map the file-backed .data section",
+            ram_segment_file_size=2,
+        )
+
+    def test_initialization_symbols_must_match_section_boundaries(self):
+        self.check_fails(
+            "__bss_end does not match its section boundary",
+            symbol_overrides={"__bss_end": RAM_START + 3},
+        )
+
+    def test_initialization_symbols_must_be_word_aligned(self):
+        self.check_fails(
+            "__data_load must be 4-byte aligned",
+            symbol_overrides={"__data_load": FLASH_FILE_SIZE + 1},
+        )
 
     def test_entry_must_be_reset_handler(self):
         self.check_fails("entry point is not Reset_Handler", entry=0xC3)
