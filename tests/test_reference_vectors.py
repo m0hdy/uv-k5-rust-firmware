@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from pathlib import Path
 import sys
 import unittest
@@ -70,6 +71,38 @@ class ReferenceVectorRunnerTests(unittest.TestCase):
         actual_by_id = {mismatch.vector_id: mismatch.actual for mismatch in report.mismatches}
         self.assertEqual(actual_by_id["settings/standard"], {"returned_for": "standard"})
         self.assertEqual(actual_by_id["settings/boundary"], {"returned_for": "boundary"})
+
+    def test_evaluator_cannot_mutate_fixture_expectations(self):
+        settings_cases = [
+            case for case in self.fixture.cases if case.category is Category.SETTINGS
+        ]
+        expected_by_id = {
+            case.vector_id: deepcopy(case.expected) for case in settings_cases
+        }
+
+        def mutate_expected(case):
+            address = next(iter(case.expected))
+            case.expected[address] = "mutated"
+            return case.expected
+
+        mutated_report = run_vectors(
+            self.fixture, {Category.SETTINGS: mutate_expected}
+        )
+        self.assertEqual(len(mutated_report.mismatches), len(settings_cases))
+        self.assertEqual(
+            {mismatch.vector_id: mismatch.expected for mismatch in mutated_report.mismatches},
+            expected_by_id,
+        )
+        self.assertEqual(
+            {case.vector_id: case.expected for case in settings_cases},
+            expected_by_id,
+        )
+
+        subsequent_report = run_vectors(
+            self.fixture, {Category.SETTINGS: lambda case: case.expected}
+        )
+        self.assertEqual(subsequent_report.matched, len(settings_cases))
+        self.assertEqual(subsequent_report.mismatches, ())
 
     def test_mismatch_with_mixed_type_keys_formats(self):
         report = run_vectors(

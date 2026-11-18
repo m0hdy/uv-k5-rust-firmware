@@ -258,7 +258,7 @@ def run_vectors(
         if evaluator is None:
             unported.setdefault(case.category, []).append(case.vector_id)
             continue
-        actual = evaluator(case)
+        actual = evaluator(deepcopy(case))
         if _type_sensitive_equal(actual, case.expected):
             matched += 1
         else:
