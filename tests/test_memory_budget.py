@@ -23,15 +23,17 @@ CHECKER = ROOT / "scripts" / "check_memory_budget.py"
 ARM_BINUTILS_PREFIX = os.environ.get("ARM_BINUTILS_PREFIX")
 
 
-def make_elf(segments, debug_bytes=b""):
+def make_elf(segments, debug_bytes=b"", allocated_sections=()):
     header_size = ELF_HEADER.size
     program_header_size = PROGRAM_HEADER.size
     program_header_offset = header_size
     data_offset = header_size + len(segments) * program_header_size
     program_headers = []
     payload_parts = []
+    segment_file_offsets = []
     current_offset = data_offset
     for load_address, execution_address, file_size, memory_size in segments:
+        segment_file_offsets.append(current_offset)
         program_headers.append(
             PROGRAM_HEADER.pack(
                 1,
@@ -47,15 +49,66 @@ def make_elf(segments, debug_bytes=b""):
         payload_parts.append(b"\xa5" * file_size)
         current_offset += file_size
 
-    section_strings = b"\0.debug_info\0.shstrtab\0"
+    section_strings = bytearray(b"\0")
+
+    def add_section_name(name):
+        offset = len(section_strings)
+        section_strings.extend(name.encode("ascii") + b"\0")
+        return offset
+
+    debug_name_offset = add_section_name(".debug_info")
     debug_offset = current_offset
+    section_headers = [
+        bytes(40),
+        struct.pack(
+            "<IIIIIIIIII",
+            debug_name_offset,
+            1,
+            0,
+            0,
+            debug_offset,
+            len(debug_bytes),
+            0,
+            0,
+            1,
+            0,
+        ),
+    ]
+    for name, kind, flags, address, segment_index, delta, size in allocated_sections:
+        section_headers.append(
+            struct.pack(
+                "<IIIIIIIIII",
+                add_section_name(name),
+                kind,
+                flags,
+                address,
+                segment_file_offsets[segment_index] + delta,
+                size,
+                0,
+                0,
+                1,
+                0,
+            )
+        )
+    string_name_offset = add_section_name(".shstrtab")
     strings_offset = debug_offset + len(debug_bytes)
     section_offset = strings_offset + len(section_strings)
-    sections = [
-        bytes(40),
-        struct.pack("<IIIIIIIIII", 1, 1, 0, 0, debug_offset, len(debug_bytes), 0, 0, 1, 0),
-        struct.pack("<IIIIIIIIII", 11, 3, 0, 0, strings_offset, len(section_strings), 0, 0, 1, 0),
-    ]
+    string_index = len(section_headers)
+    section_headers.append(
+        struct.pack(
+            "<IIIIIIIIII",
+            string_name_offset,
+            3,
+            0,
+            0,
+            strings_offset,
+            len(section_strings),
+            0,
+            0,
+            1,
+            0,
+        )
+    )
     ident = b"\x7fELF" + bytes([1, 1, 1]) + bytes(9)
     header = ELF_HEADER.pack(
         ident,
@@ -70,16 +123,16 @@ def make_elf(segments, debug_bytes=b""):
         program_header_size,
         len(program_headers),
         40,
-        len(sections),
-        2,
+        len(section_headers),
+        string_index,
     )
     return (
         header
         + b"".join(program_headers)
         + b"".join(payload_parts)
         + debug_bytes
-        + section_strings
-        + b"".join(sections)
+        + bytes(section_strings)
+        + b"".join(section_headers)
     )
 
 
@@ -93,8 +146,8 @@ class BudgetCheckerTests(unittest.TestCase):
     def tearDown(self):
         self.temporary_directory.cleanup()
 
-    def write_fixture(self, segments, raw_size, debug_bytes=b""):
-        self.elf_path.write_bytes(make_elf(segments, debug_bytes))
+    def write_fixture(self, segments, raw_size, debug_bytes=b"", allocated_sections=()):
+        self.elf_path.write_bytes(make_elf(segments, debug_bytes, allocated_sections))
         raw_data = bytearray(raw_size)
         for load_address, _, file_size, _ in segments:
             start = max(load_address, 0)
@@ -214,6 +267,45 @@ class BudgetCheckerTests(unittest.TestCase):
         self.assertEqual(report.flash_load_bytes, 32)
         self.assertEqual(report.ram_static_bytes, 64)
         self.assertEqual(report.errors, [])
+
+    def test_report_lists_allocated_sections_and_separates_stack_and_debug(self):
+        segments = [
+            (0, 0, 4, 4),
+            (4, 0x20000000, 4, 12),
+            (0, 0x20003800, 0, STACK_RESERVATION),
+        ]
+        sections = [
+            (".text", 1, 6, 0, 0, 0, 4),
+            (".data", 1, 3, 0x20000000, 1, 0, 4),
+            (".bss", 8, 3, 0x20000004, 1, 4, 8),
+            (".stack", 8, 3, 0x20003800, 2, 0, STACK_RESERVATION),
+        ]
+        self.write_fixture(segments, 8, b"debug info", sections)
+
+        report = analyze(self.elf_path, self.raw_path, STACK_RESERVATION)
+        summary = format_report(report, STACK_RESERVATION)
+
+        self.assertEqual(report.errors, [])
+        self.assertEqual(report.flash_load_bytes, 8)
+        self.assertEqual(report.ram_static_bytes, 12)
+        self.assertIn(
+            "Section .data: 4 bytes; runtime RAM "
+            "[0x20000000,0x20000004); flash load [0x00000004,0x00000008)",
+            summary,
+        )
+        self.assertIn(
+            "Section .bss: 8 bytes; runtime RAM "
+            "[0x20000004,0x2000000c); no flash load (zero-filled)",
+            summary,
+        )
+        self.assertIn(
+            "Section .stack: 2048 bytes; runtime RAM "
+            "[0x20003800,0x20004000); reserved separately",
+            summary,
+        )
+        self.assertIn("RAM static use: 12 bytes", summary)
+        self.assertIn("RAM use plus stack: 2060 / 16384", summary)
+        self.assertNotIn(".debug_info", summary)
 
     def test_stack_reservation_must_match_project_policy(self):
         self.write_fixture([(0, 0, 1, 1)], 1)
