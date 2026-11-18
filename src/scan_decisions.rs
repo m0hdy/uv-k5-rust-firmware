@@ -136,7 +136,7 @@ impl ScanState {
                 if store_backup_settings {
                     self.keep_result = false;
                 }
-                ScanAction::None
+                ScanAction::Advance
             }
             ScanEvent::Tick { function } => {
                 if self.active

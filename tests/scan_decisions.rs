@@ -14,7 +14,7 @@ fn start(kind: ScanKind, resume_mode: ResumeMode) -> ScanState {
             resume_mode,
             store_backup_settings: true,
         }),
-        ScanAction::None
+        ScanAction::Advance
     );
     state
 }
@@ -43,6 +43,23 @@ fn start_initializes_both_scan_kinds_and_all_resume_modes() {
         assert!(!state.is_scheduled());
         assert_eq!(state.remaining_10ms(), ScanState::START_DELAY_10MS);
         assert!(!state.keeps_last_result());
+    }
+}
+
+#[test]
+fn start_advances_immediately_before_the_initial_scan_delay_for_both_kinds() {
+    for kind in [ScanKind::Frequency, ScanKind::Memory] {
+        let mut state = ScanState::new();
+        assert_eq!(
+            state.apply(ScanEvent::Start {
+                kind,
+                resume_mode: ResumeMode::Time,
+                store_backup_settings: true,
+            }),
+            ScanAction::Advance
+        );
+        assert_eq!(state.remaining_10ms(), 50);
+        assert!(!state.is_scheduled());
     }
 }
 
@@ -189,6 +206,84 @@ fn carrier_found_before_resume_expiry_restarts_delay_after_reception_ends() {
 
     state.apply(ScanEvent::ReceptionEnded);
     assert_eq!(state.remaining_10ms(), ScanState::CARRIER_RESUME_DELAY_10MS);
+    assert!(!state.is_scheduled());
+}
+
+#[test]
+fn time_resume_redetection_restarts_the_pending_timer_after_listen() {
+    let mut state = start(ScanKind::Memory, ResumeMode::Time);
+    state.apply(ScanEvent::Detected);
+    ticks(&mut state, 20, FunctionState::Incoming);
+    assert_eq!(
+        state.apply(ScanEvent::Continue {
+            function: FunctionState::Incoming,
+            code_type_off: true,
+        }),
+        ScanAction::Listen
+    );
+    assert_eq!(state.remaining_10ms(), 500);
+    assert!(state.keeps_last_result());
+
+    state.apply(ScanEvent::ReceptionEnded);
+    ticks(&mut state, 100, FunctionState::Incoming);
+    assert_eq!(state.remaining_10ms(), 400);
+
+    state.apply(ScanEvent::Detected);
+    assert_eq!(state.remaining_10ms(), 20);
+    assert!(!state.is_scheduled());
+    ticks(&mut state, 20, FunctionState::Incoming);
+    assert!(state.is_scheduled());
+    assert_eq!(
+        state.apply(ScanEvent::Continue {
+            function: FunctionState::Incoming,
+            code_type_off: true,
+        }),
+        ScanAction::Listen
+    );
+    assert_eq!(state.remaining_10ms(), 500);
+    assert!(state.keeps_last_result());
+
+    state.apply(ScanEvent::ReceptionEnded);
+    assert_eq!(state.remaining_10ms(), 500);
+    assert!(!state.is_scheduled());
+}
+
+#[test]
+fn carrier_resume_redetection_replaces_the_pending_timer_and_restarts_after_end() {
+    let mut state = start(ScanKind::Frequency, ResumeMode::Carrier);
+    state.apply(ScanEvent::Detected);
+    ticks(&mut state, 20, FunctionState::Incoming);
+    assert_eq!(
+        state.apply(ScanEvent::Continue {
+            function: FunctionState::Incoming,
+            code_type_off: false,
+        }),
+        ScanAction::Listen
+    );
+    assert_eq!(state.remaining_10ms(), 0);
+
+    state.apply(ScanEvent::ReceptionEnded);
+    assert_eq!(state.remaining_10ms(), 360);
+    ticks(&mut state, 10, FunctionState::Incoming);
+    assert_eq!(state.remaining_10ms(), 350);
+
+    state.apply(ScanEvent::Detected);
+    assert_eq!(state.remaining_10ms(), 20);
+    assert!(!state.is_scheduled());
+    ticks(&mut state, 20, FunctionState::Incoming);
+    assert!(state.is_scheduled());
+    assert_eq!(
+        state.apply(ScanEvent::Continue {
+            function: FunctionState::Incoming,
+            code_type_off: false,
+        }),
+        ScanAction::Listen
+    );
+    assert_eq!(state.remaining_10ms(), 0);
+    assert!(state.keeps_last_result());
+
+    state.apply(ScanEvent::ReceptionEnded);
+    assert_eq!(state.remaining_10ms(), 360);
     assert!(!state.is_scheduled());
 }
 
