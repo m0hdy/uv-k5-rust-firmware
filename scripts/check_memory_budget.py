@@ -12,6 +12,7 @@ FLASH_END = 0x0000F000
 RAM_START = 0x20000000
 RAM_END = 0x20004000
 MAX_RAW_BYTES = FLASH_END - FLASH_START
+REQUIRED_STACK_RESERVATION = 0x800
 PT_LOAD = 1
 ELF32_HEADER = struct.Struct("<16sHHIIIIIHHHHHH")
 ELF32_PROGRAM_HEADER = struct.Struct("<IIIIIIII")
@@ -28,6 +29,7 @@ class Segment:
     physical_address: int
     file_size: int
     memory_size: int
+    file_data: bytes
 
 
 @dataclass
@@ -92,6 +94,7 @@ def parse_elf(path: Path) -> list[Segment]:
                 physical_address,
                 file_size,
                 memory_size,
+                data[file_offset : file_offset + file_size],
             )
         )
 
@@ -128,16 +131,18 @@ def analyze(
     packed_path: Path | None = None,
 ) -> Report:
     segments = parse_elf(elf_path)
-    raw_bytes = raw_path.stat().st_size
+    raw_data = raw_path.read_bytes()
+    raw_bytes = len(raw_data)
     packed_bytes = packed_path.stat().st_size if packed_path is not None else None
     errors = []
     load_ranges = []
     flash_memory_ranges = []
     ram_memory_ranges = []
 
-    if not 0 < stack_reservation <= RAM_END - RAM_START:
+    if stack_reservation != REQUIRED_STACK_RESERVATION:
         errors.append(
-            f"stack reservation must be between 1 and {RAM_END - RAM_START} bytes"
+            f"stack reservation must be exactly {REQUIRED_STACK_RESERVATION} bytes "
+            f"(0x{REQUIRED_STACK_RESERVATION:x})"
         )
 
     for segment in segments:
@@ -150,6 +155,21 @@ def analyze(
                     f"PT_LOAD[{segment.index}] load/file range "
                     f"[0x{load_start:08x},0x{load_end:08x}) is outside flash "
                     f"[0x{FLASH_START:08x},0x{FLASH_END:08x})"
+                )
+            if (
+                segment.memory_size
+                and in_region(
+                    segment.virtual_address,
+                    segment.memory_size,
+                    FLASH_START,
+                    FLASH_END,
+                )
+                and segment.virtual_address != segment.physical_address
+            ):
+                errors.append(
+                    f"PT_LOAD[{segment.index}] file-backed flash XIP VMA "
+                    f"0x{segment.virtual_address:08x} does not match LMA "
+                    f"0x{segment.physical_address:08x}"
                 )
             if load_end > raw_bytes:
                 errors.append(
@@ -175,6 +195,68 @@ def analyze(
                     flash_memory_ranges.append((memory_start, memory_end, segment.index))
                 if memory_start < RAM_END and memory_end > RAM_START:
                     ram_memory_ranges.append((memory_start, memory_end, segment.index))
+
+    flash_file_segments = [
+        segment
+        for segment in segments
+        if segment.file_size
+        and in_region(
+            segment.physical_address,
+            segment.file_size,
+            FLASH_START,
+            FLASH_END,
+        )
+    ]
+    if not flash_file_segments:
+        errors.append("ELF has no file-backed flash load content")
+    else:
+        lowest_load = min(segment.physical_address for segment in flash_file_segments)
+        if lowest_load != FLASH_START:
+            errors.append(
+                f"raw image must start at application origin 0x{FLASH_START:08x}; "
+                f"lowest file-backed load address is 0x{lowest_load:08x}"
+            )
+        load_span_end = max(
+            segment.physical_address + segment.file_size
+            for segment in flash_file_segments
+        )
+        if raw_bytes != load_span_end - FLASH_START:
+            errors.append(
+                f"raw payload span is {raw_bytes} bytes; expected "
+                f"{load_span_end - FLASH_START} bytes from application origin "
+                f"through the last file-backed load byte"
+            )
+        if (
+            lowest_load == FLASH_START
+            and all(
+                segment.file_size == 0
+                or in_region(
+                    segment.physical_address,
+                    segment.file_size,
+                    FLASH_START,
+                    FLASH_END,
+                )
+                for segment in segments
+            )
+            and not find_overlaps(load_ranges, "Flash load/file")
+            and raw_bytes == load_span_end - FLASH_START
+        ):
+            expected_raw = bytearray(load_span_end - FLASH_START)
+            for segment in flash_file_segments:
+                start = segment.physical_address - FLASH_START
+                expected_raw[start : start + segment.file_size] = segment.file_data
+            if raw_data != expected_raw:
+                mismatch = next(
+                    index
+                    for index, (actual, expected) in enumerate(
+                        zip(raw_data, expected_raw)
+                    )
+                    if actual != expected
+                )
+                errors.append(
+                    f"raw payload byte at offset 0x{mismatch:x} does not match "
+                    "the ELF load image (including zero-filled gaps)"
+                )
 
     errors.extend(find_overlaps(load_ranges, "Flash load/file"))
     errors.extend(find_overlaps(flash_memory_ranges, "Flash execution/memory"))

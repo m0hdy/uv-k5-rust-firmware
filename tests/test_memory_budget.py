@@ -93,7 +93,13 @@ class BudgetCheckerTests(unittest.TestCase):
 
     def write_fixture(self, segments, raw_size, debug_bytes=b""):
         self.elf_path.write_bytes(make_elf(segments, debug_bytes))
-        self.raw_path.write_bytes(b"\0" * raw_size)
+        raw_data = bytearray(raw_size)
+        for load_address, _, file_size, _ in segments:
+            start = max(load_address, 0)
+            end = min(load_address + file_size, raw_size)
+            if start < end:
+                raw_data[start:end] = b"\xa5" * (end - start)
+        self.raw_path.write_bytes(raw_data)
 
     def check_fails(self, expected):
         report = analyze(self.elf_path, self.raw_path, STACK_RESERVATION)
@@ -129,6 +135,41 @@ class BudgetCheckerTests(unittest.TestCase):
             format_report(report, STACK_RESERVATION),
         )
 
+    def test_raw_payload_must_match_elf_bytes(self):
+        self.write_fixture([(0, 0, 4, 4)], 4)
+        self.raw_path.write_bytes(b"\xa5\xa5\x00\xa5")
+        report = analyze(self.elf_path, self.raw_path, STACK_RESERVATION)
+        self.assertIn("byte at offset 0x2 does not match", "\n".join(report.errors))
+
+    def test_raw_payload_must_start_at_origin_and_end_at_load_span(self):
+        self.write_fixture([(0x100, 0x20000000, 4, 4)], 0x104)
+        report = analyze(self.elf_path, self.raw_path, STACK_RESERVATION)
+        self.assertIn("must start at application origin", "\n".join(report.errors))
+
+        self.write_fixture([(0, 0, 1, 1)], 2)
+        report = analyze(self.elf_path, self.raw_path, STACK_RESERVATION)
+        self.assertIn("expected 1 bytes", "\n".join(report.errors))
+
+    def test_empty_raw_payload_and_elf_without_flash_content_fail(self):
+        self.write_fixture([(0, 0, 1, 1)], 0)
+        report = analyze(self.elf_path, self.raw_path, STACK_RESERVATION)
+        self.assertIn("raw payload is empty", "\n".join(report.errors))
+
+        self.write_fixture([(0, 0, 0, 0)], 0)
+        report = analyze(self.elf_path, self.raw_path, STACK_RESERVATION)
+        self.assertIn("no file-backed flash load content", "\n".join(report.errors))
+
+    def test_nonzero_file_backed_flash_xip_requires_matching_lma(self):
+        self.write_fixture([(0, 1, 1, 1)], 1)
+        report = analyze(self.elf_path, self.raw_path, STACK_RESERVATION)
+        self.assertIn("flash XIP VMA", "\n".join(report.errors))
+
+    def test_zero_filled_gap_between_loads_is_valid_padding(self):
+        self.write_fixture([(0, 0, 1, 1), (4, 4, 1, 1)], 5)
+        report = analyze(self.elf_path, self.raw_path, STACK_RESERVATION)
+        self.assertEqual(report.errors, [])
+        self.assertEqual(self.raw_path.read_bytes(), b"\xa5\0\0\0\xa5")
+
     def test_out_of_region_load_address_fails(self):
         self.write_fixture([(0xF000, 0xF000, 1, 1)], 0xF001)
         self.check_fails("outside flash")
@@ -151,7 +192,7 @@ class BudgetCheckerTests(unittest.TestCase):
         self.check_fails("RAM execution/memory ranges overlap")
 
     def test_flash_load_and_another_execution_range_overlap(self):
-        self.write_fixture([(0, 16, 4, 4), (4, 2, 1, 1)], 8)
+        self.write_fixture([(0, 0, 4, 4), (4, 2, 0, 1)], 4)
         self.check_fails("overlaps PT_LOAD[1] flash execution/memory range")
 
     def test_debug_only_file_growth_does_not_change_budget(self):
@@ -166,11 +207,19 @@ class BudgetCheckerTests(unittest.TestCase):
         self.assertEqual(after.errors, [])
 
     def test_initialized_ram_uses_flash_lma_and_ram_vma(self):
-        self.write_fixture([(0x100, 0x20000000, 32, 64)], 0x120)
+        self.write_fixture([(0, 0x20000000, 32, 64)], 32)
         report = analyze(self.elf_path, self.raw_path, STACK_RESERVATION)
         self.assertEqual(report.flash_load_bytes, 32)
         self.assertEqual(report.ram_static_bytes, 64)
         self.assertEqual(report.errors, [])
+
+    def test_stack_reservation_must_match_project_policy(self):
+        self.write_fixture([(0, 0, 1, 1)], 1)
+        report = analyze(self.elf_path, self.raw_path, STACK_RESERVATION - 1)
+        self.assertIn(
+            "stack reservation must be exactly 2048 bytes",
+            "\n".join(report.errors),
+        )
 
     def test_truncated_elf_and_segment_data_fail(self):
         self.elf_path.write_bytes(b"\x7fELF")
