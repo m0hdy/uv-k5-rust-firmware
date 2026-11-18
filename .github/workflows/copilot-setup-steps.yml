@@ -82,8 +82,15 @@ jobs:
       - name: Run host regression tests
         env:
           ARM_BINUTILS_PREFIX: arm-none-eabi-
+          PYTHONDONTWRITEBYTECODE: "1"
         run: |
           cargo test --locked --all-targets
           python3 -m unittest discover -s tests -v
       - name: Build Cortex-M0 release
         run: cargo build --locked --target thumbv6m-none-eabi --release
+      - name: Verify setup left the checkout clean
+        run: |
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git status --short
+            exit 1
+          fi
