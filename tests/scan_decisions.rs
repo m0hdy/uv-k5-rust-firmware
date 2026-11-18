@@ -1,7 +1,4 @@
-#[path = "../src/scan_decisions.rs"]
-mod scan_decisions;
-
-use scan_decisions::{
+use uv_k5_rust_firmware::scan_decisions::{
     FunctionState, ReceptionState, ResumeMode, ScanAction, ScanEvent, ScanKind, ScanState,
     StopDisposition,
 };

@@ -1,5 +1,9 @@
 #![no_std]
 
+pub mod channel_codec;
+pub mod scan_decisions;
+pub mod tuning_signalling;
+
 pub struct ByteQueue<const CAPACITY: usize> {
     bytes: [u8; CAPACITY],
     head: usize,
