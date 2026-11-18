@@ -1,2 +1,7 @@
 [target.thumbv6m-none-eabi]
-rustflags = ["-C", "link-arg=--entry=firmware_entry"]
+rustflags = [
+    "-C",
+    "link-arg=-Tlinker/firmware.ld",
+    "-C",
+    "link-arg=--entry=Reset_Handler",
+]

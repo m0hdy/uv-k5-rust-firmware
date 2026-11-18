@@ -2,11 +2,16 @@
 #![cfg_attr(target_arch = "arm", no_main)]
 
 #[cfg(target_arch = "arm")]
+use core::arch::global_asm;
+#[cfg(target_arch = "arm")]
 use core::panic::PanicInfo;
 
 #[cfg(target_arch = "arm")]
+global_asm!(include_str!("startup.S"));
+
+#[cfg(target_arch = "arm")]
 #[unsafe(no_mangle)]
-pub extern "C" fn firmware_entry() -> ! {
+pub extern "C" fn firmware_main() -> ! {
     loop {
         core::hint::spin_loop();
     }

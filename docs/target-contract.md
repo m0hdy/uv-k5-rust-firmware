@@ -114,6 +114,16 @@ hard-coded vector/reset SP. Both values are confirmed in source; their intended
 relationship is **not explained** and must not be silently normalized during
 migration.
 
+The Rust bootstrap preserves the reference's `0x20003FF0` vector SP rather
+than replacing it with the linker top. Its linker map defines RAM as
+`0x20000000`–`0x20003FFF` and reserves `0x20003800`–`0x20003FFF` for the Rust
+stack budget; `__stack_top` is `0x20004000`. The 16-byte difference remains
+unexplained. The reset routine copies `.data`, clears `.bss`, then calls the
+minimal Rust entry. The 48-word table includes the 16 core vectors and 32
+peripheral slots in the order above. These are source/layout facts only: no
+bootloader handoff, vector relocation, clocks, peripherals, or device behavior
+is assumed or established.
+
 **Not established:** whether the on-device boot ROM or updater always transfers
 control to address zero, checks an image header or CRC, relocates vectors,
 changes clocks, or uses another handoff address. The C source does not document
@@ -333,12 +343,13 @@ Before any Rust image is considered for programming:
 
 ## Validation evidence and open questions
 
-This documentation task reviewed the pinned C build inputs; no Rust firmware
-artifact, Rust build/test run, per-device result, or artifact hash is available
-to report. The current repository contains no firmware build/test workflow or
-image artifact. The active Copilot task workflow is not firmware validation.
-These checks are **not passed** by this contract document and must be recorded
-when corresponding artifacts and hardware tests exist. No device was flashed.
+Target builds and startup-layout checks validate the ELF entry, reset vector,
+initial SP, allocated sections, memory ranges, and linker map. Host tests check
+positive and negative startup-layout fixtures and the memory-budget gate. CI
+records hashes for the target ELF and linker map and retains those files for
+review; it does not produce raw or packed images. No device was flashed, and no
+per-device results are available. Structural checks do not establish bootloader
+acceptance, image safety, or hardware compatibility.
 
 Resolve these items before freezing the Rust startup and image interface:
 
@@ -348,8 +359,9 @@ Resolve these items before freezing the Rust startup and image interface:
    state; reconcile the C clock-source comment with the `RCHF` register setup.
 3. Confirm the peripheral register/IRQ definitions and pin multiplexing against
    authoritative DP32G030 material and the target board.
-4. Explain the `0x20003FF0` startup SP versus linker `_estack` at
-   `0x20004000`.
+4. Explain the `0x20003FF0` startup SP versus linker `_estack`/`__stack_top` at
+   `0x20004000`; the Rust layout intentionally preserves the documented
+   discrepancy pending authoritative evidence.
 5. Verify the updater's actual flash layout, reserved-tail ownership, handoff
    address, raw/packed acceptance rules, and non-destructive recovery procedure
    on the exact hardware.
