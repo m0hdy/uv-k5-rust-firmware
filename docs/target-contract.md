@@ -205,9 +205,13 @@ With that explicit marker the gate excludes the reservation from static RAM
 even when it is included in a RAM `PT_LOAD`. Change the policy only with
 documented stack analysis and matching checker and fixture updates.
 
-From the repository root, run the focused fixtures with:
+With rustup and Python 3 installed, build the release ELF and linker map from
+the repository root before running the startup check and host fixtures:
 
 ```sh
+cargo rustc --locked --target thumbv6m-none-eabi --release \
+  --bin uv-k5-rust-firmware -- \
+  -C link-arg=-Map=target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
 python3 scripts/check_startup_layout.py \
   --elf target/thumbv6m-none-eabi/release/uv-k5-rust-firmware \
   --map target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
