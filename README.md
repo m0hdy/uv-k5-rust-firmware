@@ -15,11 +15,13 @@ cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo test --all-targets
 cargo build --target thumbv6m-none-eabi --release
+python3 -m unittest discover -s tests -v
 ```
 
 The crate has no external dependencies or allocator requirement.
-The first three commands run on the host. The last builds the target-only
-`no_std` entry stub; it does not produce a flashable firmware image.
+The Cortex-M0 build produces a target-only `no_std` entry stub, not a
+flashable firmware image. The memory-budget checker uses only the Python
+standard library; the optional real-image test also uses GNU ARM binutils.
 
 ## Continuous integration
 
@@ -27,9 +29,35 @@ The `Rust quality` workflow runs on pushes and pull requests. Its stable require
 checks are `Rust quality / Host checks` (formatting, Clippy, and host tests) and
 `Rust quality / Cortex-M0 release build`. Each job installs the toolchain,
 components, and target from `rust-toolchain.toml`; Cargo commands use the
-tracked lockfile. The target job attaches the ELF and linker map as the
-`cortex-m0-target-report` artifact. Neither file is a flashable image, and this
-bootstrap has no memory-budget gate or image publisher.
+tracked lockfile. Host checks also exercise the ELF/raw-payload memory-budget
+checker with boundary and negative fixtures. The target job attaches only the
+ELF and linker map as the `cortex-m0-target-report` artifact. Neither file is a
+flashable image; the bootstrap ELF is intentionally not passed to the image
+gate because it has no application memory layout.
+The map/report upload runs even if a later gate step fails, provided the target
+build completed successfully.
+
+For any future flashable-image build, create the raw payload from the linked
+ELF and run the gate before uploading, packaging for release, or otherwise
+publishing any image:
+
+```sh
+arm-none-eabi-objcopy -O binary firmware.elf firmware.bin
+python3 scripts/check_memory_budget.py \
+  --elf firmware.elf \
+  --raw firmware.bin \
+  --stack-reservation 0x800 \
+  --packed firmware.packed.bin
+```
+
+Omit `--packed` when no packed container is produced. The required 2 KiB stack
+reservation is excluded from static RAM ranges and reserved at the top of RAM.
+The checker rejects missing or malformed reservations and ordinary data
+overlapping the stack. The raw payload limit is 61,440 bytes. A packed container's
+length is reported separately and is not subject to that limit. The checker
+prints flash-load, raw-payload, RAM, stack, and per-`PT_LOAD` usage and
+remaining-capacity figures. The gate's implementation, accounting rules, and
+fixture coverage are documented in [the target contract](docs/target-contract.md).
 
 To confirm CI failure propagation without committing broken code, run the
 workflow manually and select `host-test` or `target-build` for `failure_probe`.
@@ -61,7 +89,9 @@ reference revision, and reject a missing, floating, or modified C checkout;
 it must not fall back to an upstream branch. No image may be published until
 the mandatory size gate from issue
 [m0hdy/uv-k5-rust-firmware#26](https://github.com/m0hdy/uv-k5-rust-firmware/issues/26)
-is wired into every flashable job.
+has passed for that exact ELF and raw payload in every flashable job.
+Upload its linker map and budget report on an always-run path after the gate so
+a gate failure still retains the diagnostics.
 
 ## Reference firmware
 

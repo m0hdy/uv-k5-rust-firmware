@@ -56,6 +56,15 @@ jobs:
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Run host tests
         run: cargo test --locked --all-targets
+      - name: Install ARM binutils for image fixtures
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binutils-arm-none-eabi
+          arm-none-eabi-ld --version | head -n 1
+      - name: Check firmware memory-budget fixtures
+        env:
+          ARM_BINUTILS_PREFIX: arm-none-eabi-
+        run: python3 -m unittest discover -s tests -v
       - name: Inject an intentionally failing test
         if: github.event_name == 'workflow_dispatch' && inputs.failure_probe == 'host-test'
         run: |
@@ -106,12 +115,14 @@ jobs:
           subprocess.run(command, check=True)
           PY
       - name: Build Cortex-M0 release and link map
+        id: target-build
         run: >-
           cargo rustc --locked --target thumbv6m-none-eabi --release
           --bin uv-k5-rust-firmware --
           -D warnings
           -C link-arg=-Map=target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
       - name: Attach target build report
+        if: always() && steps.target-build.outcome == 'success'
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
         with:
           name: cortex-m0-target-report
