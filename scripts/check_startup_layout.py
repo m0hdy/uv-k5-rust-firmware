@@ -269,10 +269,12 @@ def validate(elf_path: Path, map_path: Path) -> None:
         if symbol[0] % 4:
             raise StartupError(f"{name} must be 4-byte aligned")
 
-    for name, section in sections.items():
-        if section[2] & SHF_ALLOC and section[5] and name != ".stack":
+    section_ranges = []
+    for index, (name, section) in enumerate(sections.items()):
+        if section[2] & SHF_ALLOC and section[5]:
             address, size = section[3], section[5]
-            if not (
+            section_ranges.append((address, address + size, index))
+            if name != ".stack" and not (
                 FLASH_START <= address <= address + size <= FLASH_END
                 or RAM_START <= address <= address + size <= STACK_START
             ):
@@ -286,6 +288,11 @@ def validate(elf_path: Path, map_path: Path) -> None:
         or stack[5] != STACK_SIZE
     ):
         raise StartupError("stack section must reserve the exact writable RAM-top range")
+    section_overlaps = find_overlaps(
+        section_ranges, "allocated section", item_name="section"
+    )
+    if section_overlaps:
+        raise StartupError(section_overlaps[0])
 
     load_ranges = []
     execution_ranges = []

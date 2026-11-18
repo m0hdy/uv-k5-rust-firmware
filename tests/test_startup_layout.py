@@ -41,6 +41,7 @@ def make_elf(
     bss_flags=3,
     text_address=0xC0,
     text_kind=1,
+    text_file_offset_delta=VECTOR_SIZE,
     text_offset_in_ram_segment=None,
     ram_segment_file_size=None,
     ram_segment_memory_size=None,
@@ -68,7 +69,7 @@ def make_elf(
     initialized_data = b"\xa5" * max(data_size, ram_segment_file_size)
     stack_offset = data_load_offset + len(initialized_data)
     if text_offset_in_ram_segment is None:
-        text_file_offset = data_offset + 0xC0
+        text_file_offset = data_offset + text_file_offset_delta
     else:
         text_file_offset = data_load_offset + text_offset_in_ram_segment
     if bss_address is None:
@@ -221,6 +222,21 @@ class StartupLayoutTests(unittest.TestCase):
         self.elf_path.write_bytes(make_elf())
         self.map_path.write_text(make_map(), encoding="utf-8")
         validate(self.elf_path, self.map_path)
+
+    def test_adjacent_allocated_sections_pass(self):
+        self.elf_path.write_bytes(make_elf(text_address=VECTOR_SIZE))
+        self.map_path.write_text(make_map(), encoding="utf-8")
+        validate(self.elf_path, self.map_path)
+
+    def test_overlapping_text_and_vector_table_are_rejected(self):
+        self.check_fails(
+            "allocated section ranges overlap",
+            entry=1,
+            reset_vector=1,
+            reset_address=1,
+            text_address=0,
+            text_file_offset_delta=0,
+        )
 
     def test_empty_data_and_bss_sections_pass(self):
         self.elf_path.write_bytes(make_elf(data_size=0, bss_size=0))
