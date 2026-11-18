@@ -212,16 +212,26 @@ def overlaps(left: tuple[int, int], right: tuple[int, int]) -> bool:
 
 
 def find_overlaps(
-    ranges: list[tuple[int, int, int]], label: str, item_name: str = "PT_LOAD"
+    ranges: list[tuple[int, int, int | str]], label: str, item_name: str = "PT_LOAD"
 ) -> list[str]:
     errors = []
     ordered = sorted(ranges)
     for previous, current in zip(ordered, ordered[1:]):
         if overlaps((previous[0], previous[1]), (current[0], current[1])):
+            previous_name = (
+                f"{item_name} {previous[2]}"
+                if isinstance(previous[2], str)
+                else f"{item_name}[{previous[2]}]"
+            )
+            current_name = (
+                f"{item_name} {current[2]}"
+                if isinstance(current[2], str)
+                else f"{item_name}[{current[2]}]"
+            )
             errors.append(
-                f"{label} ranges overlap: {item_name}[{previous[2]}] "
+                f"{label} ranges overlap: {previous_name} "
                 f"[0x{previous[0]:08x},0x{previous[1]:08x}) and "
-                f"{item_name}[{current[2]}] "
+                f"{current_name} "
                 f"[0x{current[0]:08x},0x{current[1]:08x})"
             )
     return errors

@@ -34,6 +34,8 @@ __vector_table:
 .type Reset_Handler,%function
 .thumb_func
 Reset_Handler:
+    ldr r0, =0x20003FF0
+    mov sp, r0
     ldr r0, =__data_load
     ldr r1, =__data_start
     ldr r2, =__data_end

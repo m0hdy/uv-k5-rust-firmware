@@ -270,10 +270,10 @@ def validate(elf_path: Path, map_path: Path) -> None:
             raise StartupError(f"{name} must be 4-byte aligned")
 
     section_ranges = []
-    for index, (name, section) in enumerate(sections.items()):
+    for name, section in sections.items():
         if section[2] & SHF_ALLOC and section[5]:
             address, size = section[3], section[5]
-            section_ranges.append((address, address + size, index))
+            section_ranges.append((address, address + size, name))
             if name != ".stack" and not (
                 FLASH_START <= address <= address + size <= FLASH_END
                 or RAM_START <= address <= address + size <= STACK_START

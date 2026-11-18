@@ -49,6 +49,7 @@ def make_elf(
     flash_memory_size=FLASH_FILE_SIZE,
     flash_segment_file_size=FLASH_FILE_SIZE,
     flash_segment_type=1,
+    flash_load_address=0,
     vector_file_offset_delta=0,
     symbol_overrides=None,
     duplicate_allocated_stack=False,
@@ -76,8 +77,14 @@ def make_elf(
         bss_address = RAM_START + data_size
     program_headers = (
         ELF32_PROGRAM_HEADER.pack(
-            flash_segment_type, data_offset, 0, 0, flash_segment_file_size,
-            flash_memory_size, 5, 4
+            flash_segment_type,
+            data_offset,
+            0,
+            flash_load_address,
+            flash_segment_file_size,
+            flash_memory_size,
+            5,
+            4,
         )
         + ELF32_PROGRAM_HEADER.pack(
             1, data_load_offset, RAM_START, data_load_address, ram_segment_file_size,
@@ -223,14 +230,14 @@ class StartupLayoutTests(unittest.TestCase):
         self.map_path.write_text(make_map(), encoding="utf-8")
         validate(self.elf_path, self.map_path)
 
-    def test_adjacent_allocated_sections_pass(self):
-        self.elf_path.write_bytes(make_elf(text_address=VECTOR_SIZE))
+    def test_data_and_bss_boundary_adjacency_passes(self):
+        self.elf_path.write_bytes(make_elf(data_size=8, bss_address=RAM_START + 8))
         self.map_path.write_text(make_map(), encoding="utf-8")
         validate(self.elf_path, self.map_path)
 
     def test_overlapping_text_and_vector_table_are_rejected(self):
         self.check_fails(
-            "allocated section ranges overlap",
+            r"allocated section ranges overlap: .*section \.text .*section \.vector_table ",
             entry=1,
             reset_vector=1,
             reset_address=1,
@@ -374,6 +381,19 @@ class StartupLayoutTests(unittest.TestCase):
         self.check_fails(
             "execution range is outside flash and RAM",
             flash_memory_size=FLASH_END + 1,
+        )
+
+    def test_flash_load_segment_vma_and_lma_must_match(self):
+        self.check_fails(
+            "flash VMA and LMA do not match",
+            flash_load_address=FLASH_FILE_SIZE * 2,
+        )
+
+    def test_file_backed_load_must_fit_application_flash(self):
+        self.check_fails(
+            "load range is outside application flash",
+            data_load_address=FLASH_END - 4,
+            data_size=8,
         )
 
     def test_flash_load_cannot_overlap_another_flash_execution_range(self):
