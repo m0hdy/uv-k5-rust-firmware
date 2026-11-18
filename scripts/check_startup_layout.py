@@ -7,6 +7,8 @@ import struct
 import sys
 from pathlib import Path
 
+from check_memory_budget import find_overlaps
+
 FLASH_START = 0x00000000
 FLASH_END = 0x0000F000
 RAM_START = 0x20000000
@@ -169,6 +171,8 @@ def validate(elf_path: Path, map_path: Path) -> None:
     reset_address = reset_symbol[0]
     if reset_symbol[2] & 0xF != 2 or reset_symbol[3] == 0:
         raise StartupError("Reset_Handler must be a defined function symbol")
+    if not FLASH_START <= (reset_address & ~1) < FLASH_END:
+        raise StartupError("Reset_Handler must execute from application flash")
     text = sections[".text"]
     if (
         text[2] & (SHF_ALLOC | SHF_EXECINSTR) != (SHF_ALLOC | SHF_EXECINSTR)
@@ -214,6 +218,7 @@ def validate(elf_path: Path, map_path: Path) -> None:
     ):
         raise StartupError("stack section must reserve the exact writable RAM-top range")
 
+    load_ranges = []
     for index, (virtual, physical, file_offset, file_size, memory_size) in enumerate(segments):
         if memory_size:
             if not (
@@ -224,8 +229,12 @@ def validate(elf_path: Path, map_path: Path) -> None:
         if file_size:
             if not (FLASH_START <= physical <= physical + file_size <= FLASH_END):
                 raise StartupError(f"PT_LOAD[{index}] load range is outside application flash")
+            load_ranges.append((physical, physical + file_size, index))
             if virtual < FLASH_END and physical != virtual:
                 raise StartupError(f"PT_LOAD[{index}] flash VMA and LMA do not match")
+    overlaps = find_overlaps(load_ranges, "PT_LOAD flash load/file")
+    if overlaps:
+        raise StartupError(overlaps[0])
     for name, section in sections.items():
         if not section[2] & SHF_ALLOC or not section[5] or name == ".stack":
             continue

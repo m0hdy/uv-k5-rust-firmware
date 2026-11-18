@@ -40,6 +40,10 @@ def make_elf(
     data_flags=3,
     bss_flags=3,
     text_address=0xC0,
+    text_offset_in_ram_segment=None,
+    ram_segment_file_size=None,
+    ram_segment_memory_size=None,
+    data_load_address=FLASH_FILE_SIZE,
     flash_memory_size=FLASH_FILE_SIZE,
     flash_segment_file_size=FLASH_FILE_SIZE,
     flash_segment_type=1,
@@ -54,8 +58,16 @@ def make_elf(
     flash = bytearray(b"\0" * FLASH_FILE_SIZE)
     flash[:VECTOR_SIZE] = vector
     data_load_offset = data_offset + len(flash)
-    initialized_data = b"\xa5" * data_size
+    if ram_segment_file_size is None:
+        ram_segment_file_size = data_size
+    if ram_segment_memory_size is None:
+        ram_segment_memory_size = data_size + bss_size
+    initialized_data = b"\xa5" * max(data_size, ram_segment_file_size)
     stack_offset = data_load_offset + len(initialized_data)
+    if text_offset_in_ram_segment is None:
+        text_file_offset = data_offset + 0xC0
+    else:
+        text_file_offset = data_load_offset + text_offset_in_ram_segment
     if bss_address is None:
         bss_address = RAM_START + data_size
     program_headers = (
@@ -64,8 +76,8 @@ def make_elf(
             flash_memory_size, 5, 4
         )
         + ELF32_PROGRAM_HEADER.pack(
-            1, data_load_offset, RAM_START, FLASH_FILE_SIZE, data_size,
-            data_size + bss_size, 6, 4,
+            1, data_load_offset, RAM_START, data_load_address, ram_segment_file_size,
+            ram_segment_memory_size, 6, 4,
         )
         + ELF32_PROGRAM_HEADER.pack(
             1, stack_offset, STACK_START, STACK_START, 0, STACK_SIZE, 6, 4
@@ -99,7 +111,7 @@ def make_elf(
             VECTOR_SIZE, 0, 0, 4, 0,
         ),
         ELF32_SECTION_HEADER.pack(
-            section_name_offsets[".text"], 1, 6, text_address, data_offset + 0xC0,
+            section_name_offsets[".text"], 1, 6, text_address, text_file_offset,
             0x40, 0, 0, 4, 0,
         ),
         ELF32_SECTION_HEADER.pack(
@@ -180,9 +192,21 @@ class StartupLayoutTests(unittest.TestCase):
     def test_reset_handler_must_be_in_executable_text(self):
         self.check_fails(
             "Reset_Handler must reside",
-            entry=0x20100001,
-            reset_vector=0x20100001,
-            reset_address=0x20100001,
+            entry=0x101,
+            reset_vector=0x101,
+            reset_address=0x101,
+        )
+
+    def test_reset_handler_must_execute_from_flash(self):
+        self.check_fails(
+            "Reset_Handler must execute from application flash",
+            entry=RAM_START + 0x101,
+            reset_vector=RAM_START + 0x101,
+            reset_address=RAM_START + 0x101,
+            text_address=RAM_START + 0x100,
+            text_offset_in_ram_segment=0x100,
+            ram_segment_file_size=0x140,
+            ram_segment_memory_size=0x140,
         )
 
     def test_initial_stack_pointer_must_match_reference(self):
@@ -210,9 +234,9 @@ class StartupLayoutTests(unittest.TestCase):
             data_flags=SHF_ALLOC,
         )
 
-    def test_allocated_text_must_fit_application_flash(self):
+    def test_reset_handler_must_fit_application_flash(self):
         self.check_fails(
-            "allocated section .text",
+            "Reset_Handler must execute from application flash",
             entry=FLASH_END + 1,
             reset_vector=FLASH_END + 1,
             reset_address=FLASH_END + 1,
@@ -242,6 +266,12 @@ class StartupLayoutTests(unittest.TestCase):
         self.check_fails(
             "allocated section .vector_table is not covered by a file-backed PT_LOAD",
             vector_file_offset_delta=FLASH_FILE_SIZE + 4,
+        )
+
+    def test_flash_load_ranges_must_not_overlap(self):
+        self.check_fails(
+            "PT_LOAD flash load/file ranges overlap",
+            data_load_address=0,
         )
 
     def test_map_stack_end_must_match_ram_end(self):
