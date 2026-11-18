@@ -21,6 +21,48 @@ The crate has no external dependencies or allocator requirement.
 The first three commands run on the host. The last builds the target-only
 `no_std` entry stub; it does not produce a flashable firmware image.
 
+## Continuous integration
+
+The `Rust quality` workflow runs on pushes and pull requests. Its stable required
+checks are `Rust quality / Host checks` (formatting, Clippy, and host tests) and
+`Rust quality / Cortex-M0 release build`. Each job installs the toolchain,
+components, and target from `rust-toolchain.toml`; Cargo commands use the
+tracked lockfile. The target job attaches the ELF and linker map as the
+`cortex-m0-target-report` artifact. Neither file is a flashable image, and this
+bootstrap has no memory-budget gate or image publisher.
+
+To confirm CI failure propagation without committing broken code, run the
+workflow manually and select `host-test` or `target-build` for `failure_probe`.
+That disposable run injects a failing test or target compile error and is
+expected to fail. Locally, make the equivalent temporary injection in a
+disposable worktree:
+
+```sh
+cat >> src/lib.rs <<'RS'
+#[cfg(test)]
+#[test]
+fn intentional_failure_propagates() {
+    assert!(false, "intentional CI failure probe");
+}
+RS
+cargo test --locked --all-targets
+```
+
+For the target probe, append
+`compile_error!("intentional Cortex-M0 build failure probe");` to
+`src/bin/firmware.rs`, then run
+`cargo build --locked --target thumbv6m-none-eabi --release`. Both commands
+must return nonzero; do not commit either injection.
+
+There is no C reference or parity job in the default workflow. The documented
+`UV_K5_C_REFERENCE` environment variable is not consumed by current checks.
+Any future mixed/parity lane must be separately opt-in, require an immutable
+reference revision, and reject a missing, floating, or modified C checkout;
+it must not fall back to an upstream branch. No image may be published until
+the mandatory size gate from issue
+[m0hdy/uv-k5-rust-firmware#26](https://github.com/m0hdy/uv-k5-rust-firmware/issues/26)
+is wired into every flashable job.
+
 ## Reference firmware
 
 The default commands above do not require or inspect a C firmware checkout or
