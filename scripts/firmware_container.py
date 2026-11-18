@@ -82,6 +82,8 @@ def decode_container(container, author=None, version=None):
     field = transformed[version_offset : version_offset + VERSION_SIZE]
     if field[:1] != b"*":
         raise ContainerError("container version field marker is missing")
+    if not field.isascii():
+        raise ContainerError("container version field must contain only ASCII characters")
     if author is not None and field != _version_field(author, version):
         raise ContainerError(
             "container version field does not match the requested author/version"

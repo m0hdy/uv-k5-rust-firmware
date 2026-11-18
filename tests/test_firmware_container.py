@@ -1,3 +1,4 @@
+import binascii
 import hashlib
 import json
 from pathlib import Path
@@ -70,6 +71,20 @@ class FirmwareContainerTests(unittest.TestCase):
             decode_container(packed, "Other", "v1")
         with self.assertRaisesRegex(ContainerError, "ASCII"):
             pack_payload(b"payload", "Au\u00f6thor", "v1")
+
+    def test_non_ascii_version_field_with_valid_crc_is_rejected(self):
+        packed = bytearray(pack_payload(b"payload", "Test", "1"))
+        packed[len(b"payload") + 2] ^= ord("e") ^ 0xE5
+        obfuscated = bytes(packed[:-2])
+        crc = binascii.crc_hqx(obfuscated, 0)
+        malformed = obfuscated + bytes((crc & 0xFF, crc >> 8))
+
+        self.assertEqual(
+            binascii.crc_hqx(malformed[:-2], 0),
+            int.from_bytes(malformed[-2:][::-1], "big"),
+        )
+        with self.assertRaisesRegex(ContainerError, "only ASCII"):
+            decode_container(malformed)
 
     def test_cli_pack_validate_and_unpack(self):
         with tempfile.TemporaryDirectory() as directory:
