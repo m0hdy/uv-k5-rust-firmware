@@ -1,0 +1,132 @@
+name: Rust quality
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      failure_probe:
+        description: Intentionally fail a disposable CI run to verify failure propagation
+        type: choice
+        options:
+          - none
+          - host-test
+          - target-build
+        default: none
+
+permissions:
+  contents: read
+
+jobs:
+  host:
+    name: Host checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          import tomllib
+
+          with open("rust-toolchain.toml", "rb") as toolchain_file:
+              toolchain = tomllib.load(toolchain_file)["toolchain"]
+
+          command = [
+              "rustup",
+              "toolchain",
+              "install",
+              toolchain["channel"],
+              "--profile",
+              toolchain["profile"],
+          ]
+          for component in toolchain.get("components", []):
+              command.extend(["--component", component])
+          for target in toolchain.get("targets", []):
+              command.extend(["--target", target])
+          subprocess.run(command, check=True)
+          PY
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Run host tests
+        run: cargo test --locked --all-targets
+      - name: Inject an intentionally failing test
+        if: github.event_name == 'workflow_dispatch' && inputs.failure_probe == 'host-test'
+        run: |
+          cat >> src/lib.rs <<'RUST'
+
+          #[cfg(test)]
+          mod ci_failure_probe {
+              #[test]
+              fn intentional_failure_propagates() {
+                  assert!(false, "intentional CI failure probe");
+              }
+          }
+          RUST
+      - name: Run host tests (expected to fail)
+        if: github.event_name == 'workflow_dispatch' && inputs.failure_probe == 'host-test'
+        run: cargo test --locked --all-targets
+
+  cortex-m0:
+    name: Cortex-M0 release build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          import tomllib
+
+          with open("rust-toolchain.toml", "rb") as toolchain_file:
+              toolchain = tomllib.load(toolchain_file)["toolchain"]
+
+          command = [
+              "rustup",
+              "toolchain",
+              "install",
+              toolchain["channel"],
+              "--profile",
+              toolchain["profile"],
+          ]
+          for component in toolchain.get("components", []):
+              command.extend(["--component", component])
+          for target in toolchain.get("targets", []):
+              command.extend(["--target", target])
+          subprocess.run(command, check=True)
+          PY
+      - name: Build Cortex-M0 release and link map
+        run: >-
+          cargo rustc --locked --target thumbv6m-none-eabi --release
+          --bin uv-k5-rust-firmware --
+          -D warnings
+          -C link-arg=-Map=target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
+      - name: Attach target build report
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        with:
+          name: cortex-m0-target-report
+          path: |
+            target/thumbv6m-none-eabi/release/uv-k5-rust-firmware
+            target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
+          if-no-files-found: error
+          retention-days: 14
+      - name: Inject a target compile error
+        if: github.event_name == 'workflow_dispatch' && inputs.failure_probe == 'target-build'
+        run: |
+          cat >> src/bin/firmware.rs <<'RUST'
+
+          compile_error!("intentional Cortex-M0 build failure probe");
+          RUST
+      - name: Build Cortex-M0 release (expected to fail)
+        if: github.event_name == 'workflow_dispatch' && inputs.failure_probe == 'target-build'
+        run: cargo build --locked --target thumbv6m-none-eabi --release
