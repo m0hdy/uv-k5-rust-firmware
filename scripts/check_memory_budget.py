@@ -17,6 +17,7 @@ PT_LOAD = 1
 ELF32_HEADER = struct.Struct("<16sHHIIIIIHHHHHH")
 ELF32_PROGRAM_HEADER = struct.Struct("<IIIIIIII")
 ELF32_SECTION_HEADER = struct.Struct("<IIIIIIIIII")
+SHT_STRTAB = 3
 SHT_NOBITS = 8
 SHF_WRITE = 1
 SHF_ALLOC = 2
@@ -32,6 +33,7 @@ class Segment:
     index: int
     virtual_address: int
     physical_address: int
+    file_offset: int
     file_size: int
     memory_size: int
     file_data: bytes
@@ -47,12 +49,12 @@ class Report:
     errors: list[str]
 
 
-def parse_stack_section(data: bytes, fields: tuple) -> bool:
+def validate_allocated_sections(data: bytes, fields: tuple, segments: list[Segment]) -> bool:
     offset, entry_size, count, string_index = (
         fields[6], fields[11], fields[12], fields[13]
     )
     if offset == 0:
-        return False
+        raise BudgetError("ELF section headers are required to validate allocated sections")
     if (
         entry_size != ELF32_SECTION_HEADER.size
         or count == 0
@@ -64,40 +66,56 @@ def parse_stack_section(data: bytes, fields: tuple) -> bool:
         ELF32_SECTION_HEADER.unpack_from(data, offset + index * entry_size)
         for index in range(count)
     ]
-    SHT_STRTAB = 3
     string_offset, string_size = sections[string_index][4:6]
     if sections[string_index][1] != SHT_STRTAB or string_offset + string_size > len(data):
         raise BudgetError("ELF section-name string table is malformed")
     names = data[string_offset : string_offset + string_size]
-    linked_stack = []
+    allocated = []
+    linked_stack = False
+    stack_start = RAM_END - REQUIRED_STACK_RESERVATION
     for section in sections:
-        name_offset = section[0]
+        name_offset, kind, flags, address, file_offset, size = section[:6]
         end = names.find(b"\0", name_offset)
         if end == -1:
             raise BudgetError("ELF section name is malformed")
-        if names[name_offset:end] == b".stack":
-            linked_stack.append(section)
-    if not linked_stack:
-        return False
-    stack_start = RAM_END - REQUIRED_STACK_RESERVATION
-    if len(linked_stack) != 1:
-        raise BudgetError("ELF must contain at most one .stack section")
-    stack = linked_stack[0]
-    if (
-        stack[1] != SHT_NOBITS
-        or stack[2] & (SHF_ALLOC | SHF_WRITE | SHF_EXECINSTR) != (SHF_ALLOC | SHF_WRITE)
-        or stack[3] != stack_start
-        or stack[5] != REQUIRED_STACK_RESERVATION
-    ):
-        raise BudgetError(
-            "linked .stack must be writable, allocated NOBITS in the exact reserved range"
-        )
-    for section in sections:
-        address, size = section[3], section[5]
-        if section is not stack and section[2] & SHF_ALLOC and size:
-            if overlaps((address, address + size), (stack_start, RAM_END)):
-                raise BudgetError("another allocated ELF section overlaps linked .stack")
-    return True
+        name = names[name_offset:end].decode("ascii", errors="backslashreplace")
+        if name == ".stack":
+            if linked_stack:
+                raise BudgetError("ELF must contain at most one .stack section")
+            if (
+                kind != SHT_NOBITS
+                or flags & (SHF_ALLOC | SHF_WRITE | SHF_EXECINSTR) != (SHF_ALLOC | SHF_WRITE)
+                or address != stack_start
+                or size != REQUIRED_STACK_RESERVATION
+            ):
+                raise BudgetError(
+                    "linked .stack must be writable, allocated NOBITS in the exact reserved range"
+                )
+            linked_stack = True
+        elif flags & SHF_ALLOC and size:
+            allocated.append((name, kind, address, file_offset, size))
+
+    for name, kind, address, file_offset, size in allocated:
+        if not (
+            in_region(address, size, FLASH_START, FLASH_END)
+            or in_region(address, size, RAM_START, RAM_END)
+        ):
+            raise BudgetError(f"allocated section {name} is outside flash and RAM")
+        if overlaps((address, address + size), (stack_start, RAM_END)):
+            raise BudgetError(f"allocated section {name} overlaps the reserved stack")
+        for segment in segments:
+            delta = address - segment.virtual_address
+            if 0 <= delta and delta + size <= segment.memory_size and (
+                kind == SHT_NOBITS
+                or (
+                    delta + size <= segment.file_size
+                    and file_offset == segment.file_offset + delta
+                )
+            ):
+                break
+        else:
+            raise BudgetError(f"allocated section {name} is not covered by a PT_LOAD segment")
+    return linked_stack
 
 
 def parse_elf(path: Path) -> tuple[list[Segment], bool]:
@@ -150,6 +168,7 @@ def parse_elf(path: Path) -> tuple[list[Segment], bool]:
                 index,
                 virtual_address,
                 physical_address,
+                file_offset,
                 file_size,
                 memory_size,
                 data[file_offset : file_offset + file_size],
@@ -158,7 +177,7 @@ def parse_elf(path: Path) -> tuple[list[Segment], bool]:
 
     if not segments:
         raise BudgetError("ELF has no PT_LOAD segments")
-    return segments, parse_stack_section(data, fields)
+    return segments, validate_allocated_sections(data, fields, segments)
 
 
 def in_region(start: int, size: int, region_start: int, region_end: int) -> bool:

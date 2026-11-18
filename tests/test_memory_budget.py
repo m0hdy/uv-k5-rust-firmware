@@ -304,6 +304,44 @@ SECTIONS {
         with self.assertRaisesRegex(BudgetError, "no program headers"):
             parse_elf(self.elf_path)
 
+    def test_stripped_section_header_table_cannot_bypass_validation(self):
+        elf = bytearray(make_elf([(0, 0, 1, 1)]))
+        struct.pack_into("<I", elf, 32, 0)
+        self.elf_path.write_bytes(elf)
+        with self.assertRaisesRegex(BudgetError, "section headers are required"):
+            parse_elf(self.elf_path)
+
+    @unittest.skipUnless(ARM_BINUTILS_PREFIX, "set ARM_BINUTILS_PREFIX to run the real ARM image test")
+    def test_real_arm_image_rejects_uncovered_bss(self):
+        source = self.directory / "fixture.s"
+        script = self.directory / "fixture.ld"
+        obj = self.directory / "fixture.o"
+        source.write_text(".text\n.byte 0x11\n.bss\n.space 4\n", encoding="ascii")
+        subprocess.run(
+            [ARM_BINUTILS_PREFIX + "as", "-mcpu=cortex-m0", "-o", obj, source],
+            check=True,
+        )
+        for address, diagnostic in (
+            (0x20000000, "not covered by a PT_LOAD"),
+            (0x20003800, "overlaps the reserved stack"),
+            (0x20004000, "outside flash and RAM"),
+        ):
+            with self.subTest(address=hex(address)):
+                script.write_text(
+                    "PHDRS { code PT_LOAD; }\n"
+                    "SECTIONS {\n"
+                    "  .text 0 : { *(.text) } :code\n"
+                    f"  .bss 0x{address:x} (NOLOAD) : {{ *(.bss) }} :NONE\n"
+                    "}\n",
+                    encoding="ascii",
+                )
+                subprocess.run(
+                    [ARM_BINUTILS_PREFIX + "ld", "-T", script, "-o", self.elf_path, obj],
+                    check=True,
+                )
+                with self.assertRaisesRegex(BudgetError, diagnostic):
+                    parse_elf(self.elf_path)
+
     def test_packed_length_is_reported_without_raw_limit(self):
         self.write_fixture([(0, 0, 1, 1)], 1)
         packed_path = self.directory / "fixture.packed"

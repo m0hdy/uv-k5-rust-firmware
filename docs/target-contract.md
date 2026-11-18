@@ -177,7 +177,10 @@ origin, end at the last file-backed load byte, and match the ELF load bytes;
 gaps between load ranges use objcopy's zero-filled padding. File-backed flash
 XIP segments must have matching VMA and LMA. Raw payload bytes are independently
 limited to 61,440; packed-container length is reported separately and is not
-limited by that raw-image cap.
+limited by that raw-image cap. Retain the section headers in the ELF used by
+the gate: every nonempty allocated section must fit within its permitted
+region and a load segment, except a validated `.stack` reservation. This
+prevents RAM from being omitted from accounting by an unassigned `.bss`.
 
 The current Rust integration policy reserves 2,048 bytes for stack at the top
 of RAM (`0x20003800`–`0x20003FFF`). This is a conservative budget reservation,
