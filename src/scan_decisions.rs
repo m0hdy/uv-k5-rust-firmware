@@ -23,6 +23,13 @@ pub enum FunctionState {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReceptionState {
+    None,
+    Detected,
+    Listening,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ScanEvent {
     Start {
         kind: ScanKind,
@@ -32,6 +39,7 @@ pub enum ScanEvent {
     Tick {
         function: FunctionState,
     },
+    Detected,
     Found,
     ReceptionEnded,
     Continue {
@@ -64,11 +72,13 @@ pub struct ScanState {
     remaining_10ms: u16,
     schedule_listen: bool,
     keep_result: bool,
+    reception_state: ReceptionState,
 }
 
 impl ScanState {
     pub const START_DELAY_10MS: u16 = 50;
     pub const NEXT_CHANNEL_DELAY_10MS: u16 = 9;
+    pub const DETECTION_DELAY_10MS: u16 = 20;
     pub const TIME_RESUME_DELAY_10MS: u16 = 500;
     pub const CARRIER_RESUME_DELAY_10MS: u16 = 360;
 
@@ -81,6 +91,7 @@ impl ScanState {
             remaining_10ms: 0,
             schedule_listen: false,
             keep_result: false,
+            reception_state: ReceptionState::None,
         }
     }
 
@@ -104,6 +115,10 @@ impl ScanState {
         self.keep_result
     }
 
+    pub const fn reception_state(&self) -> ReceptionState {
+        self.reception_state
+    }
+
     pub fn apply(&mut self, event: ScanEvent) -> ScanAction {
         match event {
             ScanEvent::Start {
@@ -117,6 +132,7 @@ impl ScanState {
                 self.pause_mode = false;
                 self.remaining_10ms = Self::START_DELAY_10MS;
                 self.schedule_listen = false;
+                self.reception_state = ReceptionState::None;
                 if store_backup_settings {
                     self.keep_result = false;
                 }
@@ -134,11 +150,20 @@ impl ScanState {
                 }
                 ScanAction::None
             }
+            ScanEvent::Detected => {
+                if self.active && self.reception_state == ReceptionState::None {
+                    self.reception_state = ReceptionState::Detected;
+                    self.remaining_10ms = Self::DETECTION_DELAY_10MS;
+                    self.schedule_listen = false;
+                }
+                ScanAction::None
+            }
             ScanEvent::Found => {
                 if !self.active {
                     return ScanAction::None;
                 }
 
+                self.reception_state = ReceptionState::Listening;
                 match self.resume_mode {
                     Some(ResumeMode::Time) if !self.pause_mode => {
                         self.remaining_10ms = Self::TIME_RESUME_DELAY_10MS;
@@ -158,6 +183,7 @@ impl ScanState {
                 if !self.active {
                     return ScanAction::None;
                 }
+                self.reception_state = ReceptionState::None;
                 match self.resume_mode {
                     Some(ResumeMode::Carrier) => {
                         self.remaining_10ms = Self::CARRIER_RESUME_DELAY_10MS;
@@ -178,6 +204,9 @@ impl ScanState {
 
                 let listen = function == FunctionState::Incoming
                     && (self.kind == Some(ScanKind::Frequency) || code_type_off);
+                if listen {
+                    self.apply(ScanEvent::Found);
+                }
                 self.pause_mode = false;
                 self.schedule_listen = false;
                 if listen {
@@ -203,6 +232,7 @@ impl ScanState {
         self.pause_mode = false;
         self.remaining_10ms = 0;
         self.schedule_listen = false;
+        self.reception_state = ReceptionState::None;
         ScanAction::Stopped(disposition)
     }
 }

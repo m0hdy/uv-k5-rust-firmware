@@ -2,7 +2,8 @@
 mod scan_decisions;
 
 use scan_decisions::{
-    FunctionState, ResumeMode, ScanAction, ScanEvent, ScanKind, ScanState, StopDisposition,
+    FunctionState, ReceptionState, ResumeMode, ScanAction, ScanEvent, ScanKind, ScanState,
+    StopDisposition,
 };
 
 fn start(kind: ScanKind, resume_mode: ResumeMode) -> ScanState {
@@ -126,6 +127,33 @@ fn time_resume_schedules_on_expiry_and_found_does_not_clear_it() {
 }
 
 #[test]
+fn first_detection_restarts_delay_and_clears_a_pending_continuation() {
+    let mut state = start(ScanKind::Memory, ResumeMode::Time);
+    ticks(
+        &mut state,
+        ScanState::START_DELAY_10MS,
+        FunctionState::Other,
+    );
+    assert!(state.is_scheduled());
+
+    state.apply(ScanEvent::Detected);
+    assert_eq!(state.remaining_10ms(), 20);
+    assert!(!state.is_scheduled());
+    assert_eq!(state.reception_state(), ReceptionState::Detected);
+
+    ticks(&mut state, 5, FunctionState::Incoming);
+    state.apply(ScanEvent::Detected);
+    assert_eq!(state.remaining_10ms(), 15);
+    assert!(!state.is_scheduled());
+    assert_eq!(state.reception_state(), ReceptionState::Detected);
+
+    state.apply(ScanEvent::Found);
+    assert_eq!(state.reception_state(), ReceptionState::Listening);
+    state.apply(ScanEvent::ReceptionEnded);
+    assert_eq!(state.reception_state(), ReceptionState::None);
+}
+
+#[test]
 fn carrier_resume_waits_until_reception_ends_then_schedules_at_360_ticks() {
     let mut state = start(ScanKind::Frequency, ResumeMode::Carrier);
     state.apply(ScanEvent::Found);
@@ -237,11 +265,41 @@ fn continue_decisions_match_scan_kind_and_incoming_code_state() {
             state.remaining_10ms(),
             if expected == ScanAction::Advance {
                 ScanState::NEXT_CHANNEL_DELAY_10MS
+            } else if expected == ScanAction::Listen {
+                500
             } else {
                 0
             }
         );
+        if expected == ScanAction::Listen {
+            assert!(state.keeps_last_result());
+        }
     }
+}
+
+#[test]
+fn listen_continuation_applies_found_before_clearing_pause_and_keeps_result() {
+    let mut state = start(ScanKind::Frequency, ResumeMode::Time);
+    ticks(
+        &mut state,
+        ScanState::START_DELAY_10MS,
+        FunctionState::Other,
+    );
+
+    assert_eq!(
+        state.apply(ScanEvent::Continue {
+            function: FunctionState::Incoming,
+            code_type_off: false,
+        }),
+        ScanAction::Listen
+    );
+    assert_eq!(state.remaining_10ms(), 500);
+    assert!(state.keeps_last_result());
+    assert!(state.is_active());
+    assert_eq!(
+        state.apply(ScanEvent::Stop),
+        ScanAction::Stopped(StopDisposition::KeepLastFound)
+    );
 }
 
 #[test]
