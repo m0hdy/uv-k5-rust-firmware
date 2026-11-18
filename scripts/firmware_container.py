@@ -11,6 +11,8 @@ import sys
 VERSION_OFFSET = 0x2000
 VERSION_SIZE = 16
 CRC_SIZE = 2
+# Modified stdlib integration; table reproduced from upstream fw-pack.py at commit
+# 7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3.
 OBFUSCATION = bytes.fromhex(
     "47 22 c0 52 5d 57 48 94 b1 60 60 db 6f e3 4c 7c "
     "d8 4a d6 8b 30 ec 25 e0 4c d9 00 7f bf e3 54 05 "
