@@ -28,7 +28,7 @@ any reference environment variable. For future parity tooling that explicitly
 uses a reference checkout, select it with:
 
 ```sh
-export UVK5_C_REFERENCE=/path/to/reference-firmware
+export UV_K5_C_REFERENCE=/path/to/reference-firmware
 ```
 
 No current build or test command consumes this variable.
@@ -38,5 +38,6 @@ No current build or test command consumes this variable.
 This repository owns its Cargo and toolchain configuration, the host-testable
 Rust library in `src/lib.rs`, and the target-only entry stub in
 `src/bin/firmware.rs`. The C firmware remains the reference owner of shared
-startup, linker, build/packaging, and ABI files. This bootstrap does not copy
-or publish those files or define a flashable artifact.
+source and remains unchanged. The Rust migration's designated integration
+owner is responsible for future Rust-side startup, linker, build/packaging, and
+ABI integration. This bootstrap does not define or publish a flashable artifact.
