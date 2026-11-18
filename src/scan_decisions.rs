@@ -208,6 +208,7 @@ impl ScanState {
                     self.apply(ScanEvent::Found);
                 }
                 self.pause_mode = false;
+                self.reception_state = ReceptionState::None;
                 self.schedule_listen = false;
                 if listen {
                     ScanAction::Listen

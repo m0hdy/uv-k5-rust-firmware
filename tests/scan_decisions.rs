@@ -261,6 +261,7 @@ fn continue_decisions_match_scan_kind_and_incoming_code_state() {
         );
         assert!(!state.is_scheduled());
         assert!(!state.is_paused());
+        assert_eq!(state.reception_state(), ReceptionState::None);
         assert_eq!(
             state.remaining_10ms(),
             if expected == ScanAction::Advance {
@@ -295,11 +296,44 @@ fn listen_continuation_applies_found_before_clearing_pause_and_keeps_result() {
     );
     assert_eq!(state.remaining_10ms(), 500);
     assert!(state.keeps_last_result());
+    assert_eq!(state.reception_state(), ReceptionState::None);
     assert!(state.is_active());
     assert_eq!(
         state.apply(ScanEvent::Stop),
         ScanAction::Stopped(StopDisposition::KeepLastFound)
     );
+}
+
+#[test]
+fn advance_clears_detection_state_for_a_fresh_next_channel_window() {
+    let mut state = start(ScanKind::Memory, ResumeMode::Time);
+    ticks(
+        &mut state,
+        ScanState::START_DELAY_10MS,
+        FunctionState::Other,
+    );
+    state.apply(ScanEvent::Detected);
+    ticks(
+        &mut state,
+        ScanState::DETECTION_DELAY_10MS,
+        FunctionState::Incoming,
+    );
+    assert!(state.is_scheduled());
+
+    assert_eq!(
+        state.apply(ScanEvent::Continue {
+            function: FunctionState::Incoming,
+            code_type_off: false,
+        }),
+        ScanAction::Advance
+    );
+    assert_eq!(state.reception_state(), ReceptionState::None);
+    assert_eq!(state.remaining_10ms(), ScanState::NEXT_CHANNEL_DELAY_10MS);
+
+    state.apply(ScanEvent::Detected);
+    assert_eq!(state.reception_state(), ReceptionState::Detected);
+    assert_eq!(state.remaining_10ms(), ScanState::DETECTION_DELAY_10MS);
+    assert!(!state.is_scheduled());
 }
 
 #[test]
