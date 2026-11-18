@@ -263,6 +263,31 @@ accepted. Keep raw and packed artifacts clearly named and separately hashed.
 
 Sources: [raw and packed build targets](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/Makefile#L404-L430), [container transformation](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/fw-pack.py#L1-L35).
 
+#### Host-side codec
+
+The standard-library-only host utility implements the pinned container format:
+
+```sh
+python3 scripts/firmware_container.py pack firmware.bin firmware.packed.bin \
+  --author "Author" --version "1.0"
+python3 scripts/firmware_container.py validate firmware.packed.bin \
+  --author "Author" --version "1.0"
+python3 scripts/firmware_container.py unpack firmware.packed.bin recovered.bin
+python3 -m unittest discover -s tests -p 'test_firmware_container.py' -v
+```
+
+The pinned `fw-pack.py` forms the transformed input as
+`raw[:0x2000] + version_field + raw[0x2000:]`. For a raw payload shorter than
+`0x2000`, Python's slice leaves the complete payload on the left and inserts
+the 16-byte version field at the end. The utility preserves this behavior
+without padding the payload. Its tests use the approved checksum fixture and
+deterministic synthetic payloads; they do not need the C checkout or `crcmod`.
+
+This codec checks the container CRC, version field, and reversible payload
+transformation only. It does not validate ELF layout, prove updater acceptance,
+or make any image—including this repository's non-flashable bootstrap—suitable
+for flashing. The packed container is not a substitute for the raw payload.
+
 ### Tool versions in the reference
 
 - The reference README recommends **arm-none-eabi GCC 10.3.1**; it warns that
