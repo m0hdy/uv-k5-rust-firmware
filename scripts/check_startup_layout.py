@@ -7,7 +7,7 @@ import struct
 import sys
 from pathlib import Path
 
-from check_memory_budget import find_overlaps
+from check_memory_budget import find_overlaps, overlaps
 
 FLASH_START = 0x00000000
 FLASH_END = 0x0000F000
@@ -197,6 +197,11 @@ def validate(elf_path: Path, map_path: Path) -> None:
     for name, section in ((".data", data_section), (".bss", bss_section)):
         if not (RAM_START <= section[3] <= section[3] + section[5] <= STACK_START):
             raise StartupError(f"{name} must reside in static RAM below the reserved stack")
+    if data_section[5] and bss_section[5] and overlaps(
+        (data_section[3], data_section[3] + data_section[5]),
+        (bss_section[3], bss_section[3] + bss_section[5]),
+    ):
+        raise StartupError(".data and .bss ranges must not overlap")
     if data_section[5] and data_section[2] & SHF_WRITE == 0:
         raise StartupError(".data must be writable")
 
@@ -226,15 +231,30 @@ def validate(elf_path: Path, map_path: Path) -> None:
                 or RAM_START <= virtual <= virtual + memory_size <= RAM_END
             ):
                 raise StartupError(f"PT_LOAD[{index}] execution range is outside flash and RAM")
+            if RAM_START <= virtual and virtual + memory_size <= RAM_END:
+                if file_size and overlaps(
+                    (virtual, virtual + file_size), (STACK_START, RAM_END)
+                ):
+                    raise StartupError(
+                        f"PT_LOAD[{index}] initializes bytes in the reserved stack"
+                    )
+                if overlaps((virtual, virtual + memory_size), (STACK_START, RAM_END)) and (
+                    virtual != STACK_START
+                    or memory_size != STACK_SIZE
+                    or file_size != 0
+                ):
+                    raise StartupError(
+                        f"PT_LOAD[{index}] RAM execution range overlaps the reserved stack"
+                    )
         if file_size:
             if not (FLASH_START <= physical <= physical + file_size <= FLASH_END):
                 raise StartupError(f"PT_LOAD[{index}] load range is outside application flash")
             load_ranges.append((physical, physical + file_size, index))
             if virtual < FLASH_END and physical != virtual:
                 raise StartupError(f"PT_LOAD[{index}] flash VMA and LMA do not match")
-    overlaps = find_overlaps(load_ranges, "PT_LOAD flash load/file")
-    if overlaps:
-        raise StartupError(overlaps[0])
+    load_overlaps = find_overlaps(load_ranges, "PT_LOAD flash load/file")
+    if load_overlaps:
+        raise StartupError(load_overlaps[0])
     for name, section in sections.items():
         if not section[2] & SHF_ALLOC or not section[5] or name == ".stack":
             continue

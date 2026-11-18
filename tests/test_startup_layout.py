@@ -227,6 +227,25 @@ class StartupLayoutTests(unittest.TestCase):
             bss_address=0,
         )
 
+    def test_data_and_bss_must_not_overlap(self):
+        self.check_fails(
+            ".data and .bss ranges must not overlap",
+            bss_address=RAM_START + 2,
+        )
+
+    def test_ram_load_segment_must_not_overlap_reserved_stack(self):
+        self.check_fails(
+            "RAM execution range overlaps the reserved stack",
+            ram_segment_memory_size=0x3804,
+        )
+
+    def test_ram_load_segment_must_not_initialize_reserved_stack(self):
+        self.check_fails(
+            "initializes bytes in the reserved stack",
+            ram_segment_file_size=0x3804,
+            ram_segment_memory_size=0x3804,
+        )
+
     def test_initialized_data_must_be_writable(self):
         self.check_fails(
             ".data must be writable",
