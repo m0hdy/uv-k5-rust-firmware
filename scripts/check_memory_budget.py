@@ -16,6 +16,11 @@ REQUIRED_STACK_RESERVATION = 0x800
 PT_LOAD = 1
 ELF32_HEADER = struct.Struct("<16sHHIIIIIHHHHHH")
 ELF32_PROGRAM_HEADER = struct.Struct("<IIIIIIII")
+ELF32_SECTION_HEADER = struct.Struct("<IIIIIIIIII")
+SHT_NOBITS = 8
+SHF_WRITE = 1
+SHF_ALLOC = 2
+SHF_EXECINSTR = 4
 
 
 class BudgetError(ValueError):
@@ -42,7 +47,60 @@ class Report:
     errors: list[str]
 
 
-def parse_elf(path: Path) -> list[Segment]:
+def parse_stack_section(data: bytes, fields: tuple) -> bool:
+    offset, entry_size, count, string_index = (
+        fields[6], fields[11], fields[12], fields[13]
+    )
+    if offset == 0:
+        return False
+    if (
+        entry_size != ELF32_SECTION_HEADER.size
+        or count == 0
+        or not 0 < string_index < count
+        or offset + entry_size * count > len(data)
+    ):
+        raise BudgetError("ELF section-header table is truncated or unsupported")
+    sections = [
+        ELF32_SECTION_HEADER.unpack_from(data, offset + index * entry_size)
+        for index in range(count)
+    ]
+    SHT_STRTAB = 3
+    string_offset, string_size = sections[string_index][4:6]
+    if sections[string_index][1] != SHT_STRTAB or string_offset + string_size > len(data):
+        raise BudgetError("ELF section-name string table is malformed")
+    names = data[string_offset : string_offset + string_size]
+    linked_stack = []
+    for section in sections:
+        name_offset = section[0]
+        end = names.find(b"\0", name_offset)
+        if end == -1:
+            raise BudgetError("ELF section name is malformed")
+        if names[name_offset:end] == b".stack":
+            linked_stack.append(section)
+    if not linked_stack:
+        return False
+    stack_start = RAM_END - REQUIRED_STACK_RESERVATION
+    if len(linked_stack) != 1:
+        raise BudgetError("ELF must contain at most one .stack section")
+    stack = linked_stack[0]
+    if (
+        stack[1] != SHT_NOBITS
+        or stack[2] & (SHF_ALLOC | SHF_WRITE | SHF_EXECINSTR) != (SHF_ALLOC | SHF_WRITE)
+        or stack[3] != stack_start
+        or stack[5] != REQUIRED_STACK_RESERVATION
+    ):
+        raise BudgetError(
+            "linked .stack must be writable, allocated NOBITS in the exact reserved range"
+        )
+    for section in sections:
+        address, size = section[3], section[5]
+        if section is not stack and section[2] & SHF_ALLOC and size:
+            if overlaps((address, address + size), (stack_start, RAM_END)):
+                raise BudgetError("another allocated ELF section overlaps linked .stack")
+    return True
+
+
+def parse_elf(path: Path) -> tuple[list[Segment], bool]:
     data = path.read_bytes()
     if len(data) < ELF32_HEADER.size:
         raise BudgetError("ELF is truncated before its ELF32 header")
@@ -100,7 +158,7 @@ def parse_elf(path: Path) -> list[Segment]:
 
     if not segments:
         raise BudgetError("ELF has no PT_LOAD segments")
-    return segments
+    return segments, parse_stack_section(data, fields)
 
 
 def in_region(start: int, size: int, region_start: int, region_end: int) -> bool:
@@ -130,7 +188,7 @@ def analyze(
     stack_reservation: int,
     packed_path: Path | None = None,
 ) -> Report:
-    segments = parse_elf(elf_path)
+    segments, has_linked_stack = parse_elf(elf_path)
     raw_data = raw_path.read_bytes()
     raw_bytes = len(raw_data)
     packed_bytes = packed_path.stat().st_size if packed_path is not None else None
@@ -273,9 +331,14 @@ def analyze(
                     f"[0x{memory_start:08x},0x{memory_end:08x})"
                 )
 
+    stack_start = RAM_END - REQUIRED_STACK_RESERVATION
+    static_ram_end = stack_start if has_linked_stack else RAM_END
     ram_bytes = sum(
-        max(0, min(segment.virtual_address + segment.memory_size, RAM_END)
-            - max(segment.virtual_address, RAM_START))
+        max(
+            0,
+            min(segment.virtual_address + segment.memory_size, static_ram_end)
+            - max(segment.virtual_address, RAM_START),
+        )
         for segment in segments
     )
     flash_bytes = sum(
@@ -286,14 +349,18 @@ def analyze(
         )
         for segment in segments
     )
-    stack_start = RAM_END - stack_reservation
     stack_range = (stack_start, RAM_END)
     for start, end, index in ram_memory_ranges:
-        if overlaps((start, end), stack_range):
+        if not has_linked_stack and overlaps((start, end), stack_range):
             errors.append(
                 f"PT_LOAD[{index}] RAM range [0x{start:08x},0x{end:08x}) "
                 f"overlaps the reserved stack [0x{stack_start:08x},0x{RAM_END:08x})"
             )
+    if has_linked_stack:
+        for segment in segments:
+            start = segment.virtual_address
+            if segment.file_size and overlaps((start, start + segment.file_size), stack_range):
+                errors.append(f"PT_LOAD[{segment.index}] initializes bytes in the reserved stack")
 
     if raw_bytes == 0:
         errors.append("raw payload is empty")

@@ -184,15 +184,23 @@ of RAM (`0x20003800`–`0x20003FFF`). This is a conservative budget reservation,
 not a measured stack high-water mark or a value established by the older C
 startup. The gate requires callers to pass exactly `--stack-reservation 0x800`;
 it has no default and rejects any other reservation. Static RAM ranges may not
-overlap the reserved stack, and static RAM bytes plus the reservation must fit
-in the 16 KiB region. Change the policy only with documented stack analysis
-and matching checker and fixture updates.
+overlap the reserved stack. A linked reservation counts once if it is named
+`.stack`, occupies exactly the reserved range, is writable allocated `NOBITS`,
+and contains neither initialized load bytes nor another allocated section.
+With that explicit marker the gate excludes the reservation from static RAM
+even when it is included in a RAM `PT_LOAD`. Change the policy only with
+documented stack analysis and matching checker and fixture updates.
 
 From the repository root, run the focused fixtures with:
 
 ```sh
 python3 -m unittest discover -s tests -v
 ```
+
+For the same real-image regression CI runs, install GNU ARM binutils
+(`binutils-arm-none-eabi` on Ubuntu) and run the test command with
+`ARM_BINUTILS_PREFIX=arm-none-eabi-`. The test assembles and links a disposable
+Cortex-M0 ELF, then generates and checks its raw image using ARM objcopy.
 
 For a candidate application image, create the raw payload from its ELF and run
 the checker before any flashable artifact is uploaded or published:

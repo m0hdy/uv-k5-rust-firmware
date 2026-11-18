@@ -19,9 +19,9 @@ python3 -m unittest discover -s tests -v
 ```
 
 The crate has no external dependencies or allocator requirement.
-The first three commands run on the host. The last builds the target-only
-`no_std` entry stub; it does not produce a flashable firmware image.
-The host-side memory-budget checker uses only the Python standard library.
+The Cortex-M0 build produces a target-only `no_std` entry stub, not a
+flashable firmware image. The memory-budget checker uses only the Python
+standard library; the optional real-image test also uses GNU ARM binutils.
 
 ## Continuous integration
 
@@ -51,9 +51,9 @@ python3 scripts/check_memory_budget.py \
 ```
 
 Omit `--packed` when no packed container is produced. The required 2 KiB stack
-reservation is excluded from static RAM ranges and reserved at the top of RAM;
-the checker rejects missing/malformed reservations and any runtime range that
-overlaps the stack. The raw payload limit is 61,440 bytes. A packed container's
+reservation is excluded from static RAM ranges and reserved at the top of RAM.
+The checker rejects missing or malformed reservations and ordinary data
+overlapping the stack. The raw payload limit is 61,440 bytes. A packed container's
 length is reported separately and is not subject to that limit. The checker
 prints flash-load, raw-payload, RAM, stack, and per-`PT_LOAD` usage and
 remaining-capacity figures. The gate's implementation, accounting rules, and

@@ -1,3 +1,4 @@
+import os
 import struct
 import subprocess
 import sys
@@ -19,6 +20,7 @@ PROGRAM_HEADER = struct.Struct("<IIIIIIII")
 STACK_RESERVATION = 0x800
 ROOT = Path(__file__).resolve().parents[1]
 CHECKER = ROOT / "scripts" / "check_memory_budget.py"
+ARM_BINUTILS_PREFIX = os.environ.get("ARM_BINUTILS_PREFIX")
 
 
 def make_elf(segments, debug_bytes=b""):
@@ -220,6 +222,66 @@ class BudgetCheckerTests(unittest.TestCase):
             "stack reservation must be exactly 2048 bytes",
             "\n".join(report.errors),
         )
+
+    @unittest.skipUnless(ARM_BINUTILS_PREFIX, "set ARM_BINUTILS_PREFIX to run the real ARM image test")
+    def test_real_arm_image_with_exact_fit_linked_stack(self):
+        source = self.directory / "fixture.s"
+        script = self.directory / "fixture.ld"
+        obj = self.directory / "fixture.o"
+        source.write_text(
+            """
+.section .text.entry, "ax"
+.thumb
+.byte 0x11, 0x22
+.section .rodata.test, "a"
+.byte 0x33
+.section .data.test, "aw"
+.word 0x12345678
+.section .bss.test, "aw", %nobits
+.space 0x37fc
+""",
+            encoding="ascii",
+        )
+        script.write_text(
+            """
+MEMORY {
+  FLASH (rx) : ORIGIN = 0, LENGTH = 60K
+  RAM (rw) : ORIGIN = 0x20000000, LENGTH = 16K
+}
+PHDRS { code PT_LOAD; data PT_LOAD; stack PT_LOAD; }
+SECTIONS {
+  .text : { *(.text.entry) } > FLASH :code
+  .rodata ALIGN(16) : { *(.rodata.test) } > FLASH :code
+  .data : { *(.data.test) } > RAM AT> FLASH :data
+  .bss (NOLOAD) : { *(.bss.test) } > RAM :data
+  .stack 0x20003800 (NOLOAD) : { . += 0x800; } > RAM :stack
+}
+""",
+            encoding="ascii",
+        )
+        for tool, args in (
+            ("as", ["-mcpu=cortex-m0", "-o", obj, source]),
+            ("ld", ["-T", script, "-o", self.elf_path, obj]),
+            ("objcopy", ["-O", "binary", self.elf_path, self.raw_path]),
+        ):
+            subprocess.run([ARM_BINUTILS_PREFIX + tool, *args], check=True)
+        report = analyze(self.elf_path, self.raw_path, STACK_RESERVATION)
+        self.assertEqual(report.errors, [])
+        self.assertEqual(report.ram_static_bytes + STACK_RESERVATION, 0x4000)
+        raw = self.raw_path.read_bytes()
+        self.assertEqual(raw[:17], b"\x11\x22" + bytes(14) + b"\x33")
+        self.raw_path.write_bytes(b"\xff" + raw[1:])
+        self.check_fails("byte at offset 0x0 does not match")
+        script.write_text(
+            script.read_text(encoding="ascii").replace(". += 0x800;", ". += 0x7ff;"),
+            encoding="ascii",
+        )
+        subprocess.run(
+            [ARM_BINUTILS_PREFIX + "ld", "-T", script, "-o", self.elf_path, obj],
+            check=True,
+        )
+        with self.assertRaisesRegex(BudgetError, r"linked \.stack must be .* exact reserved range"):
+            analyze(self.elf_path, self.raw_path, STACK_RESERVATION)
 
     def test_truncated_elf_and_segment_data_fail(self):
         self.elf_path.write_bytes(b"\x7fELF")
