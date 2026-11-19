@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import hashlib
 import subprocess
 import sys
 
@@ -12,6 +13,7 @@ SUPPORTED_CATEGORIES = {
     Category.DCS,
     Category.FREQUENCY,
     Category.SETTINGS,
+    Category.FIRMWARE_CONTAINER_CHECKSUM,
 }
 PINNED_FEATURE_DEFINES = [
     "ENABLE_WIDE_RX",
@@ -22,12 +24,6 @@ PINNED_FEATURE_DEFINES = [
     "ENABLE_AM_FIX",
 ]
 SETTINGS_VALUE_DESCRIPTION = "see capture_settings() in tools/reference-vectors/capture.c"
-UNSUPPORTED_REASONS = {
-    Category.FIRMWARE_CONTAINER_CHECKSUM: (
-        "the Rust library has no updater-container packer/checksum API; the fixture "
-        "covers a packed image and appended CRC, not an EEPROM/settings checksum"
-    ),
-}
 
 
 def evaluate_rust(fixture):
@@ -37,6 +33,17 @@ def evaluate_rust(fixture):
         if case.category not in SUPPORTED_CATEGORIES:
             continue
         expected_ids.add(case.vector_id)
+        if case.category is Category.FIRMWARE_CONTAINER_CHECKSUM:
+            values = (
+                case.input["raw_pattern"],
+                str(case.input["raw_length"]),
+                case.input["author"],
+                case.input["version"],
+            )
+            if any("\t" in value or "\n" in value for value in values):
+                raise RuntimeError(f"{case.vector_id} input contains a bridge delimiter")
+            requests.append("\t".join((case.vector_id, *values)))
+            continue
         if case.category is Category.SETTINGS:
             if (
                 case.input["feature_defines"] != PINNED_FEATURE_DEFINES
@@ -78,6 +85,22 @@ def evaluate_rust(fixture):
                 if not separator:
                     raise RuntimeError(f"invalid Rust settings result: {block!r}")
                 result[address] = data
+        elif vector_id.startswith(f"{Category.FIRMWARE_CONTAINER_CHECKSUM.value}/"):
+            raw_hex, separator, packed_hex = encoded.partition("\t")
+            if not separator:
+                raise RuntimeError(f"invalid Rust container result: {encoded!r}")
+            try:
+                raw, packed = bytes.fromhex(raw_hex), bytes.fromhex(packed_hex)
+            except ValueError as error:
+                raise RuntimeError(f"invalid Rust container bytes: {encoded!r}") from error
+            if raw.hex() != raw_hex or packed.hex() != packed_hex or len(packed) < 2:
+                raise RuntimeError(f"noncanonical Rust container bytes: {vector_id}")
+            result = {
+                "raw_sha256": hashlib.sha256(raw).hexdigest(),
+                "packed_length": len(packed),
+                "packed_sha256": hashlib.sha256(packed).hexdigest(),
+                "appended_crc_bytes": packed[-2:].hex(),
+            }
         else:
             try:
                 result = int(encoded)
@@ -110,10 +133,6 @@ def main():
 
     print(format_report(report))
     print(f"Rust-executed vectors: {', '.join(sorted(actuals))}")
-    for category, reason in UNSUPPORTED_REASONS.items():
-        case_ids = report.unported.get(category, ())
-        if case_ids:
-            print(f"Unsupported {category.value}: {reason}")
     return 0 if report.complete else 1
 
 
