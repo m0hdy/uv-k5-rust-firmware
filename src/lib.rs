@@ -1,7 +1,5 @@
 #![no_std]
 
-#[allow(unused_attributes)]
-pub mod backlight_plan;
 pub mod channel_codec;
 pub mod channel_validity;
 pub mod firmware_container_checksum;

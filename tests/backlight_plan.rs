@@ -1,5 +1,8 @@
-use uv_k5_rust_firmware::backlight_plan::{
-    self, BacklightInitPlan, BacklightSnapshot, BacklightWrite, Register, WriteKind,
+#[path = "../src/backlight_plan.rs"]
+mod backlight_plan;
+
+use backlight_plan::{
+    BacklightInitPlan, BacklightSnapshot, BacklightWrite, Register, WriteKind,
     brightness_compare_value,
 };
 

@@ -11,7 +11,6 @@ const PORTB_SEL0_B6_PWMP0_CH0: u32 = 0x0100_0000;
 const PWM_PLUS0_GEN: u32 = (1 << 24) | (1 << 16);
 const PWM_PLUS0_CFG: u32 = (1 << 2) | 1;
 
-pub const MIN_BRIGHTNESS: u8 = 0;
 pub const MAX_BRIGHTNESS: u8 = 10;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
