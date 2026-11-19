@@ -2,25 +2,18 @@
 mod startup_version_display;
 
 use startup_version_display::{
-    LCD_WIDTH, STARTUP_VERSION_LINE, StartupDisplayMode, StartupVersionDisplayPlan,
-    StartupVersionError, StartupVersionRenderer, StartupVersionText, startup_version_display_plan,
+    STARTUP_VERSION_LINE, StartupDisplayMode, StartupVersionDisplayPlan, StartupVersionError,
+    StartupVersionRenderer, StartupVersionText, startup_version_display_plan,
 };
 
 #[derive(Default)]
 struct MockRenderer {
-    calls: Vec<(Vec<u8>, usize, usize, usize)>,
+    calls: Vec<(Vec<u8>, usize, usize)>,
 }
 
 impl StartupVersionRenderer for MockRenderer {
-    fn print_small_normal(
-        &mut self,
-        text: &[u8],
-        start_column: usize,
-        end_column: usize,
-        line: usize,
-    ) {
-        self.calls
-            .push((text.to_vec(), start_column, end_column, line));
+    fn print_small_normal_at(&mut self, text: &[u8], start_column: usize, line: usize) {
+        self.calls.push((text.to_vec(), start_column, line));
     }
 }
 
@@ -48,7 +41,7 @@ fn appends_the_supplied_version_and_centers_the_complete_text() {
     StartupVersionDisplayPlan::Text(plan).render_with(&mut renderer);
     assert_eq!(
         renderer.calls,
-        [(b"M0HDY dev".to_vec(), 33, LCD_WIDTH, STARTUP_VERSION_LINE)]
+        [(b"M0HDY dev".to_vec(), 33, STARTUP_VERSION_LINE)]
     );
 }
 

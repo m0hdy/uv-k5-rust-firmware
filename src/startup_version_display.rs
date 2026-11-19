@@ -52,10 +52,9 @@ pub enum StartupVersionDisplayPlan {
 impl StartupVersionDisplayPlan {
     pub fn render_with<R: StartupVersionRenderer>(&self, renderer: &mut R) {
         if let Self::Text(text) = self {
-            renderer.print_small_normal(
+            renderer.print_small_normal_at(
                 text.as_bytes(),
                 text.start_column(),
-                LCD_WIDTH,
                 STARTUP_VERSION_LINE,
             );
         }
@@ -63,13 +62,8 @@ impl StartupVersionDisplayPlan {
 }
 
 pub trait StartupVersionRenderer {
-    fn print_small_normal(
-        &mut self,
-        text: &[u8],
-        start_column: usize,
-        end_column: usize,
-        line: usize,
-    );
+    /// Prints at the literal start column; implementations must not recenter.
+    fn print_small_normal_at(&mut self, text: &[u8], start_column: usize, line: usize);
 }
 
 pub fn startup_version_display_plan(

@@ -15,7 +15,7 @@ at pinned revision
 That branch draws the small-normal version at line 6 with bounds 0–128.
 [`ui/helper.c`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/ui/helper.c#L91-L116)
 centers that text using the glyph width plus one spacing column. The pinned
-[`font.h`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/font.h#L30)
+[`font.h`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/font.h#L26)
 declares six columns per small-font glyph; no font data is copied here.
 
 The renderer trait makes the planned text and placement mockable. This module
