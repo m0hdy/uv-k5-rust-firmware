@@ -48,6 +48,37 @@ fn trace_preserves_every_clear_and_set_operation_in_source_order_without_swd() {
 }
 
 #[test]
+fn all_one_snapshot_preserves_fields_not_cleared_by_the_source_operations() {
+    let writes: Vec<_> = PortconPlan::from_snapshot(
+        PortconSnapshot {
+            porta_sel0: u32::MAX,
+            porta_sel1: u32::MAX,
+            portb_sel0: u32::MAX,
+            portb_sel1: u32::MAX,
+            portc_sel0: u32::MAX,
+        },
+        Features { enable_swd: false },
+    )
+    .writes()
+    .collect();
+
+    assert_eq!(
+        writes,
+        vec![
+            clear(Register::PortASel0, 0x0fff_f000, 0xf000_0fff),
+            set(Register::PortASel0, 0x1000_0000, 0xf000_0fff),
+            clear(Register::PortASel1, 0x00ff_ff00, 0xff00_00ff),
+            set(Register::PortASel1, 0x0500_0051, 0xff00_00ff),
+            clear(Register::PortBSel0, 0xf000_0000, 0x0fff_ffff),
+            set(Register::PortBSel0, 0x1000_0000, 0x1fff_ffff),
+            clear(Register::PortBSel1, 0xff00_f0f0, 0x00ff_0f0f),
+            set(Register::PortBSel1, 0x0000_0101, 0x00ff_0f0f),
+            clear(Register::PortCSel0, 0x00ff_ffff, 0xff00_0000),
+        ]
+    );
+}
+
+#[test]
 fn swd_variant_sets_b11_and_b14_after_the_same_b1_clear() {
     let writes: Vec<_> = PortconPlan::from_snapshot(VARIED_SNAPSHOT, Features { enable_swd: true })
         .writes()
