@@ -1237,6 +1237,33 @@ class StartupWitnessCheckerTests(unittest.TestCase):
     def test_accepts_concrete_st7565_executor_call_chain(self):
         validate_st7565_executor_path(ST7565_EXECUTOR_PATH)
 
+    def test_rejects_trapping_st7565_executor_wrapper_entries(self):
+        for original in (
+            " 100: b580 push {r7, lr}",
+            " 200: b580 push {r7, lr}",
+        ):
+            with self.subTest(wrapper=original):
+                trapped = ST7565_EXECUTOR_PATH.replace(
+                    original, original.split(":")[0] + ": de00 udf #0"
+                )
+                with self.assertRaisesRegex(WitnessError, "unsupported trap instruction"):
+                    validate_st7565_executor_path(trapped)
+
+    def test_rejects_unbalanced_st7565_executor_wrapper_restores(self):
+        for original in (
+            " 10c: bd80 pop {r7, pc}",
+            " 20c: bd80 pop {r7, pc}",
+        ):
+            with self.subTest(wrapper=original):
+                unbalanced = ST7565_EXECUTOR_PATH.replace(
+                    original,
+                    original.replace("bd80 pop {r7, pc}", "bc81 pop {r0, r7, pc}"),
+                )
+                with self.assertRaisesRegex(
+                    WitnessError, "non-returning call continuation"
+                ):
+                    validate_st7565_executor_path(unbalanced)
+
     def test_rejects_st7565_call_disconnected_after_early_return(self):
         disconnected = ST7565_EXECUTOR_PATH.replace(
             " 106: f000 f800 bl 200 <target_spi0::startup_mmio>",
@@ -1472,6 +1499,35 @@ class StartupWitnessCheckerTests(unittest.TestCase):
             WitnessError, "disassembly is missing StartupIo>::st7565_init"
         ):
             validate_call_path(CONNECTED_WITHOUT_DISPLAY_STAGE)
+
+    def test_full_validator_rejects_trapping_st7565_executor_wrappers(self):
+        for original in (
+            " 1400: b580 push {r7, lr}",
+            " 1410: b580 push {r7, lr}",
+        ):
+            with self.subTest(wrapper=original):
+                trapped = CONNECTED_DISPATCH.replace(
+                    original, original.split(":")[0] + ": de00 udf #0"
+                )
+                with self.assertRaisesRegex(
+                    WitnessError, "unsupported trap instruction"
+                ):
+                    validate_call_path(trapped)
+
+    def test_full_validator_rejects_unbalanced_st7565_executor_restores(self):
+        for original in (
+            " 140c: bd80 pop {r7, pc}",
+            " 141c: bd80 pop {r7, pc}",
+        ):
+            with self.subTest(wrapper=original):
+                unbalanced = CONNECTED_DISPATCH.replace(
+                    original,
+                    original.replace("bd80 pop {r7, pc}", "bc81 pop {r0, r7, pc}"),
+                )
+                with self.assertRaisesRegex(
+                    WitnessError, "non-returning call continuation"
+                ):
+                    validate_call_path(unbalanced)
 
     def test_rejects_required_calls_that_do_not_target_the_symbol_entry(self):
         mutations = (

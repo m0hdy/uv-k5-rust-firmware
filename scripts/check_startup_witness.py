@@ -1034,11 +1034,20 @@ def validate_st7565_executor_path(disassembly: str) -> None:
         ),
     )
     for symbol, description, calls in methods:
+        function = function_block(
+            disassembly, symbol, suffix=symbol.startswith("StartupIo")
+        )
+        reachable, _, _ = reachable_control_flow_analysis(function, description)
+        if not matches_instruction(
+            reachable[0], "push", r"\s*\{\s*r7,\s*lr\s*\}\s*"
+        ):
+            raise WitnessError(f"{description} has an unexpected save/restore entry")
         validate_returning_call_path(
-            function_block(disassembly, symbol, suffix=symbol.startswith("StartupIo")),
+            function,
             description,
             calls,
             (("add", r"\s*sp,\s*#8\s*"),),
+            ("pop", r"\s*\{\s*r7,\s*pc\s*\}\s*"),
         )
 
 
@@ -2031,6 +2040,7 @@ def validate_returning_call_path(
     symbol_fragment: str,
     calls: tuple[str, ...],
     cleanup: tuple[tuple[str, str], ...] = (),
+    expected_epilogue: tuple[str, str] | None = None,
 ) -> None:
     reachable = reachable_instruction_prefix(function)
     call_indices = []
@@ -2064,9 +2074,13 @@ def validate_returning_call_path(
             )
         continuation += instruction[1]
 
-    epilogue = instructions.get(continuation)
-    if epilogue is None or not matches_instruction(
-        epilogue, "pop", r"\s*\{\s*(?:r[0-7],\s*)*r7,\s*pc\s*\}\s*"
+    return_instruction = instructions.get(continuation)
+    expected_epilogue = expected_epilogue or (
+        "pop",
+        r"\s*\{\s*(?:r[0-7],\s*)*r7,\s*pc\s*\}\s*",
+    )
+    if return_instruction is None or not matches_instruction(
+        return_instruction, *expected_epilogue
     ):
         raise WitnessError(
             f"linked {symbol_fragment} path has a non-returning call continuation"
