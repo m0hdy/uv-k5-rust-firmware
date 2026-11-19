@@ -105,6 +105,18 @@ SWAPPED_DISPATCH = CONNECTED_DISPATCH.replace(
     " 610: 1031 .word 0x1031\n 614: 1021 .word 0x1021",
 )
 
+UNREACHABLE_DISPATCH = CONNECTED_DISPATCH.replace(
+    " 1020: f000 f800 bl 700 <HardwareIo as StartupIo>::device_clock_gates>",
+    " 1020: 4770 bx lr\n"
+    " 1022: f000 f800 bl 700 <HardwareIo as StartupIo>::device_clock_gates>",
+)
+
+BRANCHED_DISPATCH = CONNECTED_DISPATCH.replace(
+    " 1020: f000 f800 bl 700 <HardwareIo as StartupIo>::device_clock_gates>",
+    " 1020: e000 b.n 1026 <unrelated>\n"
+    " 1022: f000 f800 bl 700 <HardwareIo as StartupIo>::device_clock_gates>",
+)
+
 
 class StartupWitnessCheckerTests(unittest.TestCase):
     def test_rejects_disconnected_entry_when_downstream_chain_is_retained(self):
@@ -125,6 +137,14 @@ class StartupWitnessCheckerTests(unittest.TestCase):
     def test_rejects_swapped_backend_dispatch_targets(self):
         with self.assertRaisesRegex(WitnessError, "variant 0.*device_clock_gates"):
             validate_call_path(SWAPPED_DISPATCH)
+
+    def test_rejects_backend_call_after_early_return(self):
+        with self.assertRaisesRegex(WitnessError, "variant 0.*does not reach"):
+            validate_call_path(UNREACHABLE_DISPATCH)
+
+    def test_rejects_backend_call_after_unsupported_branch(self):
+        with self.assertRaisesRegex(WitnessError, "variant 0.*does not reach"):
+            validate_call_path(BRANCHED_DISPATCH)
 
     def test_accepts_linked_backend_dispatch_to_matching_hardware_methods(self):
         validate_call_path(CONNECTED_DISPATCH)

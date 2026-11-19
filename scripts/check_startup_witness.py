@@ -127,9 +127,16 @@ def validate_backend_dispatch(disassembly: str) -> None:
 
     instructions = []
     for line in backend.splitlines():
-        match = re.match(r"\s*([0-9a-fA-F]+):\s+.*", line)
-        if match and ".word" not in line:
-            instructions.append((int(match.group(1), 16), line))
+        match = re.match(
+            r"\s*([0-9a-fA-F]+):\s+((?:[0-9a-fA-F]{2,8}\s+)+)([a-z][\w.]*)\s*(.*)",
+            line,
+        )
+        if match and match.group(3) != ".word":
+            address, encoded, mnemonic, operands = match.groups()
+            size = sum(len(byte) // 2 for byte in encoded.split())
+            instructions.append(
+                (int(address, 16), size, mnemonic, operands, line)
+            )
     instructions.sort()
     methods = (
         "StartupIo>::device_clock_gates",
@@ -140,18 +147,38 @@ def validate_backend_dispatch(disassembly: str) -> None:
     ordered_targets = sorted(targets)
     for variant, (target, method) in enumerate(zip(targets, methods)):
         next_target = next((address for address in ordered_targets if address > target), None)
-        block = [
-            line
-            for address, line in instructions
-            if target <= address and (next_target is None or address < next_target)
-        ]
-        if not any(
-            method in target
-            for line in block
-            for target in direct_call_targets(line)
-        ):
+        block = []
+        for instruction in instructions:
+            address = instruction[0]
+            if target <= address and (next_target is None or address < next_target):
+                block.append(instruction)
+
+        address = target
+        reachable_call = False
+        for instruction_address, size, mnemonic, operands, line in block:
+            if instruction_address != address:
+                break
+            calls = direct_call_targets(line)
+            if mnemonic in ("bl", "blx"):
+                reachable_call = any(method in call for call in calls)
+                break
+            if (
+                re.fullmatch(
+                    r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.(?:n|w))?",
+                    mnemonic,
+                )
+                or mnemonic in ("bx", "cbz", "cbnz")
+                or (
+                    (mnemonic == "pop" or mnemonic.startswith("ldm"))
+                    and re.search(r"\bpc\b", operands)
+                )
+                or re.match(r"pc\b", operands)
+            ):
+                break
+            address += size
+        if not reachable_call:
             raise WitnessError(
-                f"sequencer backend variant {variant} does not branch to {method}"
+                f"sequencer backend variant {variant} does not reach a direct call to {method}"
             )
 
 
