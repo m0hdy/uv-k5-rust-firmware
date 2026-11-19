@@ -419,7 +419,7 @@ def validate_systick_handler(disassembly: str, handler_address: int) -> None:
         (
             instruction
             for instruction in parse_instructions(disassembly)
-            if instruction[0] == handler_address
+            if instruction[0] == (handler_address & ~1)
         ),
         None,
     )

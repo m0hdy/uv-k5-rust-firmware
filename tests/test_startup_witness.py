@@ -229,6 +229,9 @@ class StartupWitnessCheckerTests(unittest.TestCase):
     def test_accepts_immediate_systick_return_at_symbol_entry(self):
         validate_systick_handler(SYSTICK_RETURN, 0x100)
 
+    def test_accepts_thumb_state_symbol_address(self):
+        validate_systick_handler(SYSTICK_RETURN, 0x101)
+
     def test_rejects_systick_self_loop_before_retained_return(self):
         with self.assertRaisesRegex(WitnessError, "SysTick_Handler.*begin with bx lr"):
             validate_systick_handler(SYSTICK_SELF_LOOP, 0x100)
