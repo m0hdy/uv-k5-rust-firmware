@@ -7,28 +7,28 @@ This is linked-target evidence only: the target ELF was not executed on hardware
 
 ## Target link
 
-- ELF SHA-256: `55aa4937baa06e293defd0703872793472a3acfd9cc3c25a95bf0601fd7b3bbd`
-- Map SHA-256: `ccd32481e117c2c7df4694da7dedc712d9e45959a0ff855d72775e1c00aa48fe`
+- ELF SHA-256: `fd270335cfa8f38ea11634b816bb81beb4df1f8da8da971365534be6d9857ee1`
+- Map SHA-256: `c92ab72be335548f5db9f63fdf570fbcf40230b5d66447251c3abe5905ef50ee`
 - Resolved symbols: `main` (C caller, `0x00000000`), `uvk5_channel_validity` (Rust export, `0x0000009c`).
 - Retained call: `main` disassembly contains a Thumb `bl`/`blx` to `uvk5_channel_validity`.
-- Flash used: 428 / 61,440 bytes (61012 remaining).
+- Flash used: 366 / 61,440 bytes (61074 remaining).
 - Static RAM used: 0 / 14,336 bytes (14336 remaining); 2,048 bytes are reserved for stack (not measured).
-- Raw payload SHA-256: `af4b6d56122421e118b6a1c4eaebe122143587f873503aa6b6155958928b1699`
+- Raw payload SHA-256: `84cce5e08a42f2938c60cbd4cc35367e06bf5369ed547a8b2988919a8c8e1b50`
 
 Project memory-budget checker output:
 
 ```text
-Flash load bytes: 428 / 61440 (61012 remaining)
-Raw payload: 428 / 61440 (61012 remaining)
+Flash load bytes: 366 / 61440 (61074 remaining)
+Raw payload: 368 / 61440 (61072 remaining)
 RAM static use: 0 bytes
 Reserved stack: 2048 bytes
 RAM use plus stack: 2048 / 16384 (14336 remaining)
 Packed container: not supplied
 Allocated sections (informational; PT_LOAD totals remain authoritative):
-Section .text: 412 bytes; runtime FLASH [0x00000000,0x0000019c); flash load [0x00000000,0x0000019c)
-Section .ARM.exidx: 16 bytes; runtime FLASH [0x0000019c,0x000001ac); flash load [0x0000019c,0x000001ac)
-PT_LOAD[0]: LMA 0x00000000 + 412 file bytes; VMA 0x00000000 + 412 memory bytes
-PT_LOAD[1]: LMA 0x0000019c + 16 file bytes; VMA 0x0000019c + 16 memory bytes
+Section .text: 350 bytes; runtime FLASH [0x00000000,0x0000015e); flash load [0x00000000,0x0000015e)
+Section .ARM.exidx: 16 bytes; runtime FLASH [0x00000160,0x00000170); flash load [0x00000160,0x00000170)
+PT_LOAD[0]: LMA 0x00000000 + 350 file bytes; VMA 0x00000000 + 350 memory bytes
+PT_LOAD[1]: LMA 0x00000160 + 16 file bytes; VMA 0x00000160 + 16 memory bytes
 Budget check passed
 ```
 

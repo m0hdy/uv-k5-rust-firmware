@@ -6,7 +6,7 @@ mod channel_validity;
 /// # Safety
 ///
 /// `out_valid` must be non-null, properly aligned, and point to a live,
-/// writable `i32` for the duration of this call. The caller must prevent
+/// writable `u8` for the duration of this call. The caller must prevent
 /// conflicting accesses while the function writes to that storage.
 ///
 /// A null output pointer or any scan-list flag greater than `1` is rejected
@@ -22,7 +22,7 @@ pub unsafe extern "C" fn uvk5_channel_validity(
     scan_list: u8,
     priority_channel_1: u8,
     priority_channel_2: u8,
-    out_valid: *mut i32,
+    out_valid: *mut u8,
 ) -> i32 {
     if out_valid.is_null()
         || scan_list_1 > 1
@@ -45,7 +45,7 @@ pub unsafe extern "C" fn uvk5_channel_validity(
         priority_channel_2,
     );
     unsafe {
-        out_valid.write(i32::from(valid));
+        out_valid.write(u8::from(valid));
     }
     0
 }

@@ -9,7 +9,7 @@ int32_t uvk5_channel_validity(
     uint8_t scan_list,
     uint8_t priority_channel_1,
     uint8_t priority_channel_2,
-    int32_t *out_valid);
+    uint8_t *out_valid);
 
 struct test_case {
     uint16_t channel;
@@ -20,7 +20,7 @@ struct test_case {
     uint8_t scan_list;
     uint8_t priority_channel_1;
     uint8_t priority_channel_2;
-    int32_t expected;
+    uint8_t expected;
 };
 
 int main(void)
@@ -40,7 +40,7 @@ int main(void)
 
     for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
         const struct test_case *test = &cases[i];
-        int32_t actual = -1;
+        uint8_t actual = UINT8_MAX;
         if (uvk5_channel_validity(
                 test->channel,
                 test->band,
@@ -56,7 +56,7 @@ int main(void)
         }
     }
 
-    int32_t unchanged = 42;
+    uint8_t unchanged = 42;
     if (uvk5_channel_validity(0, 0, 2, 0, 0, 0, 0, 0, &unchanged) != 1 ||
         unchanged != 42 ||
         uvk5_channel_validity(0, 0, 0, 0, 0, 0, 0, 0, 0) != 1) {

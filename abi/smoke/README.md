@@ -6,12 +6,12 @@ add a production firmware API or change the firmware startup/linker.
 
 The wrapper uses the fixed-width types required by
 [`abi-contract.md`](../../docs/abi-contract.md). It returns status `0` and
-writes `0` or `1` to `out_valid`; a null output pointer or boolean flag values
-outside `0..=1` return status `1` without changing the output. Rust callers
-must uphold the unsafe function's pointer safety contract; a non-null
-pointer's validity cannot be checked by the wrapper. The C table covers normal
-and boundary channels, bands, scan-list behavior, priority exclusions, and
-invalid arguments.
+writes `0` or `1` through a `uint8_t *out_valid`; a null output pointer or
+boolean flag values outside `0..=1` return status `1` without changing the
+output. Rust callers must uphold the unsafe function's pointer safety contract;
+a non-null pointer's validity cannot be checked by the wrapper. The C table
+covers normal and boundary channels, bands, scan-list behavior, priority
+exclusions, and invalid arguments.
 
 Run the host comparison and target-link inspection with:
 
