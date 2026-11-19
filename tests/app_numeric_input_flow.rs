@@ -139,6 +139,40 @@ fn zero_entry_preserves_wrapping_c_unsigned_channel_candidate_and_invalid_beep()
 }
 
 #[test]
+fn positive_query_cannot_narrow_wrapped_zero_candidate_to_another_channel() {
+    let mut input_box = NumericInputBox::new();
+    for key in [Key::Digit0, Key::Digit0] {
+        release(&mut input_box, key, false, 1, |_| false);
+    }
+
+    let mut queried = None;
+    let trace = release(&mut input_box, Key::Digit0, false, 1, |channel| {
+        queried = Some(channel);
+        true
+    });
+
+    assert_eq!(queried, Some(u16::MAX));
+    assert_eq!(
+        trace,
+        [
+            FlowEffect::RefreshKeyInputTimeout,
+            FlowEffect::AppendDigit(Digit::Zero),
+            FlowEffect::RequestMainDisplay,
+            FlowEffect::ResetInputIndex,
+            FlowEffect::CheckChannelValidity(u16::MAX),
+            FlowEffect::RequestOptionalInvalidChannelBeep,
+        ]
+    );
+    assert!(!trace.iter().any(|effect| matches!(
+        effect,
+        FlowEffect::UpdateSelectedVfoMemoryChannel { .. }
+            | FlowEffect::UpdateSelectedVfoScreenChannel { .. }
+            | FlowEffect::RequestSaveVfo
+            | FlowEffect::ConfigureVfoReload
+    )));
+}
+
+#[test]
 fn lower_upper_and_out_of_range_channel_candidates_follow_query_result() {
     for (digits, expected, valid) in [
         ([Key::Digit0, Key::Digit0, Key::Digit1], 0, true),
