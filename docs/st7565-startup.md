@@ -20,7 +20,9 @@ bound and fill value, so this call selects each page but writes **no** data
 bytes. A consumer choosing to actually clear the screen can instead supply a
 128-byte zero line to the existing `DisplayBlitPlan::draw_line` for each of
 pages 0 through 7; that is an intentional behavioral difference, not a trace
-of the pinned fill implementation. The plan does not execute this handoff.
+of the pinned fill implementation. That constructor rejects empty payloads,
+so it cannot represent the pinned page-selection-only fill. The plan does
+not execute this handoff.
 
 The host trace checks ordering, command values, repeated power writes and delay
 requests. It cannot establish elapsed time, GPIO or SPI electrical behavior,
