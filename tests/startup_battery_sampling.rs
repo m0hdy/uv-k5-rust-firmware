@@ -2,24 +2,24 @@
 mod startup_battery_sampling;
 
 use startup_battery_sampling::{
-    AcquisitionError, CalibrationError, Register, RegisterIo, StartupBatteryError,
-    StartupBatteryReadings, sample_startup_battery,
+    AcquisitionError, CalibrationError, ReadRegister, RegisterIo, StartupBatteryError,
+    StartupBatteryReadings, WriteRegister, sample_startup_battery,
 };
 use std::collections::VecDeque;
 
 #[derive(Debug, Eq, PartialEq)]
 enum Event {
-    Read(Register, u32),
-    Write(Register, u32),
+    Read(ReadRegister, u32),
+    Write(WriteRegister, u32),
 }
 
 struct MockIo {
-    reads: VecDeque<(Register, u32)>,
+    reads: VecDeque<(ReadRegister, u32)>,
     events: Vec<Event>,
 }
 
 impl MockIo {
-    fn new(reads: Vec<(Register, u32)>) -> Self {
+    fn new(reads: Vec<(ReadRegister, u32)>) -> Self {
         Self {
             reads: reads.into(),
             events: Vec::new(),
@@ -28,24 +28,24 @@ impl MockIo {
 }
 
 impl RegisterIo for MockIo {
-    fn read(&mut self, register: Register) -> u32 {
+    fn read(&mut self, register: ReadRegister) -> u32 {
         let (expected, value) = self.reads.pop_front().expect("unexpected read");
         assert_eq!(register, expected);
         self.events.push(Event::Read(register, value));
         value
     }
 
-    fn write(&mut self, register: Register, value: u32) {
+    fn write(&mut self, register: WriteRegister, value: u32) {
         self.events.push(Event::Write(register, value));
     }
 }
 
-fn successful_read(voltage: u32, current: u32) -> [(Register, u32); 4] {
+fn successful_read(voltage: u32, current: u32) -> [(ReadRegister, u32); 4] {
     [
-        (Register::Start, 0),
-        (Register::Channel9Status, 1),
-        (Register::Channel4Data, voltage),
-        (Register::Channel9Data, current),
+        (ReadRegister::Start, 0),
+        (ReadRegister::Channel9Status, 1),
+        (ReadRegister::Channel4Data, voltage),
+        (ReadRegister::Channel9Data, current),
     ]
 }
 
@@ -75,7 +75,7 @@ fn four_ordered_acquisitions_calibrate_truncated_average_and_keep_last_current()
     assert_eq!(
         io.events
             .iter()
-            .filter(|event| matches!(event, Event::Write(Register::Start, 1)))
+            .filter(|event| matches!(event, Event::Write(WriteRegister::Start, 1)))
             .count(),
         4
     );
@@ -89,9 +89,9 @@ fn acquisition_failure_reports_position_and_stops_without_partial_result() {
             reads.extend(successful_read(index as u32 + 10, index as u32 + 20));
         }
         reads.extend([
-            (Register::Start, 0),
-            (Register::Channel9Status, 0),
-            (Register::Channel9Status, 0),
+            (ReadRegister::Start, 0),
+            (ReadRegister::Channel9Status, 0),
+            (ReadRegister::Channel9Status, 0),
         ]);
         let mut io = MockIo::new(reads);
 
@@ -106,14 +106,14 @@ fn acquisition_failure_reports_position_and_stops_without_partial_result() {
         assert_eq!(
             io.events
                 .iter()
-                .filter(|event| matches!(event, Event::Write(Register::Start, 1)))
+                .filter(|event| matches!(event, Event::Write(WriteRegister::Start, 1)))
                 .count(),
             failed_index + 1
         );
         assert_eq!(
             io.events
                 .iter()
-                .filter(|event| matches!(event, Event::Write(Register::InterruptFlags, _)))
+                .filter(|event| matches!(event, Event::Write(WriteRegister::InterruptFlags, _)))
                 .count(),
             failed_index * 2
         );
