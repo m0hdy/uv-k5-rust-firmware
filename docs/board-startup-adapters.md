@@ -21,10 +21,16 @@ that saved variant, byte-extend and save the checked index, compare against 3,
 and branch with `bhi` to the non-table placeholder path. The path must return
 to the stack teardown before the contiguous indexed-table sequence reloads the
 saved index from `sp+0`, scales it, addresses the literal table, and branches
-through its entry. It also checks the stopped-state guard input and target.
-Unexpected instructions, conditional branches, or changed guard inputs and
-destinations are rejected; this is a structural witness check, not a
-general-purpose Thumb control-flow analyzer.
+through its entry. Each of the first four cases is checked through its matching
+hardware call and the following unconditional branch to the shared stack
+teardown. The SysTick case also checks the `Result::is_err` split: success
+continues to teardown, while the error edge stores the stopped flag before
+joining that same teardown. The sequencer's first seven backend calls are
+checked for their call continuations and the stopped-state continuation to
+variant seven. The stopped-state guard input and target are checked as well.
+Unexpected instructions, conditional branches, or changed guard inputs,
+destinations, and continuations are rejected; this is a structural witness
+check, not a general-purpose Thumb control-flow analyzer.
 
 Run the host test and link-only witness from the repository root:
 

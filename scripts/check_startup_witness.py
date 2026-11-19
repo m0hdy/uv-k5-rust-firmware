@@ -334,37 +334,184 @@ def validate_backend_dispatch(disassembly: str) -> None:
         raise WitnessError("sequencer backend first four variants do not have distinct dispatch targets")
 
     instructions = parse_instructions(backend)
+    by_address = {instruction[0]: instruction for instruction in instructions}
     methods = (
         "StartupIo>::device_clock_gates",
         "StartupIo>::systick",
         "StartupIo>::portcon",
         "StartupIo>::gpio",
     )
-    ordered_targets = sorted(targets)
-    for variant, (target, method) in enumerate(zip(targets, methods)):
-        next_target = next((address for address in ordered_targets if address > target), None)
-        block = []
-        for instruction in instructions:
-            address = instruction[0]
-            if target <= address and (next_target is None or address < next_target):
-                block.append(instruction)
+    epilogue = branch_target(parse_instructions(backend)[8])
+    if epilogue is None:
+        raise WitnessError("sequencer backend has no shared return epilogue")
 
-        address = target
-        reachable_call = False
-        for instruction_address, size, mnemonic, operands, line in block:
-            if instruction_address != address:
-                break
-            calls = direct_call_targets(line)
-            if mnemonic in ("bl", "blx"):
-                reachable_call = any(method in call for call in calls)
-                break
-            if is_control_transfer(mnemonic, operands, line):
-                break
-            address += size
-        if not reachable_call:
+    def expect(
+        address: int,
+        mnemonic: str,
+        operands: str,
+        variant: int,
+    ) -> int:
+        instruction = by_address.get(address)
+        if instruction is None or not matches_instruction(instruction, mnemonic, operands):
+            raise WitnessError(
+                f"sequencer backend variant {variant} has an unexpected continuation"
+            )
+        return address + instruction[1]
+
+    def expect_call(address: int, method: str, variant: int) -> int:
+        instruction = by_address.get(address)
+        if (
+            instruction is None
+            or instruction[2] not in ("bl", "blx")
+            or not any(method in target for target in direct_call_targets(instruction[4]))
+        ):
             raise WitnessError(
                 f"sequencer backend variant {variant} does not reach a direct call to {method}"
             )
+        return address + instruction[1]
+
+    def expect_epilogue_branch(address: int, variant: int) -> None:
+        instruction = by_address.get(address)
+        if (
+            instruction is None
+            or instruction[2] not in ("b.n", "b.w")
+            or branch_target(instruction) != epilogue
+        ):
+            raise WitnessError(
+                f"sequencer backend variant {variant} does not continue to the shared return epilogue"
+            )
+
+    epilogue_instructions = [by_address.get(epilogue), by_address.get(epilogue + 2)]
+    if not (
+        all(epilogue_instructions)
+        and matches_instruction(epilogue_instructions[0], "add", r"\s*sp,\s*#16\s*")
+        and matches_instruction(epilogue_instructions[1], "pop", r"\s*\{\s*r7,\s*pc\s*\}\s*")
+    ):
+        raise WitnessError("sequencer backend shared return epilogue has an unexpected shape")
+
+    clock_end = expect(targets[0], "ldr", r"\s*r0,\s*\[sp,\s*#4\]\s*", 0)
+    clock_end = expect(clock_end, "ldr", r"\s*r0,\s*\[r0,\s*#0\]\s*", 0)
+    clock_end = expect_call(clock_end, methods[0], 0)
+    expect_epilogue_branch(clock_end, 0)
+
+    systick_end = expect(targets[1], "ldr", r"\s*r0,\s*\[sp,\s*#4\]\s*", 1)
+    systick_end = expect(systick_end, "ldr", r"\s*r0,\s*\[r0,\s*#0\]\s*", 1)
+    systick_end = expect(
+        systick_end,
+        "ldr",
+        r"\s*r1,\s*\[pc,\s*#\d+\](?:\s+@.*)?\s*",
+        1,
+    )
+    systick_end = expect_call(systick_end, methods[1], 1)
+    systick_end = expect(systick_end, "mov", r"\s*r1,\s*r0\s*", 1)
+    systick_end = expect(systick_end, "add", r"\s*r0,\s*sp,\s*#12\s*", 1)
+    systick_end = expect(systick_end, "strb", r"\s*r1,\s*\[r0,\s*#0\]\s*", 1)
+    systick_end = expect_call(
+        systick_end,
+        "Result<(), startup_adapter_witness::board_startup_adapters::StartupError>>::is_err",
+        1,
+    )
+    systick_end = expect(systick_end, "cmp", r"\s*r0,\s*#0\s*", 1)
+    is_err_branch = by_address.get(systick_end)
+    if is_err_branch is None or is_err_branch[2] != "bne.n":
+        raise WitnessError("sequencer backend SysTick result split has an unexpected branch")
+    error_handler = branch_target(is_err_branch)
+    systick_end += is_err_branch[1]
+    expect_epilogue_branch(systick_end, 1)
+
+    if error_handler is None:
+        raise WitnessError("sequencer backend SysTick error branch has no target")
+    error_end = expect(error_handler, "ldr", r"\s*r1,\s*\[sp,\s*#4\]\s*", 1)
+    error_end = expect(error_end, "movs", r"\s*r0,\s*#1\s*", 1)
+    error_end = expect(error_end, "strb", r"\s*r0,\s*\[r1,\s*#6\]\s*", 1)
+    expect_epilogue_branch(error_end, 1)
+
+    portcon_end = expect(targets[2], "ldr", r"\s*r1,\s*\[sp,\s*#4\]\s*", 2)
+    portcon_end = expect(portcon_end, "ldr", r"\s*r0,\s*\[r1,\s*#0\]\s*", 2)
+    portcon_end = expect(portcon_end, "ldrb", r"\s*r1,\s*\[r1,\s*#4\]\s*", 2)
+    portcon_end = expect_call(portcon_end, methods[2], 2)
+    expect_epilogue_branch(portcon_end, 2)
+
+    gpio_end = expect(targets[3], "ldr", r"\s*r1,\s*\[sp,\s*#4\]\s*", 3)
+    gpio_end = expect(gpio_end, "ldr", r"\s*r0,\s*\[r1,\s*#0\]\s*", 3)
+    gpio_end = expect(gpio_end, "ldrb", r"\s*r1,\s*\[r1,\s*#5\]\s*", 3)
+    gpio_end = expect_call(gpio_end, methods[3], 3)
+    expect_epilogue_branch(gpio_end, 3)
+
+
+def validate_sequencer_continuation(sequence: str) -> None:
+    instructions = parse_instructions(sequence)
+    by_address = {instruction[0]: instruction for instruction in instructions}
+    calls = [
+        instruction
+        for instruction in reachable_instruction_prefix(sequence)
+        if any("Backend>::call" in target for target in direct_call_targets(instruction[4]))
+    ]
+    if len(calls) < 7:
+        raise WitnessError(
+            "linked sequencer has no reachable ordered startup dispatch and continuation"
+        )
+
+    for variant, call in enumerate(calls[:7]):
+        following = by_address.get(call[0] + call[1])
+        operand = r"\s*r0,\s*\[sp,\s*#0\]\s*" if variant < 6 else r"\s*r0,\s*\[sp,\s*#4\]\s*"
+        if following is None or not matches_instruction(following, "ldr", operand):
+            raise WitnessError(
+                f"linked sequencer variant {variant} has an unexpected call continuation"
+            )
+
+    tail = calls[6][0] + calls[6][1]
+    guard = []
+    for _ in range(5):
+        instruction = by_address.get(tail)
+        if instruction is None:
+            break
+        guard.append(instruction)
+        tail += instruction[1]
+    if len(guard) != 5 or not (
+        matches_instruction(guard[0], "ldr", r"\s*r0,\s*\[sp,\s*#4\]\s*")
+        and matches_instruction(guard[1], "ldrb", r"\s*r0,\s*\[r0,\s*#0\]\s*")
+        and matches_instruction(guard[2], "lsls", r"\s*r0,\s*r0,\s*#31\s*")
+        and matches_instruction(guard[3], "cmp", r"\s*r0,\s*#0\s*")
+        and guard[4][2] == "bne.n"
+    ):
+        raise WitnessError("linked sequencer has an unexpected continuation after its first seven calls")
+
+    variant_seven = branch_target(guard[4])
+    skip_variant = by_address.get(tail)
+    if variant_seven is None or skip_variant is None or skip_variant[2] != "b.n":
+        raise WitnessError("linked sequencer variant-seven continuation has an unexpected branch")
+    next_stage = branch_target(skip_variant)
+    variant_seven_body = [
+        by_address.get(variant_seven),
+        by_address.get(variant_seven + 2),
+    ]
+    if not (
+        all(variant_seven_body)
+        and matches_instruction(variant_seven_body[0], "ldr", r"\s*r0,\s*\[sp,\s*#0\]\s*")
+        and matches_instruction(variant_seven_body[1], "movs", r"\s*r1,\s*#7\s*")
+    ):
+        raise WitnessError("linked sequencer variant-seven dispatch has an unexpected continuation")
+    variant_call = by_address.get(variant_seven + 4)
+    if (
+        variant_call is None
+        or not any("Backend>::call" in target for target in direct_call_targets(variant_call[4]))
+    ):
+        raise WitnessError("linked sequencer variant-seven dispatch does not call its backend")
+    variant_return = by_address.get(variant_call[0] + variant_call[1])
+    if (
+        next_stage is None
+        or variant_return is None
+        or variant_return[2] != "b.n"
+        or branch_target(variant_return) != next_stage
+    ):
+        raise WitnessError("linked sequencer variant-seven call does not return to the next stage")
+
+    if len(instructions) < 2 or not (
+        matches_instruction(instructions[-2], "add", r"\s*sp,\s*#16\s*")
+        and matches_instruction(instructions[-1], "pop", r"\s*\{\s*r7,\s*pc\s*\}\s*")
+    ):
+        raise WitnessError("linked sequencer has an unexpected shared return epilogue")
 
 
 def validate_call_path(disassembly: str) -> None:
@@ -377,6 +524,7 @@ def validate_call_path(disassembly: str) -> None:
         require_call_edge(disassembly, caller, callee)
 
     sequence = function_block(disassembly, "board_sequence::run")
+    validate_sequencer_continuation(sequence)
     reachable_sequence = reachable_instruction_prefix(sequence)
     sequencer_calls = [
         target
