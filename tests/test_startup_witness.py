@@ -53,18 +53,18 @@ CONNECTED_DISPATCH = """
 00000500 <board_sequence::run::<Backend>>:
  500: 2100 movs r1, #0
  502: f000 f800 bl 600 <<Backend>::call>
- 504: 2101 movs r1, #1
- 506: f000 f800 bl 600 <<Backend>::call>
- 508: 2102 movs r1, #2
- 50a: f000 f800 bl 600 <<Backend>::call>
- 50c: 2103 movs r1, #3
+ 506: 2101 movs r1, #1
+ 508: f000 f800 bl 600 <<Backend>::call>
+ 50c: 2102 movs r1, #2
  50e: f000 f800 bl 600 <<Backend>::call>
- 510: 2104 movs r1, #4
- 512: f000 f800 bl 600 <<Backend>::call>
- 514: 2105 movs r1, #5
- 516: f000 f800 bl 600 <<Backend>::call>
- 518: 2106 movs r1, #6
+ 512: 2103 movs r1, #3
+ 514: f000 f800 bl 600 <<Backend>::call>
+ 518: 2104 movs r1, #4
  51a: f000 f800 bl 600 <<Backend>::call>
+ 51e: 2105 movs r1, #5
+ 520: f000 f800 bl 600 <<Backend>::call>
+ 524: 2106 movs r1, #6
+ 526: f000 f800 bl 600 <<Backend>::call>
 00000600 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>:
  600: 0081 lsls r1, r0, #2
  602: a001 add r0, pc, #4 @ (adr r0, 610 <SequencerBackend as Backend>::call+0x10)
@@ -87,6 +87,29 @@ CONNECTED_DISPATCH = """
 00000730 <<HardwareIo as StartupIo>::gpio>:
  730: f000 f800 bl 830 <apply_gpio_startup_plan>
 """
+
+ENTRY_SELF_LOOP = CONNECTED_DISPATCH.replace(
+    " 200: f000 f800 bl 300 <run_hardware>",
+    " 200: e7fe b.n 200 <witness_main>\n"
+    " 202: f000 f800 bl 300 <run_hardware>",
+)
+
+WRAPPER_EARLY_RETURN = CONNECTED_DISPATCH.replace(
+    " 300: f000 f800 bl 400 <board_startup_adapters::run::<Hardware>>",
+    " 300: 4770 bx lr\n"
+    " 302: f000 f800 bl 400 <board_startup_adapters::run::<Hardware>>",
+)
+
+HARDWARE_WRAPPER_EARLY_RETURN = CONNECTED_DISPATCH.replace(
+    " 700: f000 f800 bl 800 <apply_device_clock_gates>",
+    " 700: 4770 bx lr\n"
+    " 702: f000 f800 bl 800 <apply_device_clock_gates>",
+)
+
+SKIPPED_SEQUENCER_DISPATCH = CONNECTED_DISPATCH.replace(
+    " 500: 2100 movs r1, #0",
+    " 500: e000 b.n 506 <board_sequence::run+0x6>",
+)
 
 DISCONNECTED_DISPATCH = CONNECTED_DISPATCH.replace(
     """ 600: 0081 lsls r1, r0, #2
@@ -126,6 +149,28 @@ class StartupWitnessCheckerTests(unittest.TestCase):
 
         with self.assertRaisesRegex(WitnessError, "witness_main.*run_hardware"):
             validate_call_path(DISCONNECTED_ENTRY)
+
+    def test_rejects_witness_entry_self_loop_with_downstream_chain_retained(self):
+        self.assertIn("board_sequence::run", ENTRY_SELF_LOOP)
+
+        with self.assertRaisesRegex(WitnessError, "witness_main.*run_hardware"):
+            validate_call_path(ENTRY_SELF_LOOP)
+
+    def test_rejects_wrapper_call_after_early_return(self):
+        with self.assertRaisesRegex(
+            WitnessError, "run_hardware.*board_startup_adapters::run"
+        ):
+            validate_call_path(WRAPPER_EARLY_RETURN)
+
+    def test_rejects_hardware_adapter_call_after_early_return(self):
+        with self.assertRaisesRegex(
+            WitnessError, "target device_clock_gates.*no reachable linked call"
+        ):
+            validate_call_path(HARDWARE_WRAPPER_EARLY_RETURN)
+
+    def test_rejects_skipped_sequencer_dispatch(self):
+        with self.assertRaisesRegex(WitnessError, "sequencer.*reachable ordered"):
+            validate_call_path(SKIPPED_SEQUENCER_DISPATCH)
 
     def test_rejects_disconnected_backend_dispatcher_with_methods_retained(self):
         self.assertIn("StartupIo>::device_clock_gates", DISCONNECTED_DISPATCH)

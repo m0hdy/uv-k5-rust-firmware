@@ -89,10 +89,83 @@ def direct_call_targets(function: str) -> list[str]:
     ]
 
 
+def parse_instructions(function: str) -> list[tuple[int, int, str, str, str]]:
+    instructions = []
+    for line in function.splitlines():
+        if "\t" in line:
+            parts = line.split("\t", 2)
+            address_match = re.match(r"\s*([0-9a-fA-F]+):", parts[0])
+            instruction_match = (
+                re.match(r"\s*([a-z][\w.]*)\s*(.*)", parts[2])
+                if len(parts) == 3
+                else None
+            )
+            if address_match is None or instruction_match is None:
+                continue
+            address = address_match.group(1)
+            encoded = parts[1]
+            mnemonic, operands = instruction_match.groups()
+        else:
+            match = re.match(
+                r"\s*([0-9a-fA-F]+):\s+((?:[0-9a-fA-F]{2,8}\s+)+)([a-z][\w.]*)\s*(.*)",
+                line,
+            )
+            if match is None:
+                continue
+            address, encoded, mnemonic, operands = match.groups()
+        if mnemonic != ".word":
+            size = sum(len(byte) // 2 for byte in encoded.split())
+            instructions.append(
+                (int(address, 16), size, mnemonic, operands, line)
+            )
+    return sorted(instructions)
+
+
+def is_control_transfer(
+    mnemonic: str, operands: str, line: str
+) -> bool:
+    if mnemonic in ("bl", "blx"):
+        return not direct_call_targets(line)
+    if re.fullmatch(
+        r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.(?:n|w))?",
+        mnemonic,
+    ) or mnemonic in ("bx", "cbz", "cbnz", "tbb", "tbh"):
+        return True
+    return bool(re.match(r"pc\s*,", operands)) or (
+        (mnemonic == "pop" or mnemonic.startswith("ldm"))
+        and re.search(r"\bpc\b", operands) is not None
+    )
+
+
+def reachable_instruction_prefix(function: str) -> list[tuple[int, int, str, str, str]]:
+    instructions = parse_instructions(function)
+    reachable = []
+    next_address = instructions[0][0] if instructions else None
+    for instruction in instructions:
+        address, size, mnemonic, operands, line = instruction
+        if address != next_address:
+            break
+        reachable.append(instruction)
+        next_address = address + size
+        if is_control_transfer(mnemonic, operands, line):
+            break
+    return reachable
+
+
+def reachable_call_targets(function: str) -> list[str]:
+    return [
+        target
+        for _, _, _, _, line in reachable_instruction_prefix(function)
+        for target in direct_call_targets(line)
+    ]
+
+
 def require_call_edge(disassembly: str, caller: str, callee: str) -> None:
-    targets = direct_call_targets(function_block(disassembly, caller))
+    targets = reachable_call_targets(function_block(disassembly, caller))
     if not any(callee in target for target in targets):
-        raise WitnessError(f"{caller} has no linked call instruction to {callee}")
+        raise WitnessError(
+            f"{caller} has no reachable linked call instruction to {callee}"
+        )
 
 
 def backend_dispatch_targets(function: str) -> list[int]:
@@ -125,19 +198,7 @@ def validate_backend_dispatch(disassembly: str) -> None:
     if len(set(targets)) != 4:
         raise WitnessError("sequencer backend first four variants do not have distinct dispatch targets")
 
-    instructions = []
-    for line in backend.splitlines():
-        match = re.match(
-            r"\s*([0-9a-fA-F]+):\s+((?:[0-9a-fA-F]{2,8}\s+)+)([a-z][\w.]*)\s*(.*)",
-            line,
-        )
-        if match and match.group(3) != ".word":
-            address, encoded, mnemonic, operands = match.groups()
-            size = sum(len(byte) // 2 for byte in encoded.split())
-            instructions.append(
-                (int(address, 16), size, mnemonic, operands, line)
-            )
-    instructions.sort()
+    instructions = parse_instructions(backend)
     methods = (
         "StartupIo>::device_clock_gates",
         "StartupIo>::systick",
@@ -162,18 +223,7 @@ def validate_backend_dispatch(disassembly: str) -> None:
             if mnemonic in ("bl", "blx"):
                 reachable_call = any(method in call for call in calls)
                 break
-            if (
-                re.fullmatch(
-                    r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.(?:n|w))?",
-                    mnemonic,
-                )
-                or mnemonic in ("bx", "cbz", "cbnz")
-                or (
-                    (mnemonic == "pop" or mnemonic.startswith("ldm"))
-                    and re.search(r"\bpc\b", operands)
-                )
-                or re.match(r"pc\b", operands)
-            ):
+            if is_control_transfer(mnemonic, operands, line):
                 break
             address += size
         if not reachable_call:
@@ -192,17 +242,23 @@ def validate_call_path(disassembly: str) -> None:
         require_call_edge(disassembly, caller, callee)
 
     sequence = function_block(disassembly, "board_sequence::run")
-    sequencer_calls = direct_call_targets(sequence)
+    reachable_sequence = reachable_instruction_prefix(sequence)
+    sequencer_calls = [
+        target
+        for _, _, _, _, line in reachable_sequence
+        for target in direct_call_targets(line)
+    ]
     if sum("Backend>::call" in target for target in sequencer_calls) < 7:
-        raise WitnessError("linked sequencer does not retain its ordered startup call dispatches")
-    sequence_lines = sequence.splitlines()
+        raise WitnessError(
+            "linked sequencer does not retain its reachable ordered startup call dispatches"
+        )
     sequencer_call_args = [
         int(argument.group(1))
-        for index, line in enumerate(sequence_lines[:-1])
+        for index, (_, _, _, _, line) in enumerate(reachable_sequence[:-1])
         if (argument := re.search(r"\bmovs\s+r1,\s*#(\d+)", line))
         and any(
             "Backend>::call" in target
-            for target in direct_call_targets(sequence_lines[index + 1])
+            for target in direct_call_targets(reachable_sequence[index + 1][4])
         )
     ]
     if sequencer_call_args[:7] != list(range(7)):
@@ -215,8 +271,10 @@ def validate_call_path(disassembly: str) -> None:
         ("gpio", "apply_gpio_startup_plan"),
     ):
         method_body = function_block(disassembly, f"StartupIo>::{method}", suffix=True)
-        if not any(adapter in target for target in direct_call_targets(method_body)):
-            raise WitnessError(f"target {method} has no linked call instruction to {adapter}")
+        if not any(adapter in target for target in reachable_call_targets(method_body)):
+            raise WitnessError(
+                f"target {method} has no reachable linked call instruction to {adapter}"
+            )
 
     validate_backend_dispatch(disassembly)
 
