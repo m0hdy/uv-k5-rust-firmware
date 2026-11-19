@@ -24,6 +24,8 @@ pub mod st7565_display;
 #[allow(unused_attributes)]
 pub mod st7565_line_transport;
 #[allow(unused_attributes)]
+pub mod st7565_mmio_transport;
+#[allow(unused_attributes)]
 pub mod st7565_startup;
 #[allow(unused_attributes)]
 pub mod st7565_startup_executor;

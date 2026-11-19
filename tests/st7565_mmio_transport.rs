@@ -1,15 +1,9 @@
-#[allow(dead_code, unused_attributes)]
-#[path = "../src/st7565_display.rs"]
-mod st7565_display;
-#[path = "../src/st7565_mmio_transport.rs"]
-mod st7565_mmio_transport;
-
-use st7565_mmio_transport::{
+use std::collections::VecDeque;
+use std::num::NonZeroU32;
+use uv_k5_rust_firmware::st7565_mmio_transport::{
     GPIOB_ST7565_A0_MASK, RegisterAddress, RegisterIo, SPI_CR_MSR_SSN_MASK, SPI_FIFOST_TFF_MASK,
     SPI_IF_TX_BUSY_MASK, draw_line_with_io,
 };
-use std::collections::VecDeque;
-use std::num::NonZeroU32;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Event {
@@ -132,7 +126,7 @@ fn fifo_timeout_restores_mode_without_writing_after_timeout() {
 
     assert_eq!(
         draw_line_with_io(&mut io, 0, 0, &[1], poll_limit()),
-        Err(st7565_mmio_transport::LineError::FifoTimeout)
+        Err(uv_k5_rust_firmware::st7565_mmio_transport::LineError::FifoTimeout)
     );
     assert_eq!(
         io.events,
