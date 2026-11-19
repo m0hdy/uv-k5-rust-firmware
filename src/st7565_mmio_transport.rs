@@ -36,6 +36,7 @@ impl RegisterAddress {
     }
 }
 
+/// Register access boundary; implementations must be infallible and must not panic.
 pub trait RegisterIo {
     fn read(&mut self, register: RegisterAddress) -> u32;
     fn write(&mut self, register: RegisterAddress, value: u32);
