@@ -17,6 +17,7 @@ enum Event {
     Portcon(bool),
     Gpio(bool),
     BacklightInit,
+    AdcInit(u16),
     BoardPlaceholder(BoardCall),
     EepromStart,
     EepromWrite(u8),
@@ -108,6 +109,10 @@ impl StartupIo for MockIo {
         self.events.push(Event::BacklightInit);
     }
 
+    fn adc_init(&mut self, exttrig_sel: u16) {
+        self.events.push(Event::AdcInit(exttrig_sel));
+    }
+
     fn placeholder(&mut self, call: BoardCall) {
         self.events.push(Event::BoardPlaceholder(call));
     }
@@ -162,6 +167,7 @@ fn config() -> BootConfig {
             enabled_aircopy: false,
         },
         enable_swd: false,
+        exttrig_sel: 0x5aa5,
         settings: SettingsFeatures {
             noaa_enabled: true,
             vox_enabled: true,
@@ -212,7 +218,7 @@ fn success_runs_board_then_fallible_settings_then_bounded_battery_sampling() {
             Event::Portcon(false),
             Event::Gpio(false),
             Event::BacklightInit,
-            Event::BoardPlaceholder(BoardCall::AdcInit),
+            Event::AdcInit(0x5aa5),
             Event::BoardPlaceholder(BoardCall::St7565Init),
         ]
     );

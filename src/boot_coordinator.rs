@@ -31,6 +31,8 @@ impl<T> BootIo for T where T: StartupIo + I2cTransport + BatteryRegisterIo {}
 pub struct BootConfig {
     pub board: BoardDefines,
     pub enable_swd: bool,
+    /// Caller-selected SARADC EXTTRIG_SEL; the board initializer provides no value.
+    pub exttrig_sel: u16,
     pub settings: settings_boot_composition::Features,
     pub battery_poll_budget: usize,
     pub battery_calibration: u16,
@@ -54,7 +56,8 @@ pub fn coordinate<IO: BootIo>(
     io: &mut IO,
     config: BootConfig,
 ) -> Result<ApplicationStartup, BootError<<IO as I2cTransport>::Error>> {
-    board_startup_adapters::run(config.board, config.enable_swd, io).map_err(BootError::Board)?;
+    board_startup_adapters::run(config.board, config.enable_swd, config.exttrig_sel, io)
+        .map_err(BootError::Board)?;
     let settings = settings_boot_composition::compose_with_transport(io, config.settings)
         .map_err(BootError::Settings)?;
     let battery =

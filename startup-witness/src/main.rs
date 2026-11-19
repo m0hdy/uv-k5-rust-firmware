@@ -11,6 +11,9 @@ use board_startup_adapters::{Defines, run_hardware};
 
 global_asm!(include_str!("startup.S"));
 
+// Link-only forwarding input; this is not a production trigger selection.
+const LINK_ONLY_EXTTRIG_SEL: u16 = 0x5aa5;
+
 #[unsafe(no_mangle)]
 pub extern "C" fn witness_main() -> ! {
     // SAFETY: The link-only witness is not configured for hardware execution.
@@ -22,6 +25,7 @@ pub extern "C" fn witness_main() -> ! {
                 enabled_aircopy: false,
             },
             false,
+            LINK_ONLY_EXTTRIG_SEL,
         )
     };
     loop {

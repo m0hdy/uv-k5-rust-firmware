@@ -80,24 +80,24 @@ CONNECTED_DISPATCH = """
  306: bd80 pop {r7, pc}
 00000400 <board_startup_adapters::run::<Hardware>>:
  400: f000 f800 bl 500 <board_sequence::run::<Backend>>
- 404: 9801 ldr r0, [sp, #4]
- 406: 7980 ldrb r0, [r0, #6]
+ 404: 9801 ldr r0, [sp, #8]
+ 406: 7980 ldrb r0, [r0, #8]
  408: 07c0 lsls r0, r0, #31
  40a: 2800 cmp r0, #0
  40c: d104 bne.n 418
  40e: e7ff b.n 410
- 410: a904 add r1, sp, #16
+ 410: a905 add r1, sp, #20
  412: 2000 movs r0, #0
  414: 7008 strb r0, [r1, #0]
  416: e003 b.n 420
- 418: a904 add r1, sp, #16
+ 418: a905 add r1, sp, #20
  41a: 2001 movs r0, #1
  41c: 7008 strb r0, [r1, #0]
  41e: e7ff b.n 420
- 420: a804 add r0, sp, #16
+ 420: a805 add r0, sp, #20
  422: 7800 ldrb r0, [r0, #0]
- 424: b008 add sp, #32
- 426: bd80 pop {r7, pc}
+ 424: b00a add sp, #40
+ 426: bdd0 pop {r4, r6, r7, pc}
 00000500 <board_sequence::run::<Backend>>:
  500: 2100 movs r1, #0
  502: f000 f800 bl 5f6 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>
@@ -153,7 +153,7 @@ CONNECTED_DISPATCH = """
  5fa: b084 sub sp, #16
  5fc: 9001 str r0, [sp, #4]
  5fe: 9102 str r1, [sp, #8]
- 600: 7980 ldrb r0, [r0, #6]
+ 600: 7980 ldrb r0, [r0, #8]
  602: 07c0 lsls r0, r0, #31
  604: 2800 cmp r0, #0
  606: d112 bne.n 670 <SequencerBackend as Backend>::call+0x70
@@ -161,7 +161,7 @@ CONNECTED_DISPATCH = """
  60a: 9802 ldr r0, [sp, #8]
  60c: b2c0 uxtb r0, r0
  60e: 9000 str r0, [sp, #0]
- 610: 2804 cmp r0, #4
+ 610: 2805 cmp r0, #5
  612: d81d bhi.n 650 <SequencerBackend as Backend>::call+0x50
  614: 9800 ldr r0, [sp, #0]
  616: 0081 lsls r1, r0, #2
@@ -173,6 +173,7 @@ CONNECTED_DISPATCH = """
  628: 1071 .word 0x1071
  62c: 1091 .word 0x1091
  630: 10b1 .word 0x10b1
+ 634: 10c1 .word 0x10c1
  650: 9902 ldr r1, [sp, #8]
  652: 9801 ldr r0, [sp, #4]
  654: 6800 ldr r0, [r0, #0]
@@ -197,27 +198,33 @@ CONNECTED_DISPATCH = """
  1048: e712 b.n 670 <SequencerBackend as Backend>::call+0x70>
  1060: 9901 ldr r1, [sp, #4]
  1062: 2001 movs r0, #1
- 1064: 7188 strb r0, [r1, #6]
+ 1064: 7208 strb r0, [r1, #8]
  1066: e703 b.n 670 <SequencerBackend as Backend>::call+0x70>
  1070: 9901 ldr r1, [sp, #4]
  1072: 6808 ldr r0, [r1, #0]
- 1074: 7909 ldrb r1, [r1, #4]
+ 1074: 7989 ldrb r1, [r1, #6]
  1076: f000 f800 bl 720 <HardwareIo as StartupIo>::portcon>
  107a: e6f9 b.n 670 <SequencerBackend as Backend>::call+0x70>
  1090: 9901 ldr r1, [sp, #4]
  1092: 6808 ldr r0, [r1, #0]
- 1094: 7949 ldrb r1, [r1, #5]
+ 1094: 79c9 ldrb r1, [r1, #7]
  1096: f000 f800 bl 730 <HardwareIo as StartupIo>::gpio>
  109a: e6e9 b.n 670 <SequencerBackend as Backend>::call+0x70>
  10b0: 9801 ldr r0, [sp, #4]
  10b2: 6800 ldr r0, [r0, #0]
  10b4: f000 f800 bl 740 <HardwareIo as StartupIo>::backlight_init_hardware>
  10b8: e6d6 b.n 670 <SequencerBackend as Backend>::call+0x70>
+ 10c0: 9901 ldr r1, [sp, #4]
+ 10c2: 6808 ldr r0, [r1, #0]
+ 10c4: 8889 ldrh r1, [r1, #4]
+ 10c6: f000 f800 bl 1320 <HardwareIo as StartupIo>::adc_init>
+ 10ca: e6d6 b.n 670 <SequencerBackend as Backend>::call+0x70>
+ 10d0: 4770 bx lr
 00000700 <<HardwareIo as StartupIo>::device_clock_gates>:
  700: f000 f800 bl 800 <apply_device_clock_gates>
  704: bd80 pop {r7, pc}
 00000710 <<HardwareIo as StartupIo>::systick>:
- 710: f000 f800 bl 810 <apply_to_hardware>
+ 710: f000 f800 bl 810 <systick_startup_adapter::apply_to_hardware>
  714: f000 f800 bl 811 <Result<(), startup_adapter_witness::board_startup_adapters::systick_startup_adapter::InvalidReload>>::map_err>
  718: bd80 pop {r7, pc}
 00000720 <<HardwareIo as StartupIo>::portcon>:
@@ -230,9 +237,34 @@ CONNECTED_DISPATCH = """
 00000740 <<HardwareIo as StartupIo>::backlight_init_hardware>:
  740: f000 f800 bl 840 <initialize_backlight_hardware>
  744: bd80 pop {r7, pc}
+00001320 <<HardwareIo as StartupIo>::adc_init>:
+ 1320: f000 f800 bl 1330 <adc_startup_adapter::physical::target::apply_to_hardware>
+ 1324: bd80 pop {r7, pc}
+00001330 <adc_startup_adapter::physical::target::apply_to_hardware>:
+ 1330: b580 push {r7, lr}
+ 1332: af00 add r7, sp, #0
+ 1334: b082 sub sp, #8
+ 1336: 4601 mov r1, r0
+ 1338: a801 add r0, sp, #4
+ 133a: f000 f800 bl 1348 <adc_startup_adapter::physical::apply_with_words::<Mock>>
+ 133e: b002 add sp, #8
+ 1340: bd80 pop {r7, pc}
+00001348 <adc_startup_adapter::physical::apply_with_words::<Mock>>:
+ 1348: b580 push {r7, lr}
+ 134a: af00 add r7, sp, #0
+ 134c: b082 sub sp, #8
+ 134e: 9001 str r0, [sp, #4]
+ 1350: a801 add r0, sp, #4
+ 1352: f000 f800 bl 1360 <adc_startup_adapter::apply_with_io::<Mock>>
+ 1356: b002 add sp, #8
+ 1358: bd80 pop {r7, pc}
+00001360 <adc_startup_adapter::apply_with_io::<Mock>>:
+ 1360: 4770 bx lr
+00001368 <adc_startup_adapter::noop>:
+ 1368: 4770 bx lr
 00000800 <apply_device_clock_gates>:
  800: 4770 bx lr
-00000810 <apply_to_hardware>:
+00000810 <systick_startup_adapter::apply_to_hardware>:
  810: 4770 bx lr
 00000811 <Result<(), startup_adapter_witness::board_startup_adapters::systick_startup_adapter::InvalidReload>>::map_err>:
  811: bd80 pop {r7, pc}
@@ -570,9 +602,9 @@ DISCONNECTED_DISPATCH = CONNECTED_DISPATCH.replace(
 )
 
 DISCONNECTED_BACKEND_PREFIX = CONNECTED_DISPATCH.replace(
-    " 600: 7980 ldrb r0, [r0, #6]",
+    " 600: 7980 ldrb r0, [r0, #8]",
     " 600: 4770 bx lr\n"
-    " 602: 7980 ldrb r0, [r0, #6]",
+    " 602: 7980 ldrb r0, [r0, #8]",
 )
 
 CONSTANT_VARIANT_RELOAD = CONNECTED_DISPATCH.replace(
@@ -586,17 +618,17 @@ OVERWRITTEN_INCOMING_VARIANT = CONNECTED_DISPATCH.replace(
 )
 
 ALWAYS_TAKEN_BACKEND_BRANCH = CONNECTED_DISPATCH.replace(
-    " 610: 2804 cmp r0, #4\n 612: d81d bhi.n 650",
+    " 610: 2805 cmp r0, #5\n 612: d81d bhi.n 650",
     " 610: 4280 cmp r0, r0\n 612: d01d beq.n 650",
 )
 
 UNSUPPORTED_BACKEND_CONDITIONAL = CONNECTED_DISPATCH.replace(
-    " 610: 2804 cmp r0, #4\n 612: d81d bhi.n 650",
+    " 610: 2805 cmp r0, #5\n 612: d81d bhi.n 650",
     " 610: 4288 cmp r0, r1\n 612: d02b beq.n 650",
 )
 
 WRONG_STOPPED_GUARD_INPUT = CONNECTED_DISPATCH.replace(
-    " 600: 7980 ldrb r0, [r0, #6]",
+    " 600: 7980 ldrb r0, [r0, #8]",
     " 600: 7900 ldrb r0, [r0, #4]",
 )
 
@@ -640,6 +672,16 @@ BACKEND_POST_CALL_SELF_LOOP = CONNECTED_DISPATCH.replace(
 BACKEND_CROSS_CASE_CONTINUATION = CONNECTED_DISPATCH.replace(
     " 1028: e722 b.n 670 <SequencerBackend as Backend>::call+0x70>",
     " 1028: e702 b.n 1030 <SequencerBackend as Backend>::call+0x50>",
+)
+
+DISCONNECTED_ADC_DISPATCH = CONNECTED_DISPATCH.replace(
+    " 634: 10c1 .word 0x10c1",
+    " 634: 10d1 .word 0x10d1",
+)
+
+BYPASSED_ADC_EXECUTOR = CONNECTED_DISPATCH.replace(
+    " 133a: f000 f800 bl 1348 <adc_startup_adapter::physical::apply_with_words::<Mock>>",
+    " 133a: f000 f800 bl 1368 <adc_startup_adapter::noop>",
 )
 
 HARDWARE_WRAPPER_POST_CALL_SELF_LOOP = CONNECTED_DISPATCH.replace(
@@ -1119,6 +1161,18 @@ class StartupWitnessCheckerTests(unittest.TestCase):
     def test_rejects_swapped_backend_dispatch_targets(self):
         with self.assertRaisesRegex(WitnessError, "variant 0.*device_clock_gates"):
             validate_call_path(SWAPPED_DISPATCH)
+
+    def test_rejects_disconnected_adc_backend_dispatch(self):
+        with self.assertRaisesRegex(
+            WitnessError, "variant 5.*unexpected continuation"
+        ):
+            validate_call_path(DISCONNECTED_ADC_DISPATCH)
+
+    def test_rejects_bypassed_adc_executor(self):
+        with self.assertRaisesRegex(
+            WitnessError, "target ADC executor.*does not reach"
+        ):
+            validate_call_path(BYPASSED_ADC_EXECUTOR)
 
     def test_rejects_backend_call_after_early_return(self):
         with self.assertRaisesRegex(WitnessError, "variant 0.*does not reach"):
