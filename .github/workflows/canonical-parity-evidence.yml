@@ -13,6 +13,14 @@ on:
       - tests/reference-vectors/**
       - tools/reference-vectors/**
   workflow_dispatch:
+    inputs:
+      failure_probe:
+        description: Intentionally fail the C comparator to verify failure propagation
+        type: choice
+        options:
+          - none
+          - fail-c-comparator
+        default: none
 
 permissions:
   contents: read
@@ -27,6 +35,8 @@ jobs:
       C_REFERENCE_REVISION: 7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3
       FIXTURE_SHA256: 361172955485ba9d7b6cd3b26cafc0f73cc8ed9e56ee84d79c36b8da6049c748
       EXPECTED_RUST_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      FAILURE_PROBE: ${{ github.event.inputs.failure_probe || 'none' }}
+      C_COMPARISON_CC: ${{ github.event.inputs.failure_probe == 'fail-c-comparator' && 'false' || 'cc' }}
     steps:
       - name: Check out exact Rust source revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -98,6 +108,7 @@ jobs:
           printf 'Pinned C source revision: %s\n' "$C_REFERENCE_REVISION"
           printf 'C source revision: %s\n' "$c_revision"
           printf 'Fixture SHA-256 before comparisons: %s\n' "$fixture_before"
+          printf 'C comparison compiler: %s\n' "$C_COMPARISON_CC"
           printf '\nTool versions:\n'
           python3 --version
           cc --version | head -n 1
@@ -140,7 +151,7 @@ jobs:
           echo "C canonical comparison:"
           if (
             cd "$rust_source"
-            UV_K5_C_REFERENCE="$c_reference" CC=cc \
+            UV_K5_C_REFERENCE="$c_reference" CC="$C_COMPARISON_CC" \
               "$python" tools/reference-vectors/compare.py
           ); then
             c_comparison_status=0
@@ -196,6 +207,20 @@ jobs:
           set -euo pipefail
           report="$RUNNER_TEMP/canonical-parity-report.txt"
           test -s "$report"
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$FAILURE_PROBE" == "fail-c-comparator" ]]; then
+            grep -Fqx "Rust source revision: $EXPECTED_RUST_REVISION" "$report"
+            grep -Fqx "C source revision: $C_REFERENCE_REVISION" "$report"
+            grep -Eq '^C comparator exit status: [1-9][0-9]*$' "$report"
+            grep -Fqx "Rust comparator exit status: 0" "$report"
+            grep -Fqx "Vector results: 39/39 matched (39 executed)." "$report"
+            grep -Fqx "C working tree before C comparison: clean" "$report"
+            grep -Fqx "C working tree after C comparison: clean at pinned revision" "$report"
+            grep -Fqx "Canonical fixture unchanged: verified" "$report"
+            grep -Fqx "Fixture SHA-256 after comparisons: $FIXTURE_SHA256" "$report"
+            echo "Intentional C failure was recorded; Rust comparison still completed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           grep -Fqx "Rust source revision: $EXPECTED_RUST_REVISION" "$report"
           grep -Fqx "C source revision: $C_REFERENCE_REVISION" "$report"
           grep -Fqx "matched 39 canonical cases against pinned C reference $C_REFERENCE_REVISION" "$report"
@@ -206,7 +231,6 @@ jobs:
           grep -Fqx "C working tree after C comparison: clean at pinned revision" "$report"
           grep -Fqx "Canonical fixture unchanged: verified" "$report"
           grep -Fqx "Fixture SHA-256 after comparisons: $FIXTURE_SHA256" "$report"
-          cat "$report" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload short-lived canonical parity report
         if: always()

@@ -162,7 +162,10 @@ It can also be started manually with `workflow_dispatch`. The workflow checks
 out the exact pull-request head (or dispatch revision) separately from the
 pinned C revision, installs the Rust toolchain from that Rust checkout's
 `rust-toolchain.toml`, and installs `crcmod==1.7` in a runner-owned virtual
-environment. Python bytecode generation is disabled.
+environment. Python bytecode generation is disabled. A manual
+`fail-c-comparator` dispatch probe intentionally makes the C comparison fail;
+the report must show that failure, the Rust comparison must still complete,
+and the workflow job must fail.
 
 The job verifies the C checkout revision and clean working tree before and
 after `compare.py`, verifies the fixture retains the documented SHA-256, and
