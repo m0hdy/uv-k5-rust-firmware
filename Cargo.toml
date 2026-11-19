@@ -13,5 +13,17 @@ path = "src/bin/firmware.rs"
 test = false
 bench = false
 
+[[bin]]
+name = "mixed-fallback"
+path = "src/bin/mixed_fallback.rs"
+test = false
+bench = false
+required-features = ["mixed-fallback"]
+
+[features]
+mixed-fallback = []
+mixed-fallback-c = ["mixed-fallback"]
+mixed-fallback-rust = ["mixed-fallback"]
+
 [profile.release]
 panic = "abort"
