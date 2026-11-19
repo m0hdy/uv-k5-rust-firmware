@@ -15,13 +15,15 @@ and NACKs the final byte. Repeated START and STOP likewise delegate directly
 to the existing pin sequence. The adapter reports `Infallible` for pin I/O:
 this means only that the modeled `I2cIo` methods cannot return errors. It does
 not demonstrate that physical GPIO operations, bus timing, or the EEPROM
-device are reliable; a sampled NACK remains detectable.
+device are reliable; a sampled NACK remains detectable. The target GPIO
+implementation is available through
+`i2c_bitbang_flow::target_gpio::GpioI2cIo`; it is not wired into startup.
 
-The host test uses mock pin operations and SDA samples for two distinct startup
-responses, erased data in either block, ACK conversion and read counts, the
-START/repeated-START and STOP pin sequences, intermediate ACK/final NACK, and a
-first-block NACK with cleanup and no second transaction. It makes no claim
-about physical hardware or EEPROM persistence.
+Host tests use mock pin operations and mock GPIO registers/delay for two
+distinct startup responses, erased data in either block, ACK conversion and
+read counts, the START/repeated-START and STOP pin sequences, intermediate
+ACK/final NACK, and a first-block NACK with cleanup and no second transaction.
+They make no claim about physical hardware, bus timing, or EEPROM persistence.
 
 From the repository root:
 

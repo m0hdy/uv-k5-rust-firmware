@@ -2,6 +2,8 @@
 
 //! Offline model of the pinned I2C bit and bus-edge sequence.
 
+pub mod target_gpio;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Level {
     Low,
