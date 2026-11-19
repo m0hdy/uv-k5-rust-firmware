@@ -165,6 +165,56 @@ fn command_fifo_timeout_stops_writes_and_restores_mode() {
 }
 
 #[test]
+fn fifo_ready_on_last_permitted_read_succeeds() {
+    let mut mock = Mock::ready();
+    mock.fifo = [false, false, true].into();
+    assert_eq!(draw_line(&mut mock, 0, 0, &[1], limit()), Ok(()));
+    assert_eq!(
+        mock.events,
+        [
+            Event::Mode(false),
+            Event::A0(A0::Command),
+            Event::Fifo(false),
+            Event::Fifo(false),
+            Event::Fifo(true),
+            Event::Write(0xb0),
+            Event::Fifo(true),
+            Event::Write(0x10),
+            Event::Fifo(true),
+            Event::Write(0x04),
+            Event::Drain(false),
+            Event::A0(A0::Data),
+            Event::Fifo(true),
+            Event::Write(1),
+            Event::Drain(false),
+            Event::Mode(true),
+        ]
+    );
+}
+
+#[test]
+fn fifo_ready_after_limit_is_not_read() {
+    let mut mock = Mock::ready();
+    mock.fifo = [false, false, false, true].into();
+    assert_eq!(
+        draw_line(&mut mock, 0, 0, &[1], limit()),
+        Err(LineError::FifoTimeout)
+    );
+    assert_eq!(
+        mock.events,
+        [
+            Event::Mode(false),
+            Event::A0(A0::Command),
+            Event::Fifo(false),
+            Event::Fifo(false),
+            Event::Fifo(false),
+            Event::Mode(true),
+        ]
+    );
+    assert_eq!(mock.fifo, [true]);
+}
+
+#[test]
 fn payload_fifo_timeout_stops_writes_and_restores_mode() {
     let mut mock = Mock::ready();
     mock.fifo = [true, true, true, true, false, false, false].into();
@@ -262,6 +312,7 @@ fn final_drain_timeout_restores_mode() {
 
 #[test]
 fn last_permitted_drain_read_can_succeed() {
+    assert_eq!(DRAIN_POLL_LIMIT, 100_001);
     let mut mock = Mock::ready();
     mock.drain = std::iter::repeat_n(true, DRAIN_POLL_LIMIT as usize - 1)
         .chain([false, false])
