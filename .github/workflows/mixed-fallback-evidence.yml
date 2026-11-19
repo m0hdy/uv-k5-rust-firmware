@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/mixed-fallback-evidence.yml
+      - .github/actions/setup-arm-binutils/action.yml
       - .cargo/config.toml
       - Cargo.lock
       - Cargo.toml
@@ -11,11 +12,13 @@ on:
       - linker/firmware.ld
       - mixed-fallback/**
       - rust-toolchain.toml
+      - scripts/provision_arm_binutils.py
       - scripts/check_memory_budget.py
       - scripts/check_startup_layout.py
       - src/bin/mixed_fallback.rs
       - src/bin/startup.S
       - tests/test_mixed_fallback.py
+      - tests/test_provision_arm_binutils.py
   workflow_dispatch:
 
 permissions:
@@ -60,12 +63,16 @@ jobs:
               command.extend(["--target", target])
           subprocess.run(command, check=True)
           PY
-      - name: Install Clang and ARM GNU binutils
+      - name: Install ARM GNU binutils
+        timeout-minutes: 10
+        uses: ./.github/actions/setup-arm-binutils
+      - name: Verify Clang
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang binutils-arm-none-eabi
+          if ! command -v clang >/dev/null 2>&1; then
+            sudo apt-get -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 -o Acquire::Retries=2 update
+            sudo apt-get -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 -o Acquire::Retries=2 install -y --no-install-recommends clang
+          fi
           clang --version | head -n 1
-          arm-none-eabi-objcopy --version | head -n 1
       - name: Run existing mixed-fallback evidence runner
         run: |
           python3 mixed-fallback/run.py \

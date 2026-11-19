@@ -1,0 +1,29 @@
+name: Setup cached ARM GNU binutils
+description: Restore or provision the versioned ARM GNU binutils package cache
+inputs:
+  package-version:
+    description: Ubuntu package version used for the ARM GNU binutils cache
+    required: false
+    default: 2.42-1ubuntu1+23
+runs:
+  using: composite
+  steps:
+    - name: Restore ARM GNU binutils package cache
+      id: cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/arm-binutils-debs
+        key: arm-binutils-${{ runner.os }}-${{ runner.arch }}-ubuntu-24.04-${{ inputs.package-version }}-${{ hashFiles('scripts/provision_arm_binutils.py') }}
+    - name: Provision ARM GNU binutils
+      id: provision
+      shell: bash
+      env:
+        ARM_BINUTILS_CACHE_DIR: ${{ runner.temp }}/arm-binutils-debs
+        ARM_BINUTILS_VERSION: ${{ inputs.package-version }}
+      run: python3 scripts/provision_arm_binutils.py
+    - name: Save ARM GNU binutils package cache
+      if: steps.cache.outputs.cache-hit != 'true' && steps.provision.outputs.cache-populated == 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/arm-binutils-debs
+        key: arm-binutils-${{ runner.os }}-${{ runner.arch }}-ubuntu-24.04-${{ inputs.package-version }}-${{ hashFiles('scripts/provision_arm_binutils.py') }}
