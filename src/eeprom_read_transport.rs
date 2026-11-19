@@ -6,8 +6,7 @@
 #[path = "eeprom_transaction.rs"]
 mod eeprom_transaction;
 
-use eeprom_transaction::Command;
-pub use eeprom_transaction::{ReadPlan, plan_read};
+pub use eeprom_transaction::{Command, ReadPlan, plan_read};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Acknowledgement {
