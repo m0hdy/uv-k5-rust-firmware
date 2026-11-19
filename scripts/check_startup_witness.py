@@ -421,7 +421,7 @@ def reachable_instruction_prefix(function: str) -> list[tuple[int, int, str, str
             break
         reachable.append(instruction)
         next_address = address + size
-        if is_control_transfer(mnemonic, operands, line):
+        if mnemonic in ("udf", "bkpt", "svc") or is_control_transfer(mnemonic, operands, line):
             break
     return reachable
 
@@ -2649,11 +2649,42 @@ def validate_call_path(disassembly: str) -> None:
     validate_backlight_register_evidence(disassembly)
     validate_required_call_targets(disassembly)
     validate_concrete_wrapper_frames(disassembly)
-    backend_instructions = {
-        instruction[0] for instruction in parse_instructions(
-            function_block(disassembly, "board_sequence::Backend>::call", suffix=True)
-        )
+    backend_entry, backend_name = function_entry(
+        disassembly, "board_sequence::Backend>::call", False
+    )
+    backend_body = function_entry_body(disassembly, backend_entry, backend_name)
+    labels = list(re.finditer(
+        r"(?m)^([0-9a-fA-F]+)\s+<(.+)>:\s*$", disassembly
+    ))
+    backend_label = next(
+        index for index, label in enumerate(labels)
+        if int(label.group(1), 16) == backend_entry and label.group(2) == backend_name
+    )
+    backend_addresses = {
+        address + offset
+        for address, size, _, _, _ in parse_instructions(backend_body)
+        for offset in range(0, size, 2)
     }
+    backend_end = (
+        int(labels[backend_label + 1].group(1), 16)
+        if backend_label + 1 < len(labels)
+        else backend_entry
+    )
+    for line in backend_body.splitlines():
+        data = re.match(
+            r"\s*([0-9a-fA-F]+):\s+(?:[0-9a-fA-F]+\s+)+\.(word|short|hword)\b",
+            line,
+        )
+        if data:
+            address = int(data.group(1), 16)
+            backend_addresses.update(
+                address + offset for offset in range(0, 4 if data.group(2) == "word" else 2, 2)
+            )
+
+    def targets_backend(address: int) -> bool:
+        address &= ~1
+        return backend_entry <= address < backend_end or address in backend_addresses
+
     sequence_instructions = parse_instructions(sequence)
     sequence_calls = [
         instruction for instruction in sequence_instructions
@@ -2663,12 +2694,31 @@ def validate_call_path(disassembly: str) -> None:
         instruction for instruction in parse_instructions(disassembly)
         if instruction[2] in ("bl", "blx") and (
             ((edge := re.search(r"\bblx?\s+([0-9a-fA-F]+)\b", instruction[4]))
-             and (int(edge.group(1), 16) & ~1) in backend_instructions)
+             and targets_backend(int(edge.group(1), 16)))
             or any("Backend>::call" in target for target in direct_call_targets(instruction[4]))
         )
     ]
     if len(sequence_calls) != 9 or sorted(all_backend_calls) != sorted(sequence_calls):
         raise WitnessError("sequencer backend has unexpected call sources or variant dispatches")
+
+    for index, label in enumerate(labels):
+        if index == backend_label:
+            continue
+        end = labels[index + 1].start() if index + 1 < len(labels) else len(disassembly)
+        for instruction in parse_instructions(disassembly[label.end():end]):
+            mnemonic, operands = instruction[2:4]
+            if re.fullmatch(
+                r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.(?:n|w))?",
+                mnemonic,
+            ):
+                target = branch_target(instruction)
+            elif mnemonic in ("cbz", "cbnz"):
+                match = re.match(r"\s*r\d+\s*,\s*([0-9a-fA-F]+)\b", operands)
+                target = int(match.group(1), 16) if match else None
+            else:
+                continue
+            if target is not None and targets_backend(target):
+                raise WitnessError("sequencer backend has an unexpected branch source")
 
 
 def validate_systick_handler(disassembly: str, handler_address: int) -> None:

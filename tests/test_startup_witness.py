@@ -1377,7 +1377,7 @@ TRAP_BEFORE_RETURN = """
 
 
 class StartupWitnessCheckerTests(unittest.TestCase):
-    def test_elf_validator_requires_enabled_crc_configuration(self):
+    def inspect_fixture_elf(self, disassembly):
         vector = bytearray(0xC0)
         vector[0:4] = (0x20003FF0).to_bytes(4, "little")
         vector[4:8] = (0x101).to_bytes(4, "little")
@@ -1399,23 +1399,49 @@ class StartupWitnessCheckerTests(unittest.TestCase):
                 (0x1B00, "target_spi0::startup_mmio"), (0x1420, "target_spi0::startup_with_io::<Mock>"),
             )
         )
-        disassembly = CONNECTED_DISPATCH + "\n00003000 <SysTick_Handler>:\n 3000: 4770 bx lr\n"
+        def tool(name, *args):
+            if name == "nm":
+                return symbols
+            if "-h" in args:
+                return sections
+            if "-s" in args:
+                return vector_dump
+            return disassembly + "\n00003000 <SysTick_Handler>:\n 3000: 4770 bx lr\n"
 
-        def inspect(text):
-            def tool(name, *args):
-                if name == "nm":
-                    return symbols
-                if "-h" in args:
-                    return sections
-                if "-s" in args:
-                    return vector_dump
-                return text
-            with patch("check_startup_witness.run_tool", side_effect=tool):
-                return validate(Path("synthetic.elf"))
+        with patch("check_startup_witness.run_tool", side_effect=tool):
+            return validate(Path("synthetic.elf"))
 
-        self.assertEqual(inspect(disassembly), (0x10C0, 0))
+    def test_elf_validator_requires_enabled_crc_configuration(self):
+        self.assertEqual(self.inspect_fixture_elf(CONNECTED_DISPATCH), (0x10C0, 0))
         with self.assertRaisesRegex(WitnessError, "CRC enabled configuration forwarding"):
-            inspect(disassembly.replace(" 1d8: 0000 movs r2, #1", " 1d8: 0000 movs r2, #0", 1))
+            self.inspect_fixture_elf(CONNECTED_DISPATCH.replace(" 1d8: 0000 movs r2, #1", " 1d8: 0000 movs r2, #0", 1))
+
+    def test_elf_validator_rejects_reset_traps_before_retained_call(self):
+        original = (
+            " 100: f000 f800 bl 1cc <witness_main>\n"
+            " 104: e7fe b.n 104 <Reset_Handler+0x4>"
+        )
+        self.assertEqual(CONNECTED_DISPATCH.count(original), 1)
+        for opcode, mnemonic in (("de00", "udf"), ("be00", "bkpt"), ("df00", "svc")):
+            with self.subTest(mnemonic=mnemonic):
+                mutated = CONNECTED_DISPATCH.replace(
+                    original, f" 100: {opcode} {mnemonic} #0\n"
+                    " 102: f000 f800 bl 1cc <witness_main>\n"
+                    " 106: e7fe b.n 106 <Reset_Handler+0x6>", 1,
+                )
+                with self.assertRaisesRegex(WitnessError, "Reset_Handler.*no reachable"):
+                    self.inspect_fixture_elf(mutated)
+
+    def test_elf_validator_rejects_direct_branches_into_backend(self):
+        original = " 1420: 4770 bx lr"
+        self.assertEqual(CONNECTED_DISPATCH.count(original), 1)
+        for branch in ("b.n 5f6", "b.n 13b0", "b.n 13b6", "b.n 640", "b.n 648",
+                       "bne.n 1020", "b.w 1022",
+                       "cbz r0, 13b0", "cbnz r1, 5f6"):
+            with self.subTest(branch=branch):
+                mutated = CONNECTED_DISPATCH.replace(original, f" 1420: e000 {branch}", 1)
+                with self.assertRaisesRegex(WitnessError, "backend.*unexpected branch source"):
+                    self.inspect_fixture_elf(mutated)
 
     def test_full_validator_rejects_disabled_or_corrupted_crc_configuration(self):
         mutations = (
@@ -1905,7 +1931,7 @@ class StartupWitnessCheckerTests(unittest.TestCase):
                     original, original.split(":")[0] + ": de00 udf #0"
                 )
                 with self.assertRaisesRegex(
-                    WitnessError, "unsupported trap instruction"
+                    WitnessError, "unsupported trap instruction|no reachable linked call"
                 ):
                     validate_call_path(trapped)
 
