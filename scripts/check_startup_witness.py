@@ -118,6 +118,13 @@ def validate_required_call_targets(disassembly: str) -> None:
             True,
         ),
         ("StartupIo>::adc_init", "StartupIo>::adc_init", True),
+        ("StartupIo>::st7565_init", "StartupIo>::st7565_init", True),
+        ("target_spi0::startup_mmio", "target_spi0::startup_mmio", False),
+        (
+            "target_spi0::startup_with_io::<",
+            "target_spi0::startup_with_io::<",
+            False,
+        ),
         ("apply_device_clock_gates", "apply_device_clock_gates", False),
         (
             "systick_startup_adapter::apply_to_hardware",
@@ -209,20 +216,6 @@ def validate_required_call_targets(disassembly: str) -> None:
         ),
         ("__aeabi_memcpy4", "__aeabi_memcpy4", False),
     )
-    if "StartupIo>::st7565_init" in disassembly:
-        required_symbols += (
-            (
-                "StartupIo>::st7565_init",
-                "StartupIo>::st7565_init",
-                True,
-            ),
-            ("target_spi0::startup_mmio", "target_spi0::startup_mmio", False),
-            (
-                "target_spi0::startup_with_io::<",
-                "target_spi0::startup_with_io::<",
-                False,
-            ),
-        )
 
     def function_entry(fragment: str, suffix: bool) -> tuple[int, str]:
         matches = []
@@ -255,6 +248,8 @@ def validate_required_call_targets(disassembly: str) -> None:
         ("StartupIo>::gpio", True),
         ("StartupIo>::backlight_init_hardware", True),
         ("StartupIo>::adc_init", True),
+        ("StartupIo>::st7565_init", True),
+        ("target_spi0::startup_mmio", False),
         ("adc_startup_adapter::physical::target::apply_to_hardware", False),
         ("adc_startup_adapter::physical::apply_with_words::<", False),
         ("initialize_backlight_hardware", False),
@@ -264,11 +259,6 @@ def validate_required_call_targets(disassembly: str) -> None:
         ("backlight_startup_executor::RegisterIo>::read", False),
         ("backlight_startup_executor::RegisterIo>::write", False),
     )
-    if "StartupIo>::st7565_init" in disassembly:
-        callers += (
-            ("StartupIo>::st7565_init", True),
-            ("target_spi0::startup_mmio", False),
-        )
     for caller, suffix in callers:
         function = function_block(disassembly, caller, suffix=suffix)
         for instruction in parse_instructions(function):
@@ -938,13 +928,12 @@ def require_call_edge(disassembly: str, caller: str, callee: str) -> None:
 
 
 def backend_dispatch_targets(function: str) -> list[int]:
-    display_stage = "StartupIo>::st7565_init" in function
-    target_count = 7 if display_stage else 6
+    target_count = 7
     highest_variant = target_count - 1
-    stack_size = 24 if display_stage else 16
-    self_stack_offset = 8 if display_stage else 4
-    variant_stack_offset = 12 if display_stage else 8
-    index_stack_offset = 4 if display_stage else 0
+    stack_size = 24
+    self_stack_offset = 8
+    variant_stack_offset = 12
+    index_stack_offset = 4
     instructions = parse_instructions(function)
     prefix = instructions[:20]
     if len(prefix) != 20 or any(
@@ -1033,16 +1022,18 @@ def backend_dispatch_targets(function: str) -> list[int]:
 
 def instruction_tail(function: str, address: int) -> str:
     lines = function.splitlines()
-    start = next(
+    instruction = next(
         (
-            index
-            for index, line in enumerate(lines)
-            if (match := re.match(r"\s*([0-9a-fA-F]+):", line))
-            and int(match.group(1), 16) == address
+            instruction
+            for instruction in parse_instructions(function)
+            if instruction[0] == address
         ),
         None,
     )
-    return "\n".join(lines[start:]) if start is not None else ""
+    if instruction is None:
+        return ""
+    start = lines.index(instruction[4])
+    return "\n".join(lines[start:])
 
 
 def validate_st7565_executor_path(disassembly: str) -> None:
@@ -1089,12 +1080,12 @@ def validate_st7565_backend_case(backend: str, address: int) -> None:
 def validate_backend_dispatch(disassembly: str) -> None:
     backend = function_block(disassembly, ">::call", suffix=True)
     targets = backend_dispatch_targets(backend)
-    target_count = 7 if "StartupIo>::st7565_init" in disassembly else 6
-    stack_size = 24 if target_count == 7 else 16
-    self_stack_offset = 8 if target_count == 7 else 4
-    portcon_offset = 4 if target_count == 7 else 6
-    gpio_offset = 5 if target_count == 7 else 7
-    adc_offset = 6 if target_count == 7 else 4
+    target_count = 7
+    stack_size = 24
+    self_stack_offset = 8
+    portcon_offset = 4
+    gpio_offset = 5
+    adc_offset = 6
     if len(set(targets)) != target_count:
         raise WitnessError(
             f"sequencer backend first {target_count} variants do not have distinct dispatch targets"
@@ -1182,7 +1173,7 @@ def validate_backend_dispatch(disassembly: str) -> None:
     systick_end = expect(
         systick_end,
         "add",
-        rf"\s*r0,\s*sp,\s*#{16 if target_count == 7 else 12}\s*",
+        r"\s*r0,\s*sp,\s*#16\s*",
         1,
     )
     systick_end = expect(systick_end, "strb", r"\s*r1,\s*\[r0,\s*#0\]\s*", 1)
@@ -1206,9 +1197,8 @@ def validate_backend_dispatch(disassembly: str) -> None:
     )
     error_end = expect(error_end, "movs", r"\s*r0,\s*#1\s*", 1)
     error_end = expect(error_end, "strb", r"\s*r0,\s*\[r1,\s*#8\]\s*", 1)
-    if target_count == 7:
-        error_end = expect(error_end, "movs", r"\s*r0,\s*#255\s*", 1)
-        error_end = expect(error_end, "strb", r"\s*r0,\s*\[r1,\s*#24\]\s*", 1)
+    error_end = expect(error_end, "movs", r"\s*r0,\s*#255\s*", 1)
+    error_end = expect(error_end, "strb", r"\s*r0,\s*\[r1,\s*#24\]\s*", 1)
     expect_epilogue_branch(error_end, 1)
 
     portcon_end = expect(
@@ -1247,8 +1237,7 @@ def validate_backend_dispatch(disassembly: str) -> None:
     adc_end = expect(adc_end, "ldrh", rf"\s*r1,\s*\[r1,\s*#{adc_offset}\]\s*", 5)
     adc_end = expect_call(adc_end, methods[5], 5)
     expect_epilogue_branch(adc_end, 5)
-    if target_count == 7:
-        validate_st7565_stage(disassembly, backend)
+    validate_st7565_stage(disassembly, backend)
 
 def validate_backlight_executor_paths(function: str) -> None:
     instructions = reachable_control_flow(function, "backlight executor")
@@ -2297,17 +2286,16 @@ def validate_call_path(disassembly: str) -> None:
                 f"target {method} has no reachable linked call instruction to {adapter}"
             )
 
-    if "StartupIo>::st7565_init" in disassembly:
-        method_body = function_block(
-            disassembly, "StartupIo>::st7565_init", suffix=True
+    method_body = function_block(
+        disassembly, "StartupIo>::st7565_init", suffix=True
+    )
+    if not any(
+        "target_spi0::startup_mmio" in target
+        for target in reachable_call_targets(method_body)
+    ):
+        raise WitnessError(
+            "target st7565_init has no reachable linked call to target_spi0::startup_mmio"
         )
-        if not any(
-            "target_spi0::startup_mmio" in target
-            for target in reachable_call_targets(method_body)
-        ):
-            raise WitnessError(
-                "target st7565_init has no reachable linked call to target_spi0::startup_mmio"
-            )
 
     for method, calls, cleanup in (
         (
@@ -2437,6 +2425,9 @@ def validate(elf: Path) -> tuple[int, int]:
         "apply_portcon_startup_plan",
         "apply_gpio_startup_plan",
         "initialize_backlight_hardware",
+        "StartupIo>::st7565_init",
+        "target_spi0::startup_mmio",
+        "target_spi0::startup_with_io::<",
     )
     for symbol in required_symbols:
         if not any(symbol in name for name in symbols):

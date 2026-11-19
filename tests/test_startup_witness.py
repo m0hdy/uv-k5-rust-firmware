@@ -152,20 +152,20 @@ CONNECTED_DISPATCH = """
 000005f6 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>:
  5f6: b580 push {r7, lr}
  5f8: af00 add r7, sp, #0
- 5fa: b084 sub sp, #16
- 5fc: 9001 str r0, [sp, #4]
- 5fe: 9102 str r1, [sp, #8]
+ 5fa: b086 sub sp, #24
+ 5fc: 9002 str r0, [sp, #8]
+ 5fe: 9103 str r1, [sp, #12]
  600: 7980 ldrb r0, [r0, #8]
  602: 07c0 lsls r0, r0, #31
  604: 2800 cmp r0, #0
  606: d112 bne.n 670 <SequencerBackend as Backend>::call+0x70
  608: e7ff b.n 60a <SequencerBackend as Backend>::call+0xa
- 60a: 9802 ldr r0, [sp, #8]
+ 60a: 9803 ldr r0, [sp, #12]
  60c: b2c0 uxtb r0, r0
- 60e: 9000 str r0, [sp, #0]
- 610: 2805 cmp r0, #5
+ 60e: 9001 str r0, [sp, #4]
+ 610: 2806 cmp r0, #6
  612: d81d bhi.n 650 <SequencerBackend as Backend>::call+0x50
- 614: 9800 ldr r0, [sp, #0]
+ 614: 9801 ldr r0, [sp, #4]
  616: 0081 lsls r1, r0, #2
  618: a001 add r0, pc, #4 @ (adr r0, 620 <SequencerBackend as Backend>::call+0x20)
  61a: 5840 ldr r0, [r0, r1]
@@ -176,52 +176,57 @@ CONNECTED_DISPATCH = """
  62c: 1091 .word 0x1091
  630: 10b1 .word 0x10b1
  634: 10c1 .word 0x10c1
- 650: 9902 ldr r1, [sp, #8]
- 652: 9801 ldr r0, [sp, #4]
+ 638: 1381 .word 0x1381
+ 650: 9903 ldr r1, [sp, #12]
+ 652: 9802 ldr r0, [sp, #8]
  654: 6800 ldr r0, [r0, #0]
  656: f000 f8f3 bl 1300 <<startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::placeholder>
  65a: e709 b.n 670 <SequencerBackend as Backend>::call+0x70
- 670: b004 add sp, #16
+ 670: b006 add sp, #24
  672: bd80 pop {r7, pc}
- 1020: 9801 ldr r0, [sp, #4]
+ 1020: 9802 ldr r0, [sp, #8]
  1022: 6800 ldr r0, [r0, #0]
  1024: f000 f800 bl 700 <HardwareIo as StartupIo>::device_clock_gates>
  1028: e722 b.n 670 <SequencerBackend as Backend>::call+0x70>
- 1030: 9801 ldr r0, [sp, #4]
+ 1030: 9802 ldr r0, [sp, #8]
  1032: 6800 ldr r0, [r0, #0]
  1034: 490d ldr r1, [pc, #52]
  1036: f000 f800 bl 710 <HardwareIo as StartupIo>::systick>
  103a: 4601 mov r1, r0
- 103c: a803 add r0, sp, #12
+ 103c: a804 add r0, sp, #16
  103e: 7001 strb r1, [r0, #0]
  1040: f000 f800 bl 1310 <<core::result::Result<(), startup_adapter_witness::board_startup_adapters::StartupError>>::is_err>
  1044: 2800 cmp r0, #0
  1046: d10b bne.n 1060 <SequencerBackend as Backend>::call+0x80>
  1048: e712 b.n 670 <SequencerBackend as Backend>::call+0x70>
- 1060: 9901 ldr r1, [sp, #4]
+ 1060: 9902 ldr r1, [sp, #8]
  1062: 2001 movs r0, #1
  1064: 7208 strb r0, [r1, #8]
- 1066: e703 b.n 670 <SequencerBackend as Backend>::call+0x70>
- 1070: 9901 ldr r1, [sp, #4]
+ 1066: 20ff movs r0, #255
+ 1068: 7328 strb r0, [r1, #24]
+ 106a: e701 b.n 670 <SequencerBackend as Backend>::call+0x70>
+ 1070: 9902 ldr r1, [sp, #8]
  1072: 6808 ldr r0, [r1, #0]
- 1074: 7989 ldrb r1, [r1, #6]
+ 1074: 7949 ldrb r1, [r1, #4]
  1076: f000 f800 bl 720 <HardwareIo as StartupIo>::portcon>
  107a: e6f9 b.n 670 <SequencerBackend as Backend>::call+0x70>
- 1090: 9901 ldr r1, [sp, #4]
+ 1090: 9902 ldr r1, [sp, #8]
  1092: 6808 ldr r0, [r1, #0]
- 1094: 79c9 ldrb r1, [r1, #7]
+ 1094: 7949 ldrb r1, [r1, #5]
  1096: f000 f800 bl 730 <HardwareIo as StartupIo>::gpio>
  109a: e6e9 b.n 670 <SequencerBackend as Backend>::call+0x70>
- 10b0: 9801 ldr r0, [sp, #4]
+ 10b0: 9802 ldr r0, [sp, #8]
  10b2: 6800 ldr r0, [r0, #0]
  10b4: f000 f800 bl 740 <HardwareIo as StartupIo>::backlight_init_hardware>
  10b8: e6d6 b.n 670 <SequencerBackend as Backend>::call+0x70>
- 10c0: 9901 ldr r1, [sp, #4]
+ 10c0: 9902 ldr r1, [sp, #8]
  10c2: 6808 ldr r0, [r1, #0]
- 10c4: 8889 ldrh r1, [r1, #4]
+ 10c4: 88c9 ldrh r1, [r1, #6]
  10c6: f000 f800 bl 1320 <HardwareIo as StartupIo>::adc_init>
  10ca: e6d6 b.n 670 <SequencerBackend as Backend>::call+0x70>
- 10d0: 4770 bx lr
+ 1380: 9802 ldr r0, [sp, #8]
+ 1382: f000 f800 bl 1400 <HardwareIo as StartupIo>::st7565_init>
+ 1386: e64b b.n 670 <SequencerBackend as Backend>::call+0x70>
 00000700 <<HardwareIo as StartupIo>::device_clock_gates>:
  700: f000 f800 bl 800 <apply_device_clock_gates>
  704: bd80 pop {r7, pc}
@@ -242,6 +247,22 @@ CONNECTED_DISPATCH = """
 00001320 <<HardwareIo as StartupIo>::adc_init>:
  1320: f000 f800 bl 1330 <adc_startup_adapter::physical::target::apply_to_hardware>
  1324: bd80 pop {r7, pc}
+00001400 <<HardwareIo as StartupIo>::st7565_init>:
+ 1400: b580 push {r7, lr}
+ 1402: af00 add r7, sp, #0
+ 1404: b082 sub sp, #8
+ 1406: f000 f800 bl 1410 <target_spi0::startup_mmio>
+ 140a: b002 add sp, #8
+ 140c: bd80 pop {r7, pc}
+00001410 <target_spi0::startup_mmio>:
+ 1410: b580 push {r7, lr}
+ 1412: af00 add r7, sp, #0
+ 1414: b082 sub sp, #8
+ 1416: f000 f800 bl 1420 <target_spi0::startup_with_io::<Registers, Delay>>
+ 141a: b002 add sp, #8
+ 141c: bd80 pop {r7, pc}
+00001420 <target_spi0::startup_with_io::<Registers, Delay>>:
+ 1420: 4770 bx lr
 00001330 <adc_startup_adapter::physical::target::apply_to_hardware>:
  1330: b580 push {r7, lr}
  1332: af00 add r7, sp, #0
@@ -574,6 +595,34 @@ CONNECTED_DISPATCH = re.sub(
     CONNECTED_DISPATCH,
     flags=re.S,
 )
+CONNECTED_WITHOUT_DISPLAY_STAGE = (
+    CONNECTED_DISPATCH.replace(" 638: 1381 .word 0x1381\n", "")
+    .replace(
+        " 1380: 9802 ldr r0, [sp, #8]\n"
+        " 1382: f000 f800 bl 1400 <HardwareIo as StartupIo>::st7565_init>\n"
+        " 1386: e64b b.n 670 <SequencerBackend as Backend>::call+0x70>\n",
+        "",
+    )
+    .replace(
+        "00001400 <<HardwareIo as StartupIo>::st7565_init>:\n"
+        " 1400: b580 push {r7, lr}\n"
+        " 1402: af00 add r7, sp, #0\n"
+        " 1404: b082 sub sp, #8\n"
+        " 1406: f000 f800 bl 1410 <target_spi0::startup_mmio>\n"
+        " 140a: b002 add sp, #8\n"
+        " 140c: bd80 pop {r7, pc}\n"
+        "00001410 <target_spi0::startup_mmio>:\n"
+        " 1410: b580 push {r7, lr}\n"
+        " 1412: af00 add r7, sp, #0\n"
+        " 1414: b082 sub sp, #8\n"
+        " 1416: f000 f800 bl 1420 <target_spi0::startup_with_io::<Registers, Delay>>\n"
+        " 141a: b002 add sp, #8\n"
+        " 141c: bd80 pop {r7, pc}\n"
+        "00001420 <target_spi0::startup_with_io::<Registers, Delay>>:\n"
+        " 1420: 4770 bx lr\n",
+        "",
+    )
+)
 
 ENTRY_SELF_LOOP = CONNECTED_DISPATCH.replace(
     " 200: f000 f800 bl 300 <run_hardware>",
@@ -599,7 +648,7 @@ SKIPPED_SEQUENCER_DISPATCH = CONNECTED_DISPATCH.replace(
 )
 
 DISCONNECTED_DISPATCH = CONNECTED_DISPATCH.replace(
-    " 614: 9800 ldr r0, [sp, #0]",
+    " 614: 9801 ldr r0, [sp, #4]",
     " 614: 4770 bx lr",
 )
 
@@ -610,22 +659,22 @@ DISCONNECTED_BACKEND_PREFIX = CONNECTED_DISPATCH.replace(
 )
 
 CONSTANT_VARIANT_RELOAD = CONNECTED_DISPATCH.replace(
-    " 614: 9800 ldr r0, [sp, #0]",
+    " 614: 9801 ldr r0, [sp, #4]",
     " 614: 2000 movs r0, #0",
 )
 
 OVERWRITTEN_INCOMING_VARIANT = CONNECTED_DISPATCH.replace(
-    " 5fe: 9102 str r1, [sp, #8]",
-    " 5fe: 9202 str r2, [sp, #8]",
+    " 5fe: 9103 str r1, [sp, #12]",
+    " 5fe: 9203 str r2, [sp, #12]",
 )
 
 ALWAYS_TAKEN_BACKEND_BRANCH = CONNECTED_DISPATCH.replace(
-    " 610: 2805 cmp r0, #5\n 612: d81d bhi.n 650",
+    " 610: 2806 cmp r0, #6\n 612: d81d bhi.n 650",
     " 610: 4280 cmp r0, r0\n 612: d01d beq.n 650",
 )
 
 UNSUPPORTED_BACKEND_CONDITIONAL = CONNECTED_DISPATCH.replace(
-    " 610: 2805 cmp r0, #5\n 612: d81d bhi.n 650",
+    " 610: 2806 cmp r0, #6\n 612: d81d bhi.n 650",
     " 610: 4288 cmp r0, r1\n 612: d02b beq.n 650",
 )
 
@@ -640,8 +689,8 @@ WRONG_STOPPED_GUARD_TARGET = CONNECTED_DISPATCH.replace(
 )
 
 WRONG_VARIANT_GUARD_INPUT = CONNECTED_DISPATCH.replace(
+    " 60a: 9803 ldr r0, [sp, #12]",
     " 60a: 9802 ldr r0, [sp, #8]",
-    " 60a: 9801 ldr r0, [sp, #4]",
 )
 
 WRONG_VARIANT_GUARD_TARGET = CONNECTED_DISPATCH.replace(
@@ -678,7 +727,7 @@ BACKEND_CROSS_CASE_CONTINUATION = CONNECTED_DISPATCH.replace(
 
 DISCONNECTED_ADC_DISPATCH = CONNECTED_DISPATCH.replace(
     " 634: 10c1 .word 0x10c1",
-    " 634: 10d1 .word 0x10d1",
+    " 634: 0651 .word 0x0651",
 )
 
 BYPASSED_ADC_EXECUTOR = CONNECTED_DISPATCH.replace(
@@ -747,7 +796,7 @@ SEQUENCER_CRC_SKIP_SELF_LOOP = CONNECTED_DISPATCH.replace(
 )
 
 BACKLIGHT_DISPATCH_UNREACHABLE = CONNECTED_DISPATCH.replace(
-    " 10b0: 9801 ldr r0, [sp, #4]",
+    " 10b0: 9802 ldr r0, [sp, #8]",
     " 10b0: 4770 bx lr",
 )
 
@@ -1103,6 +1152,16 @@ class StartupWitnessCheckerTests(unittest.TestCase):
         with self.assertRaisesRegex(WitnessError, "display variant has no reachable ST7565 startup call"):
             validate_st7565_backend_case(bypassed, 0x100)
 
+    def test_rejects_jump_table_word_before_later_st7565_call(self):
+        disconnected = (
+            " 100: e7fe .word 0xe7fee7fe\n"
+            " 104: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>\n"
+        )
+        with self.assertRaisesRegex(
+            WitnessError, "display variant has no reachable ST7565 startup call"
+        ):
+            validate_st7565_backend_case(disconnected, 0x100)
+
     def test_accepts_concrete_st7565_executor_call_chain(self):
         validate_st7565_executor_path(ST7565_EXECUTOR_PATH)
 
@@ -1305,6 +1364,12 @@ class StartupWitnessCheckerTests(unittest.TestCase):
 
     def test_accepts_linked_backend_dispatch_to_matching_hardware_methods(self):
         validate_call_path(CONNECTED_DISPATCH)
+
+    def test_rejects_full_validator_fixture_without_display_stage(self):
+        with self.assertRaisesRegex(
+            WitnessError, "disassembly is missing StartupIo>::st7565_init"
+        ):
+            validate_call_path(CONNECTED_WITHOUT_DISPLAY_STAGE)
 
     def test_rejects_required_calls_that_do_not_target_the_symbol_entry(self):
         mutations = (
