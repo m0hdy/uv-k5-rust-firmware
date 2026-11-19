@@ -27,21 +27,26 @@ def toolchain_available(
     which: Callable[[str], str | None] = shutil.which,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> bool:
-    paths = {tool: which(f"arm-none-eabi-{tool}") for tool in REQUIRED_TOOLS}
-    if any(path is None for path in paths.values()):
+    paths = [which(f"arm-none-eabi-{tool}") for tool in REQUIRED_TOOLS]
+    if any(path is None for path in paths):
         return False
 
-    result = runner(
-        [paths["objcopy"], "--version"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    match = re.search(r"\b(\d+)\.(\d+)(?:\.\d+)?\b", result.stdout + result.stderr)
-    if match is None:
-        return False
-    version = (int(match.group(1)), int(match.group(2)))
-    return version >= MINIMUM_BINUTILS_VERSION
+    for path in paths:
+        assert path is not None
+        result = runner(
+            [path, "--version"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        output = re.sub(r"\([^)]*\)", " ", result.stdout + result.stderr)
+        matches = re.findall(r"\b(\d+)\.(\d+)(?:\.\d+)?\b", output)
+        if not matches:
+            return False
+        version = tuple(map(int, matches[-1]))
+        if version < MINIMUM_BINUTILS_VERSION:
+            return False
+    return True
 
 
 def retry(

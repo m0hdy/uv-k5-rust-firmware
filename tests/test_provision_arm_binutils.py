@@ -32,6 +32,29 @@ class ProvisionArmBinutilsTests(unittest.TestCase):
         self.assertFalse(toolchain_available(available, old_runner))
         self.assertFalse(toolchain_available(lambda name: None if name.endswith("-nm") else available(name), runner))
 
+    def test_tool_versions_ignore_vendor_branding_and_check_every_tool(self):
+        versions = {
+            "as": "GNU assembler 2.42\n",
+            "ld": "GNU ld 2.42\n",
+            "objcopy": "GNU objcopy 2.42\n",
+            "objdump": "GNU objdump 2.42\n",
+            "nm": "GNU nm 2.42\n",
+        }
+
+        def runner(command, **kwargs):
+            tool = command[0].rsplit("-", 1)[-1]
+            return SimpleNamespace(stdout=versions[tool], stderr="")
+
+        available = lambda name: f"/usr/bin/{name}"
+        versions["objcopy"] = (
+            "GNU objcopy (Arm GNU Toolchain 12.2.Rel1) 2.39.0.20221210\n"
+        )
+        self.assertFalse(toolchain_available(available, runner))
+
+        versions["objcopy"] = "GNU objcopy 2.42\n"
+        versions["ld"] = "GNU ld (GNU Binutils) 2.41\n"
+        self.assertFalse(toolchain_available(available, runner))
+
     def test_cache_hit_installs_archives_without_apt(self):
         commands = []
 
