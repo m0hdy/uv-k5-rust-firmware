@@ -63,11 +63,8 @@ jobs:
       - name: Run ABI smoke host and target-link checks
         run: python3 -m unittest discover -s tests -p 'test_abi_smoke.py' -v
       - name: Install ARM binutils for image fixtures
-        timeout-minutes: 5
-        run: |
-          sudo apt-get -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 -o Acquire::Retries=2 update
-          sudo apt-get -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 -o Acquire::Retries=2 install -y --no-install-recommends binutils-arm-none-eabi
-          arm-none-eabi-ld --version | head -n 1
+        timeout-minutes: 10
+        uses: ./.github/actions/setup-arm-binutils
       - name: Build and inspect link-only startup witness
         env:
           ARM_BINUTILS_PREFIX: arm-none-eabi-
@@ -137,10 +134,8 @@ jobs:
           subprocess.run(command, check=True)
           PY
       - name: Install ARM binutils for development image
-        timeout-minutes: 5
-        run: |
-          sudo apt-get -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 -o Acquire::Retries=2 update
-          sudo apt-get -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 -o Acquire::Retries=2 install -y --no-install-recommends binutils-arm-none-eabi
+        timeout-minutes: 10
+        uses: ./.github/actions/setup-arm-binutils
       - name: Build Cortex-M0 release and link map
         id: target-build
         run: >-
@@ -254,10 +249,8 @@ jobs:
           subprocess.run(command, check=True)
           PY
       - name: Install ARM binutils for image fixtures
-        timeout-minutes: 5
-        run: |
-          sudo apt-get -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 -o Acquire::Retries=2 update
-          sudo apt-get -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 -o Acquire::Retries=2 install -y --no-install-recommends binutils-arm-none-eabi
+        timeout-minutes: 10
+        uses: ./.github/actions/setup-arm-binutils
       - name: Build disposable Cortex-M0 ELF and map
         id: target-build
         run: >-

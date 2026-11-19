@@ -5,10 +5,16 @@ on:
   push:
     paths:
       - .github/workflows/copilot-setup-steps.yml
+      - .github/actions/setup-arm-binutils/action.yml
+      - scripts/provision_arm_binutils.py
+      - tests/test_provision_arm_binutils.py
       - rust-toolchain.toml
   pull_request:
     paths:
       - .github/workflows/copilot-setup-steps.yml
+      - .github/actions/setup-arm-binutils/action.yml
+      - scripts/provision_arm_binutils.py
+      - tests/test_provision_arm_binutils.py
       - rust-toolchain.toml
 
 jobs:
@@ -67,12 +73,8 @@ jobs:
           cargo clippy --version
           rustup target list --installed | grep -Fx thumbv6m-none-eabi
       - name: Install GNU ARM binutils
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends binutils-arm-none-eabi
-          arm-none-eabi-as --version | head -n 1
-          arm-none-eabi-ld --version | head -n 1
-          arm-none-eabi-objcopy --version | head -n 1
+        timeout-minutes: 10
+        uses: ./.github/actions/setup-arm-binutils
       - name: Fetch locked dependencies
         run: cargo fetch --locked
       - name: Check formatting and lint
