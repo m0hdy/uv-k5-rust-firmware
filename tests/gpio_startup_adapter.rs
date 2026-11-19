@@ -109,7 +109,7 @@ fn adversarial_snapshots_preserve_every_untouched_bit() {
     let initial = [
         u32::MAX,
         0xa5a5_5a5a,
-        0x1357_9bdf,
+        0x1357_1bdf,
         0xdead_beef,
         0x89ab_cdef,
         0xfedc_ba98,
@@ -123,10 +123,11 @@ fn adversarial_snapshots_preserve_every_untouched_bit() {
         }),
     );
 
-    let touched_masks = [0, 0x3c78, 0, 0x8a00, 0, 0x003f];
+    let touched_masks = [0, 0x3c78, 0x8000, 0x8a00, 0, 0x003f];
     for ((before, after), touched) in initial.into_iter().zip(io.values).zip(touched_masks) {
         assert_eq!((before ^ after) & !touched, 0);
     }
+    assert_eq!(io.values[2], 0x1357_9bdf);
 }
 
 #[test]

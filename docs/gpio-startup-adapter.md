@@ -10,7 +10,7 @@ there is no arbitrary-address volatile API. The module is not included from
 
 At pinned upstream revision
 [`7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3`](https://github.com/egzumer/uv-k5-firmware-custom/tree/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3),
-[`bsp/dp32g030/gpio.h`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/bsp/dp32g030/gpio.h#L20-L35)
+[`bsp/dp32g030/gpio.h`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/bsp/dp32g030/gpio.h#L24-L44)
 defines GPIOA/B/C base addresses and a `GPIO_Bank_t` with consecutive 32-bit
 `DATA` and `DIR` fields. Thus each bank's DIR address is its base plus four.
 [`board.c`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/board.c#L61-L111)
@@ -48,7 +48,7 @@ cargo clippy --locked --test gpio_startup_adapter -- -D warnings
 rustfmt --check --edition 2024 \
   src/gpio_startup_adapter.rs tests/gpio_startup_adapter.rs
 rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
-  -D warnings --emit=asm src/gpio_startup_adapter.rs \
+  -D warnings -C opt-level=2 --emit=asm src/gpio_startup_adapter.rs \
   -o /tmp/gpio_startup_adapter.s
 ```
 
