@@ -82,11 +82,10 @@ From the repository root:
 cargo test --locked --test eeprom_read_transport
 cargo clippy --locked --test eeprom_read_transport -- -D warnings
 rustfmt --check --edition 2024 \
-  /home/runner/work/uv-k5-rust-firmware/uv-k5-rust-firmware/src/eeprom_read_transport.rs \
-  /home/runner/work/uv-k5-rust-firmware/uv-k5-rust-firmware/tests/eeprom_read_transport.rs
+  src/eeprom_read_transport.rs tests/eeprom_read_transport.rs
 rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
   -D warnings \
-  /home/runner/work/uv-k5-rust-firmware/uv-k5-rust-firmware/src/eeprom_read_transport.rs \
+  src/eeprom_read_transport.rs \
   -o /tmp/eeprom_read_transport.rlib
 ```
 
