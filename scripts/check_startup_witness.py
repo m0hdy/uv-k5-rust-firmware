@@ -117,8 +117,28 @@ def validate_required_call_targets(disassembly: str) -> None:
             "StartupIo>::backlight_init_hardware",
             True,
         ),
+        ("StartupIo>::adc_init", "StartupIo>::adc_init", True),
         ("apply_device_clock_gates", "apply_device_clock_gates", False),
-        ("apply_to_hardware", "apply_to_hardware", True),
+        (
+            "systick_startup_adapter::apply_to_hardware",
+            "systick_startup_adapter::apply_to_hardware",
+            True,
+        ),
+        (
+            "adc_startup_adapter::physical::target::apply_to_hardware",
+            "adc_startup_adapter::physical::target::apply_to_hardware",
+            False,
+        ),
+        (
+            "adc_startup_adapter::physical::apply_with_words::<",
+            "adc_startup_adapter::physical::apply_with_words::<",
+            False,
+        ),
+        (
+            "adc_startup_adapter::apply_with_io::<",
+            "adc_startup_adapter::apply_with_io::<",
+            False,
+        ),
         (
             "systick_startup_adapter::InvalidReload>>::map_err",
             "systick_startup_adapter::InvalidReload>>::map_err",
@@ -220,6 +240,9 @@ def validate_required_call_targets(disassembly: str) -> None:
         ("StartupIo>::portcon", True),
         ("StartupIo>::gpio", True),
         ("StartupIo>::backlight_init_hardware", True),
+        ("StartupIo>::adc_init", True),
+        ("adc_startup_adapter::physical::target::apply_to_hardware", False),
+        ("adc_startup_adapter::physical::apply_with_words::<", False),
         ("initialize_backlight_hardware", False),
         ("backlight_startup_executor::apply_with_io", False),
         ("BacklightInitPlan>::from_snapshot", False),
@@ -810,7 +833,7 @@ def validate_stopped_guard(
         return False
     load, shift, compare = prefix[-4:-1]
     if not (
-        matches_instruction(load, "ldrb", r"\s*r0,\s*\[r0,\s*#6\]\s*")
+        matches_instruction(load, "ldrb", r"\s*r0,\s*\[r0,\s*#8\]\s*")
         and matches_instruction(shift, "lsls", r"\s*r0,\s*r0,\s*#31\s*")
         and matches_instruction(compare, "cmp", r"\s*r0,\s*#0\s*")
         and branch[2] == "bne.n"
@@ -842,7 +865,7 @@ def validate_variant_guard(
         matches_instruction(load, "ldr", r"\s*r0,\s*\[sp,\s*#8\]\s*")
         and matches_instruction(extend, "uxtb", r"\s*r0,\s*r0\s*")
         and matches_instruction(save, "str", r"\s*r0,\s*\[sp,\s*#0\]\s*")
-        and matches_instruction(compare, "cmp", r"\s*r0,\s*#4\s*")
+        and matches_instruction(compare, "cmp", r"\s*r0,\s*#5\s*")
         and branch[2] == "bhi.n"
     ):
         return False
@@ -900,7 +923,7 @@ def backend_dispatch_targets(function: str) -> list[int]:
         (2, "sub", r"\s*sp,\s*#16\s*"),
         (3, "str", r"\s*r0,\s*\[sp,\s*#4\]\s*"),
         (4, "str", r"\s*r1,\s*\[sp,\s*#8\]\s*"),
-        (5, "ldrb", r"\s*r0,\s*\[r0,\s*#6\]\s*"),
+        (5, "ldrb", r"\s*r0,\s*\[r0,\s*#8\]\s*"),
         (6, "lsls", r"\s*r0,\s*r0,\s*#31\s*"),
         (7, "cmp", r"\s*r0,\s*#0\s*"),
         (8, "bne.n", r"\s*[0-9a-fA-F]+\b.*"),
@@ -908,7 +931,7 @@ def backend_dispatch_targets(function: str) -> list[int]:
         (10, "ldr", r"\s*r0,\s*\[sp,\s*#8\]\s*"),
         (11, "uxtb", r"\s*r0,\s*r0\s*"),
         (12, "str", r"\s*r0,\s*\[sp,\s*#0\]\s*"),
-        (13, "cmp", r"\s*r0,\s*#4\s*"),
+        (13, "cmp", r"\s*r0,\s*#5\s*"),
         (14, "bhi.n", r"\s*[0-9a-fA-F]+\b.*"),
         (15, "ldr", r"\s*r0,\s*\[sp,\s*#0\]\s*"),
         (16, "lsls", r"\s*r1,\s*r0,\s*#2\s*"),
@@ -952,16 +975,16 @@ def backend_dispatch_targets(function: str) -> list[int]:
         if match:
             words[int(match.group(1), 16)] = int(match.group(2), 16)
     try:
-        return [words[table_address + offset] & ~1 for offset in range(0, 20, 4)]
+        return [words[table_address + offset] & ~1 for offset in range(0, 24, 4)]
     except KeyError as error:
-        raise WitnessError("sequencer backend dispatch table is missing one of its first five targets") from error
+        raise WitnessError("sequencer backend dispatch table is missing one of its first six targets") from error
 
 
 def validate_backend_dispatch(disassembly: str) -> None:
     backend = function_block(disassembly, ">::call", suffix=True)
     targets = backend_dispatch_targets(backend)
-    if len(set(targets)) != 5:
-        raise WitnessError("sequencer backend first five variants do not have distinct dispatch targets")
+    if len(set(targets)) != 6:
+        raise WitnessError("sequencer backend first six variants do not have distinct dispatch targets")
 
     instructions = parse_instructions(backend)
     by_address = {instruction[0]: instruction for instruction in instructions}
@@ -971,6 +994,7 @@ def validate_backend_dispatch(disassembly: str) -> None:
         "StartupIo>::portcon",
         "StartupIo>::gpio",
         "StartupIo>::backlight_init_hardware",
+        "StartupIo>::adc_init",
     )
     epilogue = branch_target(parse_instructions(backend)[8])
     if epilogue is None:
@@ -1054,18 +1078,18 @@ def validate_backend_dispatch(disassembly: str) -> None:
         raise WitnessError("sequencer backend SysTick error branch has no target")
     error_end = expect(error_handler, "ldr", r"\s*r1,\s*\[sp,\s*#4\]\s*", 1)
     error_end = expect(error_end, "movs", r"\s*r0,\s*#1\s*", 1)
-    error_end = expect(error_end, "strb", r"\s*r0,\s*\[r1,\s*#6\]\s*", 1)
+    error_end = expect(error_end, "strb", r"\s*r0,\s*\[r1,\s*#8\]\s*", 1)
     expect_epilogue_branch(error_end, 1)
 
     portcon_end = expect(targets[2], "ldr", r"\s*r1,\s*\[sp,\s*#4\]\s*", 2)
     portcon_end = expect(portcon_end, "ldr", r"\s*r0,\s*\[r1,\s*#0\]\s*", 2)
-    portcon_end = expect(portcon_end, "ldrb", r"\s*r1,\s*\[r1,\s*#4\]\s*", 2)
+    portcon_end = expect(portcon_end, "ldrb", r"\s*r1,\s*\[r1,\s*#6\]\s*", 2)
     portcon_end = expect_call(portcon_end, methods[2], 2)
     expect_epilogue_branch(portcon_end, 2)
 
     gpio_end = expect(targets[3], "ldr", r"\s*r1,\s*\[sp,\s*#4\]\s*", 3)
     gpio_end = expect(gpio_end, "ldr", r"\s*r0,\s*\[r1,\s*#0\]\s*", 3)
-    gpio_end = expect(gpio_end, "ldrb", r"\s*r1,\s*\[r1,\s*#5\]\s*", 3)
+    gpio_end = expect(gpio_end, "ldrb", r"\s*r1,\s*\[r1,\s*#7\]\s*", 3)
     gpio_end = expect_call(gpio_end, methods[3], 3)
     expect_epilogue_branch(gpio_end, 3)
 
@@ -1076,6 +1100,11 @@ def validate_backend_dispatch(disassembly: str) -> None:
     )
     expect_epilogue_branch(backlight_end, 4)
 
+    adc_end = expect(targets[5], "ldr", r"\s*r1,\s*\[sp,\s*#4\]\s*", 5)
+    adc_end = expect(adc_end, "ldr", r"\s*r0,\s*\[r1,\s*#0\]\s*", 5)
+    adc_end = expect(adc_end, "ldrh", r"\s*r1,\s*\[r1,\s*#4\]\s*", 5)
+    adc_end = expect_call(adc_end, methods[5], 5)
+    expect_epilogue_branch(adc_end, 5)
 
 def validate_backlight_executor_paths(function: str) -> None:
     instructions = reachable_control_flow(function, "backlight executor")
@@ -1875,24 +1904,24 @@ def validate_adapter_run_result(function: str) -> None:
     start = call[0] + call[1]
     instructions = {instruction[0]: instruction for instruction in parse_instructions(function)}
     expected = (
-        ("ldr", r"\s*r0,\s*\[sp,\s*#4\]\s*"),
-        ("ldrb", r"\s*r0,\s*\[r0,\s*#6\]\s*"),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#8\]\s*"),
+        ("ldrb", r"\s*r0,\s*\[r0,\s*#8\]\s*"),
         ("lsls", r"\s*r0,\s*r0,\s*#31\s*"),
         ("cmp", r"\s*r0,\s*#0\s*"),
         ("bne.n", r"\s*[0-9a-fA-F]+\b.*"),
         ("b.n", r"\s*[0-9a-fA-F]+\b.*"),
-        ("add", r"\s*r1,\s*sp,\s*#16\s*"),
+        ("add", r"\s*r1,\s*sp,\s*#20\s*"),
         ("movs", r"\s*r0,\s*#0\s*"),
         ("strb", r"\s*r0,\s*\[r1,\s*#0\]\s*"),
         ("b.n", r"\s*[0-9a-fA-F]+\b.*"),
-        ("add", r"\s*r1,\s*sp,\s*#16\s*"),
+        ("add", r"\s*r1,\s*sp,\s*#20\s*"),
         ("movs", r"\s*r0,\s*#1\s*"),
         ("strb", r"\s*r0,\s*\[r1,\s*#0\]\s*"),
         ("b.n", r"\s*[0-9a-fA-F]+\b.*"),
-        ("add", r"\s*r0,\s*sp,\s*#16\s*"),
+        ("add", r"\s*r0,\s*sp,\s*#20\s*"),
         ("ldrb", r"\s*r0,\s*\[r0,\s*#0\]\s*"),
-        ("add", r"\s*sp,\s*#32\s*"),
-        ("pop", r"\s*\{\s*r7,\s*pc\s*\}\s*"),
+        ("add", r"\s*sp,\s*#40\s*"),
+        ("pop", r"\s*\{\s*r4,\s*r6,\s*r7,\s*pc\s*\}\s*"),
     )
     path = [instructions.get(start + offset * 2) for offset in range(len(expected))]
     if not all(path) or any(
@@ -2097,6 +2126,10 @@ def validate_call_path(disassembly: str) -> None:
         ("portcon", "apply_portcon_startup_plan"),
         ("gpio", "apply_gpio_startup_plan"),
         ("backlight_init_hardware", "initialize_backlight_hardware"),
+        (
+            "adc_init",
+            "adc_startup_adapter::physical::target::apply_to_hardware",
+        ),
     ):
         method_body = function_block(disassembly, f"StartupIo>::{method}", suffix=True)
         if not any(adapter in target for target in reachable_call_targets(method_body)):
@@ -2133,6 +2166,11 @@ def validate_call_path(disassembly: str) -> None:
             ("initialize_backlight_hardware",),
             (),
         ),
+        (
+            "adc_init",
+            ("adc_startup_adapter::physical::target::apply_to_hardware",),
+            (),
+        ),
     ):
         validate_returning_call_path(
             function_block(disassembly, f"StartupIo>::{method}", suffix=True),
@@ -2140,6 +2178,23 @@ def validate_call_path(disassembly: str) -> None:
             calls,
             cleanup,
         )
+
+    validate_returning_call_path(
+        function_block(
+            disassembly, "adc_startup_adapter::physical::target::apply_to_hardware"
+        ),
+        "target ADC executor",
+        ("adc_startup_adapter::physical::apply_with_words::<",),
+        (("add", r"\s*sp,\s*#8\s*"),),
+    )
+    validate_returning_call_path(
+        function_block(
+            disassembly, "adc_startup_adapter::physical::apply_with_words::<"
+        ),
+        "ADC word adapter",
+        ("adc_startup_adapter::apply_with_io::<",),
+        (("add", r"\s*sp,\s*#8\s*"),),
+    )
 
     validate_backend_dispatch(disassembly)
     validate_backlight_register_evidence(disassembly)

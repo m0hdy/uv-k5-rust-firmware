@@ -67,11 +67,13 @@ unresolved policy decision.
   until the handler and peripheral are ready, and prevent it from racing
   startup. The adapter does not install vectors or clear pending state.
 
-The module remains unexported and is not called by boot or the board sequencer.
-Wiring it in is a follow-up after the backlight integration (#288). The adapter
-does not configure ADC channel pins, start battery sampling, or poll for
-conversion completion. Validation is offline; it makes no hardware timing or
-bench claim.
+The adapter remains an internal module and is called by the board startup
+dispatcher at `Call::AdcInit`, after backlight and before the ST7565 placeholder.
+`BootConfig::exttrig_sel` is forwarded unchanged to this executor; the pinned
+board initializer still supplies no production value. The adapter does not
+configure ADC channel pins, start battery sampling, or poll for conversion
+completion. Host tests and link-only inspection do not establish hardware
+timing or bench behavior.
 
 ## Focused validation
 

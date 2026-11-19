@@ -1,50 +1,79 @@
 # Board startup adapter witness
 
 `src/board_startup_adapters.rs` dispatches the existing sequencer into the
-clock-gate, SysTick, PortCon, GPIO, and backlight target adapters. `ENABLE_SWD`
-is forwarded to PortCon and `ENABLE_FMRADIO` to GPIO. Backlight initialization
-calls the existing `backlight_startup_executor::initialize_backlight_hardware`
-after GPIO and before ADC/display; ADC, display, BK1080, and CRC remain typed
-placeholders. A failed SysTick setup stops further adapter calls before
-PortCon, GPIO, or backlight can run.
+clock-gate, SysTick, PortCon, GPIO, backlight, and SARADC target adapters.
+`ENABLE_SWD` is forwarded to PortCon and `ENABLE_FMRADIO` to GPIO. Backlight
+initialization reuses
+`backlight_startup_executor::initialize_backlight_hardware`; `Call::AdcInit`
+reuses `adc_startup_adapter::apply_to_hardware` after backlight and before the
+ST7565 placeholder. `BootConfig` supplies the ADC's `exttrig_sel` explicitly.
+The pinned `BOARD_ADC_Init()` leaves `EXTTRIG_SEL` uninitialised, so neither the
+board adapter nor this documentation selects a production value. ST7565,
+BK1080, and CRC remain typed placeholders. A failed SysTick setup stops all
+later board calls, including backlight, ADC, display, and optional stages.
 
-The host test checks the composed call order, feature forwarding, backlight
-register sequence, fresh read-modify-write behavior, preservation of unrelated
-clock and PORTB bits, and stop behavior. Target execution requires the
-DP32G030 PWM_PLUS0 and PORTB register mappings, the PWM_PLUS0 clock gate
-enabled by the earlier clock-gate stage, B6 reserved for the backlight and
-selected for PWMP0_CH0 by the backlight mux update, and exclusive access to
-PWM_PLUS0 CLKSRC, PERIOD, GEN, CFG and PORTB SEL0 for the complete sequence.
-The host and link-only checks do not establish those hardware preconditions.
+```mermaid
+flowchart LR
+  Clocks["Device clock gates"] --> Tick["SysTick"]
+  Tick -->|success| Pins["PortCon and GPIO"]
+  Tick -->|failure| Stop["Stop with startup error"]
+  Pins --> Light["Backlight adapter"]
+  Light --> ADC["SARADC adapter\ncaller-supplied EXTTRIG_SEL"]
+  ADC --> Display["ST7565 placeholder"]
+  Display --> Optional["Optional BK1080 and CRC placeholders"]
+```
+
+The host test checks the composed call order, exact ADC trigger forwarding,
+feature forwarding, backlight register sequence, fresh read-modify-write
+behavior, preservation of unrelated clock and PORTB bits, and stop behavior.
+Target execution requires the DP32G030 PWM_PLUS0 and PORTB register mappings,
+the PWM_PLUS0 clock gate enabled by the earlier clock-gate stage, B6 reserved
+for the backlight and selected for PWMP0_CH0 by the backlight mux update, and
+exclusive access to PWM_PLUS0 CLKSRC, PERIOD, GEN, CFG and PORTB SEL0 for the
+complete sequence.
+
+The SARADC adapter may enable NVIC IRQ 4 when preserved SARADC IE bits are
+nonzero. Before running startup with interrupt delivery possible, install a
+valid handler in the active vector at slot 20 and prevent that IRQ from racing
+initialization as needed. Serialize the entire SARADC operation against every
+writer to the touched SYSCON and SARADC registers, including updates to
+unrelated shared clock fields, and against changes to the SARADC NVIC line.
+The link-only witness passes a synthetic trigger only to exercise argument
+forwarding; it is not production policy. The witness does not provide an
+operational SARADC IRQ handler or prove that a device vector slot is safe. Host
+and link-only checks do not establish any of these hardware preconditions.
 
 CI separately links `startup-witness/` for Cortex-M0 with a dedicated
 vector table and a returning SysTick handler. Its linker places code at
 `0x10000000` and RAM at `0x20010000`, outside the DP32G030 memory map, and
 enforces 16 KiB code/load and 4 KiB RAM limits. The inspection checks vector
-targets, the linked sequencer-to-adapter call path, reachable backlight
-register accesses and their order, retained adapter symbols, and section
-budgets. The SysTick vector must match the exact linked handler symbol, whose
+targets, the linked sequencer-to-adapter call path, the reachable ADC stage and
+dispatch through the existing target executor, reachable backlight register
+accesses and their order, retained adapter symbols, and section budgets. The
+ADC path is checked through its existing word adapter to `apply_with_io`; the
+register/NVIC transaction behavior remains covered by the focused ADC adapter
+tests. The SysTick vector must match the exact linked handler symbol, whose
 first instruction must be `bx lr`.
 
 The backend-dispatch check is intentionally pinned to the emitted Cortex-M0
 shape. It requires the function entry to save incoming `r1` at `sp+8`, load
-that saved variant, byte-extend and save the checked index, compare against 4,
+that saved variant, byte-extend and save the checked index, compare against 5,
 and branch with `bhi` to the non-table placeholder path. The path must return
 to the stack teardown before the contiguous indexed-table sequence reloads the
 saved index from `sp+0`, scales it, addresses the literal table, and branches
-through its entry. Each of the first five cases is checked through its matching
+through its entry. Each of the first six cases is checked through its matching
 hardware call and the following unconditional branch to the shared stack
-teardown. The backlight case must reach the real executor and preserve the
-pinned register sequence. The SysTick case also checks the `Result::is_err`
-split: success continues to teardown, while the error edge stores the stopped
-flag before joining that same teardown. The sequencer's first seven backend
-calls are checked for their call continuations and the optional FM-radio and
-CRC paths are checked through their shared return epilogue. The `run_hardware`
-wrapper and all five target wrappers are checked from their linked calls
-through stack cleanup and return. The adapter's `Result` split is checked so
-both success and error edges reach its shared return. Reset and `witness_main`
-retain their intentional terminal loops and are not treated as returning
-wrappers.
+teardown. This includes the ADC case's forwarded trigger field. The backlight
+case must reach the real executor and preserve the pinned register sequence.
+The SysTick case also checks the `Result::is_err` split: success continues to
+teardown, while the error edge stores the stopped flag before joining that same
+teardown. The sequencer's first seven backend calls are checked for their call
+continuations and the optional FM-radio and CRC paths are checked through their
+shared return epilogue. The `run_hardware` wrapper and all six target wrappers
+are checked from their linked calls through stack cleanup and return. The
+adapter's `Result` split is checked so both success and error edges reach its
+shared return. Reset and `witness_main` retain their intentional terminal
+loops and are not treated as returning wrappers.
 Unexpected instructions, conditional branches, or changed guard inputs,
 destinations, and continuations are rejected. This is linked structural
 evidence for the emitted paths; it is not a general-purpose Thumb control-flow
@@ -56,9 +85,11 @@ the repository root:
 
 ```sh
 cargo test --locked --test board_startup_adapters
+cargo test --locked --test adc_startup_adapter
 cargo test --locked --test boot_coordinator
 cargo clippy --locked --test board_startup_adapters --test boot_coordinator \
-  --test board_startup_composition --test backlight_startup_executor -- -D warnings
+  --test board_startup_composition --test backlight_startup_executor \
+  --test adc_startup_adapter -- -D warnings
 RUSTFLAGS='-D warnings' cargo check --locked --lib --target thumbv6m-none-eabi
 python3 -m unittest tests.test_startup_witness
 RUSTFLAGS='-D warnings -C link-arg=-Tlinker/startup-witness.ld -C link-arg=-Map=../target/startup-witness/startup-adapter-witness.map' \

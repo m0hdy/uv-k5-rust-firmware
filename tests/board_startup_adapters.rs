@@ -156,7 +156,7 @@ fn swd_and_fm_features_are_forwarded_to_their_adapters() {
 }
 
 #[test]
-fn invalid_systick_setup_stops_before_portcon_gpio_backlight_and_placeholders() {
+fn invalid_systick_setup_stops_before_all_later_board_stages() {
     let mut io = FakeIo {
         fail_systick: true,
         ..FakeIo::default()
