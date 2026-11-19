@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 #[path = "../src/backlight_startup_executor.rs"]
 mod backlight_startup_executor;
 

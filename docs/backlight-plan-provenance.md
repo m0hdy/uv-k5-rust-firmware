@@ -38,9 +38,27 @@ and allocation-free and performs no MMIO.
 through typed `RegisterIo`. It uses the plan only for operation order,
 registers, operands, and assignment values: each OR, clear, and set reads the
 register immediately before its write. In particular, the B6 set performs a
-second PORTB SEL0 read after the clear write. Assignments issue no reads. The
-executor is isolated and mockable; it is not connected to target MMIO or
-firmware startup.
+second PORTB SEL0 read after the clear write. Assignments issue no reads. Its
+target-only entry maps the same typed registers to aligned 32-bit volatile
+accesses:
+
+| Register | Address |
+| --- | ---: |
+| PWM_PLUS0_CLKSRC | `0x400b4008` |
+| PWM_PLUS0_PERIOD | `0x400b401c` |
+| PORTB_SEL0 | `0x400b0008` |
+| PWM_PLUS0_GEN | `0x400b4004` |
+| PWM_PLUS0_CFG | `0x400b4000` |
+
+The PWM_PLUS0 addresses follow the pinned
+[`pwmplus.h`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/bsp/dp32g030/pwmplus.h);
+PORTB SEL0 follows the pinned
+[`portcon.h`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/bsp/dp32g030/portcon.h).
+
+The unsafe entry requires the PWM_PLUS0 clock gate to be enabled, B6 to be
+reserved for the backlight, and exclusive access to these registers for the
+whole sequence. It does not configure clocks or pin ownership, change
+brightness, or connect to firmware startup.
 
 `brightness_compare_value` models `(1 << brightness) - 1` for the supported
 settings range 0–10, returning compare values 0 through 1023. Values outside
@@ -49,28 +67,35 @@ than reproducing undefined C shift behavior.
 
 ## Scope and validation
 
-The module does not configure timing policy, countdown state, board wiring,
-EEPROM settings, or hardware, and neither its trace nor compare values
-establish physical backlight output.
+`src/backlight_plan.rs` does not configure timing policy, countdown state,
+board wiring, EEPROM settings, or hardware. Neither its trace nor compare
+values establish physical backlight output.
 
 Focused checks from the repository root:
 
 ```sh
 cargo test --locked --test backlight_plan
 cargo test --locked --test backlight_startup_executor
+cargo test --locked --test backlight_startup_adapter
 cargo clippy --locked --test backlight_plan -- -D warnings
 cargo clippy --locked --test backlight_startup_executor -- -D warnings
+cargo clippy --locked --test backlight_startup_adapter -- -D warnings
 rustfmt --check --edition 2024 src/backlight_plan.rs src/backlight_startup_executor.rs \
-  tests/backlight_plan.rs tests/backlight_startup_executor.rs
+  tests/backlight_plan.rs tests/backlight_startup_executor.rs \
+  tests/backlight_startup_adapter.rs
 rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
   -D warnings src/backlight_plan.rs -o /tmp/backlight_plan.rlib
-rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
-  -D warnings src/backlight_startup_executor.rs -o /tmp/backlight_startup_executor.rlib
+rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi -D warnings \
+  -C opt-level=2 -C link-dead-code=yes --emit=asm \
+  src/backlight_startup_executor.rs -o /tmp/backlight_startup_executor.s
 ```
 
 The host tests check exact ordered operations and values across distinct clock
 and mux snapshots, the live executor's chronological reads and writes
-(including changing PORTB values), assignments without reads, and every
-supported brightness value and out-of-range input. Standalone Cortex-M0
-compilation verifies that both modules need neither `std` nor an allocator;
-it does not link the executor into firmware startup.
+(including changing PORTB values), assignments without reads, the target
+address map and alignment, and every supported brightness value and
+out-of-range input. Standalone Cortex-M0 compilation verifies that both
+modules need neither `std` nor an allocator. Compile the target adapter with
+assembly emission and inspect `initialize_backlight_hardware` for 32-bit
+volatile loads and stores in the mapped register order; neither compilation
+nor inspection executes the code or links it into firmware startup.
