@@ -1227,16 +1227,34 @@ class StartupWitnessCheckerTests(unittest.TestCase):
         original = (
             " 840: f000 f800 bl 846 <backlight_startup_executor::apply_with_io>"
         )
-        replacement = (
-            " 840: f000 f800 bl 3000 <other::backlight_startup_executor::apply_with_io>"
+        generic_call = (
+            " 840: f000 f800 bl 846 "
+            "<backlight_startup_executor::apply_with_io::<VolatileRegisterIo>>"
+        )
+        generic_header = (
+            "00000846 <backlight_startup_executor::apply_with_io::<VolatileRegisterIo>>:"
         )
         self.assertIn(original, CONNECTED_DISPATCH)
-        mutated = CONNECTED_DISPATCH.replace(original, replacement, 1)
+        mutated = CONNECTED_DISPATCH.replace(original, generic_call, 1).replace(
+            "00000846 <backlight_startup_executor::apply_with_io>:",
+            generic_header,
+            1,
+        )
+        validate_call_path(mutated)
+        replacement = (
+            " 840: f000 f800 bl 3000 "
+            "<other::backlight_startup_executor::apply_with_io::<VolatileRegisterIo>>"
+        )
+        mutated = mutated.replace(generic_call, replacement, 1)
         mutated += (
-            "\n00003000 <other::backlight_startup_executor::apply_with_io>:\n"
+            "\n00003000 "
+            "<other::backlight_startup_executor::apply_with_io::<VolatileRegisterIo>>:\n"
             " 3000: bd80 pop {r7, pc}\n"
         )
-        self.assertIn("00003000 <other::backlight_startup_executor::apply_with_io>", mutated)
+        self.assertIn(
+            "00003000 <other::backlight_startup_executor::apply_with_io::<VolatileRegisterIo>>",
+            mutated,
+        )
         with self.assertRaisesRegex(WitnessError, "required call target.*symbol entry"):
             validate_call_path(mutated)
 

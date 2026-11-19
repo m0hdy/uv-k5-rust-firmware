@@ -188,7 +188,8 @@ def validate_required_call_targets(disassembly: str) -> None:
             return symbol in target
         return (
             re.search(
-                rf"{re.escape(symbol)}(?:\+0x[0-9a-fA-F]+)?(?:>|$)", target
+                rf"{re.escape(symbol)}(?:\+0x[0-9a-fA-F]+|::<.*>)?(?:>|$)",
+                target,
             )
             is not None
         )
