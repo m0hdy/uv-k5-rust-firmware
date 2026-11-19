@@ -169,14 +169,19 @@ def validate_required_call_targets(disassembly: str) -> None:
     )
 
     def function_entry(fragment: str, suffix: bool) -> tuple[int, str]:
+        matches = []
         for line in disassembly.splitlines():
             match = re.match(r"\s*([0-9a-fA-F]+)\s+<(.+)>:\s*$", line)
             if match is None:
                 continue
             name = match.group(2)
             if name.endswith(fragment) if suffix else fragment in name:
-                return int(match.group(1), 16), name
-        raise WitnessError(f"disassembly is missing {fragment}")
+                matches.append((int(match.group(1), 16), name))
+        if len(matches) != 1:
+            raise WitnessError(
+                f"required call target {fragment} does not resolve uniquely to its symbol entry"
+            )
+        return matches[0]
 
     def matches_symbol(symbol: str, target: str) -> bool:
         if symbol.endswith("::<"):
