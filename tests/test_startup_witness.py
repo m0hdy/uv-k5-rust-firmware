@@ -77,9 +77,12 @@ CONNECTED_DISPATCH = """
  200: f000 f800 bl 300 <run_hardware>
  204: e7fe b.n 204 <witness_main+0x4>
 00000300 <run_hardware>:
- 300: f000 f800 bl 400 <board_startup_adapters::run::<Hardware>>
- 304: b007 add sp, #28
- 306: bd80 pop {r7, pc}
+ 300: b5f0 push {r4, r5, r6, r7, lr}
+ 302: af03 add r7, sp, #12
+ 304: b087 sub sp, #28
+ 306: f000 f800 bl 400 <board_startup_adapters::run::<Hardware>>
+ 30a: b007 add sp, #28
+ 30c: bdf0 pop {r4, r5, r6, r7, pc}
 00000400 <board_startup_adapters::run::<Hardware>>:
  400: f000 f800 bl 500 <board_sequence::run::<Backend>>
  404: 980b ldr r0, [sp, #44]
@@ -648,9 +651,9 @@ ENTRY_SELF_LOOP = CONNECTED_DISPATCH.replace(
 )
 
 WRAPPER_EARLY_RETURN = CONNECTED_DISPATCH.replace(
-    " 300: f000 f800 bl 400 <board_startup_adapters::run::<Hardware>>",
-    " 300: 4770 bx lr\n"
-    " 302: f000 f800 bl 400 <board_startup_adapters::run::<Hardware>>",
+    " 306: f000 f800 bl 400 <board_startup_adapters::run::<Hardware>>",
+    " 306: 4770 bx lr\n"
+    " 308: f000 f800 bl 400 <board_startup_adapters::run::<Hardware>>",
 )
 
 HARDWARE_WRAPPER_EARLY_RETURN = CONNECTED_DISPATCH.replace(
@@ -778,8 +781,23 @@ HARDWARE_WRAPPER_POST_CALL_SELF_LOOP = CONNECTED_DISPATCH.replace(
 )
 
 RUN_HARDWARE_POST_CALL_SELF_LOOP = CONNECTED_DISPATCH.replace(
-    " 304: b007 add sp, #28",
-    " 304: e7fe b.n 304\n 306: b007 add sp, #28",
+    " 30a: b007 add sp, #28",
+    " 30a: e7fe b.n 30a\n 30c: b007 add sp, #28",
+)
+
+RUN_HARDWARE_WRONG_RETURN = CONNECTED_DISPATCH.replace(
+    " 30c: bdf0 pop {r4, r5, r6, r7, pc}",
+    " 30c: bdf1 pop {r0, r4, r5, r6, r7, pc}",
+)
+
+ADC_INIT_WRONG_RETURN = CONNECTED_DISPATCH.replace(
+    " 1324: bd80 pop {r7, pc}",
+    " 1324: bd81 pop {r0, r7, pc}",
+)
+
+ADC_TARGET_WRONG_RETURN = CONNECTED_DISPATCH.replace(
+    " 1340: bd80 pop {r7, pc}",
+    " 1340: bd81 pop {r0, r7, pc}",
 )
 
 ST7565_EXECUTOR_PATH = """
@@ -1466,6 +1484,24 @@ class StartupWitnessCheckerTests(unittest.TestCase):
             WitnessError, "run_hardware.*non-returning call continuation"
         ):
             validate_call_path(RUN_HARDWARE_POST_CALL_SELF_LOOP)
+
+    def test_rejects_extra_register_restore_in_run_hardware(self):
+        with self.assertRaisesRegex(
+            WitnessError, "run_hardware.*non-returning call continuation"
+        ):
+            validate_call_path(RUN_HARDWARE_WRONG_RETURN)
+
+    def test_rejects_extra_register_restore_in_adc_init(self):
+        with self.assertRaisesRegex(
+            WitnessError, "target adc_init.*non-returning call continuation"
+        ):
+            validate_call_path(ADC_INIT_WRONG_RETURN)
+
+    def test_rejects_extra_register_restore_in_adc_target_executor(self):
+        with self.assertRaisesRegex(
+            WitnessError, "target ADC executor.*non-returning call continuation"
+        ):
+            validate_call_path(ADC_TARGET_WRONG_RETURN)
 
     def test_rejects_adapter_result_load_mismatch(self):
         with self.assertRaisesRegex(

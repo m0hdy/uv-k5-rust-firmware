@@ -2104,7 +2104,7 @@ def validate_returning_call_path(
     return_instruction = instructions.get(continuation)
     expected_epilogue = expected_epilogue or (
         "pop",
-        r"\s*\{\s*(?:r[0-7],\s*)*r7,\s*pc\s*\}\s*",
+        r"\s*\{\s*r7,\s*pc\s*\}\s*",
     )
     if return_instruction is None or not matches_instruction(
         return_instruction, *expected_epilogue
@@ -2290,6 +2290,7 @@ def validate_call_path(disassembly: str) -> None:
         "run_hardware",
         ("board_startup_adapters::run::<",),
         (("add", r"\s*sp,\s*#28\s*"),),
+        ("pop", r"\s*\{\s*r4,\s*r5,\s*r6,\s*r7,\s*pc\s*\}\s*"),
     )
     validate_adapter_run_result(
         function_block(disassembly, "board_startup_adapters::run::<")
