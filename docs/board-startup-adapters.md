@@ -15,13 +15,15 @@ targets, the linked sequencer-to-adapter call path, retained adapter symbols,
 and section budgets.
 
 The backend-dispatch check is intentionally pinned to the emitted Cortex-M0
-shape. It requires the stopped-state guard to load the flag at offset 6, test
-bit 31, compare with zero, and branch on `bne` to the stack teardown. It then
-requires the saved variant load and byte extension, compare against 3, and
-`bhi` to the non-table placeholder path. That path must return to the teardown
-before the ordered four-entry indexed table dispatch. Any other conditional
-branch or a changed guard input or destination is rejected; this is a
-structural witness check, not a general-purpose Thumb control-flow analyzer.
+shape. It requires the function entry to save incoming `r1` at `sp+8`, load
+that saved variant, byte-extend and save the checked index, compare against 3,
+and branch with `bhi` to the non-table placeholder path. The path must return
+to the stack teardown before the contiguous indexed-table sequence reloads the
+saved index from `sp+0`, scales it, addresses the literal table, and branches
+through its entry. It also checks the stopped-state guard input and target.
+Unexpected instructions, conditional branches, or changed guard inputs and
+destinations are rejected; this is a structural witness check, not a
+general-purpose Thumb control-flow analyzer.
 
 Run the host test and link-only witness from the repository root:
 

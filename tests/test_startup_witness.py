@@ -65,7 +65,12 @@ CONNECTED_DISPATCH = """
  520: f000 f800 bl 600 <<Backend>::call>
  524: 2106 movs r1, #6
  526: f000 f800 bl 600 <<Backend>::call>
-00000600 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>:
+000005f6 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>:
+ 5f6: b580 push {r7, lr}
+ 5f8: af00 add r7, sp, #0
+ 5fa: b084 sub sp, #16
+ 5fc: 9001 str r0, [sp, #4]
+ 5fe: 9102 str r1, [sp, #8]
  600: 7980 ldrb r0, [r0, #6]
  602: 07c0 lsls r0, r0, #31
  604: 2800 cmp r0, #0
@@ -138,6 +143,16 @@ DISCONNECTED_BACKEND_PREFIX = CONNECTED_DISPATCH.replace(
     " 600: 7980 ldrb r0, [r0, #6]",
     " 600: 4770 bx lr\n"
     " 602: 7980 ldrb r0, [r0, #6]",
+)
+
+CONSTANT_VARIANT_RELOAD = CONNECTED_DISPATCH.replace(
+    " 614: 9800 ldr r0, [sp, #0]",
+    " 614: 2000 movs r0, #0",
+)
+
+OVERWRITTEN_INCOMING_VARIANT = CONNECTED_DISPATCH.replace(
+    " 5fe: 9102 str r1, [sp, #8]",
+    " 5fe: 9202 str r2, [sp, #8]",
 )
 
 ALWAYS_TAKEN_BACKEND_BRANCH = CONNECTED_DISPATCH.replace(
@@ -231,7 +246,7 @@ class StartupWitnessCheckerTests(unittest.TestCase):
         self.assertIn("61c: 4687 mov pc, r0", DISCONNECTED_BACKEND_PREFIX)
         self.assertIn("StartupIo>::gpio", DISCONNECTED_BACKEND_PREFIX)
 
-        with self.assertRaisesRegex(WitnessError, "sequencer backend dispatch"):
+        with self.assertRaisesRegex(WitnessError, "sequencer backend.*dispatch"):
             validate_call_path(DISCONNECTED_BACKEND_PREFIX)
 
     def test_rejects_dispatch_after_always_taken_conditional_branch(self):
@@ -239,30 +254,38 @@ class StartupWitnessCheckerTests(unittest.TestCase):
         self.assertIn("610: 4280 cmp r0, r0", ALWAYS_TAKEN_BACKEND_BRANCH)
         self.assertIn("StartupIo>::gpio", ALWAYS_TAKEN_BACKEND_BRANCH)
 
-        with self.assertRaisesRegex(WitnessError, "unsupported conditional"):
+        with self.assertRaisesRegex(WitnessError, "sequencer backend.*dispatch"):
             validate_call_path(ALWAYS_TAKEN_BACKEND_BRANCH)
 
     def test_rejects_unsupported_forward_conditional_before_dispatch(self):
         self.assertIn("cmp r0, r1", UNSUPPORTED_BACKEND_CONDITIONAL)
         self.assertIn("beq.n 650", UNSUPPORTED_BACKEND_CONDITIONAL)
 
-        with self.assertRaisesRegex(WitnessError, "unsupported conditional"):
+        with self.assertRaisesRegex(WitnessError, "sequencer backend.*dispatch"):
             validate_call_path(UNSUPPORTED_BACKEND_CONDITIONAL)
 
     def test_rejects_mismatched_stopped_guard_input(self):
-        with self.assertRaisesRegex(WitnessError, "unsupported conditional"):
+        with self.assertRaisesRegex(WitnessError, "sequencer backend.*dispatch"):
             validate_call_path(WRONG_STOPPED_GUARD_INPUT)
 
     def test_rejects_misdirected_stopped_guard(self):
-        with self.assertRaisesRegex(WitnessError, "unsupported conditional"):
+        with self.assertRaisesRegex(WitnessError, "sequencer backend.*dispatch"):
             validate_call_path(WRONG_STOPPED_GUARD_TARGET)
 
     def test_rejects_mismatched_variant_guard_input(self):
-        with self.assertRaisesRegex(WitnessError, "unsupported conditional"):
+        with self.assertRaisesRegex(WitnessError, "sequencer backend.*dispatch"):
             validate_call_path(WRONG_VARIANT_GUARD_INPUT)
 
+    def test_rejects_constant_variant_index_reload(self):
+        with self.assertRaisesRegex(WitnessError, "ordered indexed dispatch"):
+            validate_call_path(CONSTANT_VARIANT_RELOAD)
+
+    def test_rejects_overwritten_incoming_variant(self):
+        with self.assertRaisesRegex(WitnessError, "ordered indexed dispatch"):
+            validate_call_path(OVERWRITTEN_INCOMING_VARIANT)
+
     def test_rejects_misdirected_variant_guard(self):
-        with self.assertRaisesRegex(WitnessError, "unsupported conditional"):
+        with self.assertRaisesRegex(WitnessError, "sequencer backend.*dispatch"):
             validate_call_path(WRONG_VARIANT_GUARD_TARGET)
 
     def test_rejects_swapped_backend_dispatch_targets(self):

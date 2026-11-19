@@ -255,78 +255,63 @@ def require_call_edge(disassembly: str, caller: str, callee: str) -> None:
 
 def backend_dispatch_targets(function: str) -> list[int]:
     instructions = parse_instructions(function)
-    prefix = []
-    next_address = instructions[0][0] if instructions else None
-    dispatch_target = None
-    stopped_guard_seen = False
-    variant_guard_seen = False
-    for instruction in instructions:
-        address, size, mnemonic, operands, line = instruction
-        if address != next_address:
-            break
-        prefix.append(instruction)
-        next_address = address + size
-        conditional = re.fullmatch(
-            r"b(eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.(?:n|w))?",
-            mnemonic,
-        )
-        if conditional:
-            if (
-                not stopped_guard_seen
-                and validate_stopped_guard(prefix, instruction, instructions)
-            ):
-                stopped_guard_seen = True
-                continue
-            if (
-                stopped_guard_seen
-                and not variant_guard_seen
-                and validate_variant_guard(prefix, instruction, instructions)
-            ):
-                variant_guard_seen = True
-                continue
-            raise WitnessError(
-                "sequencer backend dispatch has an unsupported conditional branch"
-            )
-        if mnemonic in ("b", "b.n", "b.w"):
-            if branch_target(instruction) != next_address:
-                raise WitnessError("sequencer backend dispatch has an unsupported unconditional branch")
-            continue
-        if re.search(r"\bmov\s+pc,\s*r0\b", line):
-            dispatch_target = address
-            break
-        if is_control_transfer(mnemonic, operands, line):
-            raise WitnessError("sequencer backend dispatch is unreachable from its function entry")
-
-    def position(pattern: str) -> tuple[int, re.Match[str] | None]:
-        for index, (_, _, _, _, line) in enumerate(prefix):
-            match = re.search(pattern, line)
-            if match:
-                return index, match
-        return len(prefix), None
-
-    scale_index, _ = position(r"\b(?:lsls|lsl)\s+r1,\s*r0,\s*#2\b")
-    table_index, table = position(r"\badr\s+r0,\s*([0-9a-fA-F]+)\b")
-    if table is None:
-        table_index, table = position(
-            r"\badd\s+r0,\s*pc,\s*#[0-9]+\b.*?\badr\s+r0,\s*([0-9a-fA-F]+)\b"
-        )
-    load_index, _ = position(r"\bldr\s+r0,\s*\[r0,\s*r1\]")
-    branch_index, _ = position(r"\bmov\s+pc,\s*r0\b")
-    if (
-        dispatch_target is None
-        or not stopped_guard_seen
-        or not variant_guard_seen
-        or scale_index >= table_index
-        or table_index >= load_index
-        or load_index >= branch_index
-        or table_index != scale_index + 1
-        or load_index != table_index + 1
-        or branch_index != load_index + 1
+    prefix = instructions[:20]
+    if len(prefix) != 20 or any(
+        previous[0] + previous[1] != current[0]
+        for previous, current in zip(prefix, prefix[1:])
     ):
         raise WitnessError(
             "sequencer backend has no reachable ordered indexed dispatch from its function entry"
         )
 
+    expected = (
+        (0, "push", r"\s*\{\s*r7,\s*lr\s*\}\s*"),
+        (1, "add", r"\s*r7,\s*sp,\s*#0\s*"),
+        (2, "sub", r"\s*sp,\s*#16\s*"),
+        (3, "str", r"\s*r0,\s*\[sp,\s*#4\]\s*"),
+        (4, "str", r"\s*r1,\s*\[sp,\s*#8\]\s*"),
+        (5, "ldrb", r"\s*r0,\s*\[r0,\s*#6\]\s*"),
+        (6, "lsls", r"\s*r0,\s*r0,\s*#31\s*"),
+        (7, "cmp", r"\s*r0,\s*#0\s*"),
+        (8, "bne.n", r"\s*[0-9a-fA-F]+\b.*"),
+        (9, "b.n", r"\s*[0-9a-fA-F]+\b.*"),
+        (10, "ldr", r"\s*r0,\s*\[sp,\s*#8\]\s*"),
+        (11, "uxtb", r"\s*r0,\s*r0\s*"),
+        (12, "str", r"\s*r0,\s*\[sp,\s*#0\]\s*"),
+        (13, "cmp", r"\s*r0,\s*#3\s*"),
+        (14, "bhi.n", r"\s*[0-9a-fA-F]+\b.*"),
+        (15, "ldr", r"\s*r0,\s*\[sp,\s*#0\]\s*"),
+        (16, "lsls", r"\s*r1,\s*r0,\s*#2\s*"),
+        (18, "ldr", r"\s*r0,\s*\[r0,\s*r1\]\s*"),
+        (19, "mov", r"\s*pc,\s*r0\s*"),
+    )
+    if any(
+        not matches_instruction(prefix[index], mnemonic, operands)
+        for index, mnemonic, operands in expected
+    ):
+        raise WitnessError(
+            "sequencer backend has no reachable ordered indexed dispatch from its function entry"
+        )
+
+    stopped_branch = prefix[8]
+    variant_branch = prefix[14]
+    if (
+        not validate_stopped_guard(prefix[:9], stopped_branch, instructions)
+        or branch_target(prefix[9]) != prefix[10][0]
+        or not validate_variant_guard(prefix[:15], variant_branch, instructions)
+    ):
+        raise WitnessError(
+            "sequencer backend has no reachable ordered indexed dispatch from its function entry"
+        )
+
+    table = re.search(
+        r"\badd\s+r0,\s*pc,\s*#[0-9]+\b.*?\badr\s+r0,\s*([0-9a-fA-F]+)\b",
+        prefix[17][4],
+    )
+    if table is None:
+        raise WitnessError(
+            "sequencer backend has no reachable ordered indexed dispatch from its function entry"
+        )
     table_address = int(table.group(1), 16)
     words = {}
     for line in function.splitlines():
