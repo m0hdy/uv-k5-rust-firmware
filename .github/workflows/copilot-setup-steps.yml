@@ -2,13 +2,27 @@ name: Copilot Setup Steps
 
 on:
   workflow_dispatch:
+    inputs:
+      verify_direct_archive:
+        description: Verify signed direct Ubuntu archive provisioning
+        type: boolean
+        required: false
+        default: false
   push:
     paths:
       - .github/workflows/copilot-setup-steps.yml
+      - .github/actions/setup-arm-binutils/action.yml
+      - scripts/provision_arm_binutils.py
+      - scripts/verify_arm_binutils_direct_archive.py
+      - tests/test_provision_arm_binutils.py
       - rust-toolchain.toml
   pull_request:
     paths:
       - .github/workflows/copilot-setup-steps.yml
+      - .github/actions/setup-arm-binutils/action.yml
+      - scripts/provision_arm_binutils.py
+      - scripts/verify_arm_binutils_direct_archive.py
+      - tests/test_provision_arm_binutils.py
       - rust-toolchain.toml
 
 jobs:
@@ -67,12 +81,8 @@ jobs:
           cargo clippy --version
           rustup target list --installed | grep -Fx thumbv6m-none-eabi
       - name: Install GNU ARM binutils
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends binutils-arm-none-eabi
-          arm-none-eabi-as --version | head -n 1
-          arm-none-eabi-ld --version | head -n 1
-          arm-none-eabi-objcopy --version | head -n 1
+        timeout-minutes: 10
+        uses: ./.github/actions/setup-arm-binutils
       - name: Fetch locked dependencies
         run: cargo fetch --locked
       - name: Check formatting and lint
@@ -94,3 +104,17 @@ jobs:
             git status --short
             exit 1
           fi
+
+  direct-archive-validation:
+    if: github.event_name == 'workflow_dispatch' && inputs.verify_direct_archive
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify signed direct Ubuntu archive provisioning
+        run: python3 scripts/verify_arm_binutils_direct_archive.py
