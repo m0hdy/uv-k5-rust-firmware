@@ -95,6 +95,66 @@ def require_call_edge(disassembly: str, caller: str, callee: str) -> None:
         raise WitnessError(f"{caller} has no linked call instruction to {callee}")
 
 
+def backend_dispatch_targets(function: str) -> list[int]:
+    if not re.search(r"\b(?:lsls|lsl)\s+r1,\s*r0,\s*#2", function):
+        raise WitnessError("sequencer backend does not scale the call variant for dispatch")
+    table = re.search(r"\badr\s+r0,\s*([0-9a-fA-F]+)\b", function)
+    if table is None or not re.search(r"\bldr\s+r0,\s*\[r0,\s*r1\]", function):
+        raise WitnessError("sequencer backend has no linked indexed dispatch table")
+    if not re.search(r"\bmov\s+pc,\s*r0", function):
+        raise WitnessError("sequencer backend does not branch through its dispatch table")
+
+    table_address = int(table.group(1), 16)
+    words = {}
+    for line in function.splitlines():
+        match = re.match(
+            r"\s*([0-9a-fA-F]+):\s+(?:[0-9a-fA-F]+\s+)+\.word\s+0x([0-9a-fA-F]+)\b",
+            line,
+        )
+        if match:
+            words[int(match.group(1), 16)] = int(match.group(2), 16)
+    try:
+        return [words[table_address + offset] & ~1 for offset in range(0, 16, 4)]
+    except KeyError as error:
+        raise WitnessError("sequencer backend dispatch table is missing one of its first four targets") from error
+
+
+def validate_backend_dispatch(disassembly: str) -> None:
+    backend = function_block(disassembly, ">::call", suffix=True)
+    targets = backend_dispatch_targets(backend)
+    if len(set(targets)) != 4:
+        raise WitnessError("sequencer backend first four variants do not have distinct dispatch targets")
+
+    instructions = []
+    for line in backend.splitlines():
+        match = re.match(r"\s*([0-9a-fA-F]+):\s+.*", line)
+        if match and ".word" not in line:
+            instructions.append((int(match.group(1), 16), line))
+    instructions.sort()
+    methods = (
+        "StartupIo>::device_clock_gates",
+        "StartupIo>::systick",
+        "StartupIo>::portcon",
+        "StartupIo>::gpio",
+    )
+    ordered_targets = sorted(targets)
+    for variant, (target, method) in enumerate(zip(targets, methods)):
+        next_target = next((address for address in ordered_targets if address > target), None)
+        block = [
+            line
+            for address, line in instructions
+            if target <= address and (next_target is None or address < next_target)
+        ]
+        if not any(
+            method in target
+            for line in block
+            for target in direct_call_targets(line)
+        ):
+            raise WitnessError(
+                f"sequencer backend variant {variant} does not branch to {method}"
+            )
+
+
 def validate_call_path(disassembly: str) -> None:
     for caller, callee in (
         ("Reset_Handler", "witness_main"),
@@ -130,6 +190,8 @@ def validate_call_path(disassembly: str) -> None:
         method_body = function_block(disassembly, f"StartupIo>::{method}", suffix=True)
         if not any(adapter in target for target in direct_call_targets(method_body)):
             raise WitnessError(f"target {method} has no linked call instruction to {adapter}")
+
+    validate_backend_dispatch(disassembly)
 
 
 def validate(elf: Path) -> tuple[int, int]:
