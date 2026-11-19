@@ -81,6 +81,57 @@ def function_block(disassembly: str, symbol_fragment: str, *, suffix: bool = Fal
     raise WitnessError(f"disassembly is missing {symbol_fragment}")
 
 
+def direct_call_targets(function: str) -> list[str]:
+    return [
+        match.group(1)
+        for line in function.splitlines()
+        if (match := re.search(r"\bbl(?:x)?\s+[0-9a-fA-F]+\s+<(.+)>$", line))
+    ]
+
+
+def require_call_edge(disassembly: str, caller: str, callee: str) -> None:
+    targets = direct_call_targets(function_block(disassembly, caller))
+    if not any(callee in target for target in targets):
+        raise WitnessError(f"{caller} has no linked call instruction to {callee}")
+
+
+def validate_call_path(disassembly: str) -> None:
+    for caller, callee in (
+        ("Reset_Handler", "witness_main"),
+        ("witness_main", "run_hardware"),
+        ("run_hardware", "board_startup_adapters::run::<"),
+        ("board_startup_adapters::run::<", "board_sequence::run::<"),
+    ):
+        require_call_edge(disassembly, caller, callee)
+
+    sequence = function_block(disassembly, "board_sequence::run")
+    sequencer_calls = direct_call_targets(sequence)
+    if sum("Backend>::call" in target for target in sequencer_calls) < 7:
+        raise WitnessError("linked sequencer does not retain its ordered startup call dispatches")
+    sequence_lines = sequence.splitlines()
+    sequencer_call_args = [
+        int(argument.group(1))
+        for index, line in enumerate(sequence_lines[:-1])
+        if (argument := re.search(r"\bmovs\s+r1,\s*#(\d+)", line))
+        and any(
+            "Backend>::call" in target
+            for target in direct_call_targets(sequence_lines[index + 1])
+        )
+    ]
+    if sequencer_call_args[:7] != list(range(7)):
+        raise WitnessError("linked sequencer startup calls are not in the pinned order")
+
+    for method, adapter in (
+        ("device_clock_gates", "apply_device_clock_gates"),
+        ("systick", "apply_to_hardware"),
+        ("portcon", "apply_portcon_startup_plan"),
+        ("gpio", "apply_gpio_startup_plan"),
+    ):
+        method_body = function_block(disassembly, f"StartupIo>::{method}", suffix=True)
+        if not any(adapter in target for target in direct_call_targets(method_body)):
+            raise WitnessError(f"target {method} has no linked call instruction to {adapter}")
+
+
 def validate(elf: Path) -> tuple[int, int]:
     sections = parse_sections(run_tool("objdump", "-h", str(elf)))
     required_sections = {".vector_table", ".text"}
@@ -153,30 +204,7 @@ def validate(elf: Path) -> tuple[int, int]:
         raise WitnessError("Reset_Handler does not retain the witness startup call path")
     if "bx\tlr" not in function_block(disassembly, "SysTick_Handler"):
         raise WitnessError("SysTick_Handler must return immediately")
-    hardware_run = function_block(disassembly, "run_hardware")
-    adapter_run = function_block(disassembly, "board_startup_adapters::run::<")
-    if "board_startup_adapters::run::<" not in hardware_run:
-        raise WitnessError("witness hardware entry does not call the startup adapter runner")
-    if "board_sequence::run::<" not in adapter_run:
-        raise WitnessError("startup adapter runner does not call the board sequencer")
-    sequence = function_block(disassembly, "board_sequence::run")
-    sequencer_calls = []
-    sequence_lines = sequence.splitlines()
-    for index, line in enumerate(sequence_lines[:-1]):
-        call = re.search(r"\bmovs\s+r1,\s*#(\d+)", line)
-        if call and re.search(r"\bbl\b.*SequencerBackend", sequence_lines[index + 1]):
-            sequencer_calls.append(int(call.group(1)))
-    if sequencer_calls[:7] != list(range(7)):
-        raise WitnessError("linked sequencer does not retain the ordered startup call dispatches")
-    for method, adapter in (
-        ("device_clock_gates", "apply_device_clock_gates"),
-        ("systick", "apply_to_hardware"),
-        ("portcon", "apply_portcon_startup_plan"),
-        ("gpio", "apply_gpio_startup_plan"),
-    ):
-        method_body = function_block(disassembly, f"StartupIo>::{method}", suffix=True)
-        if adapter not in method_body:
-            raise WitnessError(f"target {method} adapter is not wired to {adapter}")
+    validate_call_path(disassembly)
 
     return flash_used, ram_used
 
