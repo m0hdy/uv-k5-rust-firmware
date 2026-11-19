@@ -36,6 +36,8 @@ pub mod startup_version_display;
 #[allow(unused_attributes)]
 pub mod startup_version_row_plan;
 pub mod tuning_signalling;
+#[allow(unused_attributes)]
+pub mod welcome_startup;
 
 pub struct ByteQueue<const CAPACITY: usize> {
     bytes: [u8; CAPACITY],
