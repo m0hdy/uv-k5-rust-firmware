@@ -101,6 +101,48 @@ def matches_call_symbol(symbol: str, target: str) -> bool:
     )
 
 
+def function_entry_body(disassembly: str, address: int, name: str) -> str:
+    labels = list(
+        re.finditer(r"(?m)^([0-9a-fA-F]+)\s+<(.+)>:\s*$", disassembly)
+    )
+    for index, label in enumerate(labels):
+        if int(label.group(1), 16) == address and label.group(2) == name:
+            end = (
+                labels[index + 1].start()
+                if index + 1 < len(labels)
+                else len(disassembly)
+            )
+            return disassembly[label.end() : end]
+    raise WitnessError(f"disassembly is missing symbol entry {name}")
+
+
+def function_entry(
+    disassembly: str, fragment: str, suffix: bool
+) -> tuple[int, str]:
+    matches = []
+    for line in disassembly.splitlines():
+        match = re.match(r"\s*([0-9a-fA-F]+)\s+<(.+)>:\s*$", line)
+        if match is None:
+            continue
+        name = match.group(2)
+        if name.endswith(fragment) if suffix else fragment in name:
+            matches.append((int(match.group(1), 16), name))
+    if len(matches) != 1:
+        raise WitnessError(
+            f"required call target {fragment} does not resolve uniquely to its symbol entry"
+        )
+
+    address, name = matches[0]
+    instructions = parse_instructions(
+        function_entry_body(disassembly, address, name)
+    )
+    if not instructions or instructions[0][0] != address:
+        raise WitnessError(
+            f"required call target {fragment} has no instruction at its symbol entry"
+        )
+    return matches[0]
+
+
 def validate_required_call_targets(disassembly: str) -> None:
     required_symbols = (
         ("witness_main", "witness_main", False),
@@ -217,21 +259,6 @@ def validate_required_call_targets(disassembly: str) -> None:
         ("__aeabi_memcpy4", "__aeabi_memcpy4", False),
     )
 
-    def function_entry(fragment: str, suffix: bool) -> tuple[int, str]:
-        matches = []
-        for line in disassembly.splitlines():
-            match = re.match(r"\s*([0-9a-fA-F]+)\s+<(.+)>:\s*$", line)
-            if match is None:
-                continue
-            name = match.group(2)
-            if name.endswith(fragment) if suffix else fragment in name:
-                matches.append((int(match.group(1), 16), name))
-        if len(matches) != 1:
-            raise WitnessError(
-                f"required call target {fragment} does not resolve uniquely to its symbol entry"
-            )
-        return matches[0]
-
     def matches_symbol(symbol: str, target: str) -> bool:
         return matches_call_symbol(symbol, target)
 
@@ -271,7 +298,7 @@ def validate_required_call_targets(disassembly: str) -> None:
                 continue
             address, target = int(edge.group(1), 16), edge.group(2)
             matching_entries = {
-                function_entry(selector, suffix)
+                function_entry(disassembly, selector, suffix)
                 for symbol, selector, suffix in required_symbols
                 if matches_symbol(symbol, target)
             }
@@ -293,7 +320,7 @@ def validate_required_call_targets(disassembly: str) -> None:
                     else ()
                 )
                 matching_helpers = {
-                    function_entry(helper, suffix)
+                    function_entry(disassembly, helper, suffix)
                     for helper, suffix, identity in allowed_helpers
                     if re.fullmatch(identity, target)
                 }
@@ -346,7 +373,8 @@ def parse_instructions(function: str) -> list[tuple[int, int, str, str, str]]:
             mnemonic, operands = instruction_match.groups()
         else:
             match = re.match(
-                r"\s*([0-9a-fA-F]+):\s+((?:(?:[0-9a-fA-F]{4}|[0-9a-fA-F]{2})\s+)+)([a-z][\w.]*)\s*(.*)",
+                r"\s*([0-9a-fA-F]+):\s+((?:(?:[0-9a-fA-F]{4}|[0-9a-fA-F]{2})\s+)+)"
+                r"(\.word|[a-z][\w.]*)\s*(.*)",
                 line,
             )
             if match is None:
@@ -1034,9 +1062,15 @@ def validate_st7565_executor_path(disassembly: str) -> None:
         ),
     )
     for symbol, description, calls in methods:
-        function = function_block(
+        symbol_entry, symbol_name = function_entry(
             disassembly, symbol, suffix=symbol.startswith("StartupIo")
         )
+        function = function_entry_body(disassembly, symbol_entry, symbol_name)
+        instructions = parse_instructions(function)
+        if not instructions or instructions[0][0] != symbol_entry:
+            raise WitnessError(
+                f"{description} has no instruction at its symbol entry"
+            )
         reachable, _, _ = reachable_control_flow_analysis(function, description)
         entry = reachable_instruction_prefix(function)
         if not matches_instruction_sequence(

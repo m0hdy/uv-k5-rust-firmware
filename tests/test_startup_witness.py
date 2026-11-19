@@ -819,6 +819,64 @@ ST7565_EXECUTOR_PATH = """
  300: 4770 bx lr
 """
 
+ST7565_INIT_ENTRY_WORD_LOOP = CONNECTED_DISPATCH.replace(
+    """00001400 <<HardwareIo as StartupIo>::st7565_init>:
+ 1400: b580 push {r7, lr}
+ 1402: af00 add r7, sp, #0
+ 1404: b082 sub sp, #8
+ 1406: f000 f800 bl 1410 <target_spi0::startup_mmio>
+ 140a: b002 add sp, #8
+ 140c: bd80 pop {r7, pc}
+00001410 <target_spi0::startup_mmio>:
+ 1410: b580 push {r7, lr}
+ 1412: af00 add r7, sp, #0
+ 1414: b082 sub sp, #8
+ 1416: f000 f800 bl 1420 <target_spi0::startup_with_io::<Registers, Delay>>
+ 141a: b002 add sp, #8
+ 141c: bd80 pop {r7, pc}
+00001420 <target_spi0::startup_with_io::<Registers, Delay>>:
+ 1420: 4770 bx lr""",
+    """00001400 <<HardwareIo as StartupIo>::st7565_init>:
+ 1400: e7fe e7fe .word 0xe7fee7fe
+ 1404: b580 push {r7, lr}
+ 1406: af00 add r7, sp, #0
+ 1408: b082 sub sp, #8
+ 140a: f000 f800 bl 1412 <target_spi0::startup_mmio>
+ 140e: b002 add sp, #8
+ 1410: bd80 pop {r7, pc}
+00001412 <target_spi0::startup_mmio>:
+ 1412: b580 push {r7, lr}
+ 1414: af00 add r7, sp, #0
+ 1416: b082 sub sp, #8
+ 1418: f000 f800 bl 1422 <target_spi0::startup_with_io::<Registers, Delay>>
+ 141c: b002 add sp, #8
+ 141e: bd80 pop {r7, pc}
+00001422 <target_spi0::startup_with_io::<Registers, Delay>>:
+ 1422: 4770 bx lr"""
+)
+
+ST7565_MMIO_ENTRY_WORD_LOOP = CONNECTED_DISPATCH.replace(
+    """00001410 <target_spi0::startup_mmio>:
+ 1410: b580 push {r7, lr}
+ 1412: af00 add r7, sp, #0
+ 1414: b082 sub sp, #8
+ 1416: f000 f800 bl 1420 <target_spi0::startup_with_io::<Registers, Delay>>
+ 141a: b002 add sp, #8
+ 141c: bd80 pop {r7, pc}
+00001420 <target_spi0::startup_with_io::<Registers, Delay>>:
+ 1420: 4770 bx lr""",
+    """00001410 <target_spi0::startup_mmio>:
+ 1410: e7fe e7fe .word 0xe7fee7fe
+ 1414: b580 push {r7, lr}
+ 1416: af00 add r7, sp, #0
+ 1418: b082 sub sp, #8
+ 141a: f000 f800 bl 1422 <target_spi0::startup_with_io::<Registers, Delay>>
+ 141e: b002 add sp, #8
+ 1420: bd80 pop {r7, pc}
+00001422 <target_spi0::startup_with_io::<Registers, Delay>>:
+ 1422: 4770 bx lr"""
+)
+
 ST7565_DISPATCH_CASE = """
  100: 9b02 ldr r3, [sp, #8]
  102: 6818 ldr r0, [r3, #0]
@@ -1334,6 +1392,14 @@ class StartupWitnessCheckerTests(unittest.TestCase):
         ) + "\n00000400 <startup_noop>:\n 400: 4770 bx lr\n"
         with self.assertRaisesRegex(WitnessError, "target ST7565 init path does not reach"):
             validate_st7565_executor_path(bypassed)
+
+    def test_rejects_hardware_display_wrapper_entry_word_loop(self):
+        with self.assertRaisesRegex(WitnessError, "no instruction at its symbol entry"):
+            validate_call_path(ST7565_INIT_ENTRY_WORD_LOOP)
+
+    def test_rejects_mmio_display_wrapper_entry_word_loop(self):
+        with self.assertRaisesRegex(WitnessError, "no instruction at its symbol entry"):
+            validate_call_path(ST7565_MMIO_ENTRY_WORD_LOOP)
 
     def test_accepts_immediate_systick_return_at_symbol_entry(self):
         validate_systick_handler(SYSTICK_RETURN, 0x100)
