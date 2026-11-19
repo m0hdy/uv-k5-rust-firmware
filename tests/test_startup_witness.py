@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from check_startup_witness import (  # noqa: E402
     WitnessError,
     reachable_control_flow,
+    validate_backlight_initializer_path,
     validate_call_path,
     validate_systick_handler,
 )
@@ -609,10 +610,57 @@ BACKLIGHT_MISSING_FRESH_READ = CONNECTED_DISPATCH.replace(
     " 8b8: f000 f800 bl 920 <unrelated_read>",
 )
 
+BACKLIGHT_RMW_VALUE_CLOBBER = CONNECTED_DISPATCH.replace(
+    " 8c0: 9804 ldr r0, [sp, #16]",
+    " 8c0: 2200 movs r2, #0",
+)
+
 BACKLIGHT_WRONG_RMW_ORDER = CONNECTED_DISPATCH.replace(
     " 8c2: 430a orrs r2, r1",
     " 8c2: 438a bics r2, r1",
 )
+
+BACKLIGHT_REGISTER_READ_BYPASSES_ACCESS = CONNECTED_DISPATCH.replace(
+    "00000920 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::read>:\n"
+    " 920: 4608 mov r0, r1\n"
+    " 922: f000 f800 bl 950 <backlight_startup_executor::RegisterAddress>::from_register>\n"
+    " 926: f000 f800 bl a00 <backlight_startup_executor::RegisterAddress>::address>\n"
+    " 92a: 6800 ldr r0, [r0, #0]\n"
+    " 92c: bd80 pop {r7, pc}",
+    "00000920 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::read>:\n"
+    " 920: d005 beq.n 92e <read_return>\n"
+    " 922: 4608 mov r0, r1\n"
+    " 924: f000 f800 bl 950 <backlight_startup_executor::RegisterAddress>::from_register>\n"
+    " 928: f000 f800 bl a00 <backlight_startup_executor::RegisterAddress>::address>\n"
+    " 92c: 6800 ldr r0, [r0, #0]\n"
+    " 92e: bd80 pop {r7, pc}",
+)
+
+BACKLIGHT_REGISTER_WRITE_BYPASSES_ACCESS = CONNECTED_DISPATCH.replace(
+    "00000930 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>:\n"
+    " 930: 4608 mov r0, r1\n"
+    " 932: f000 f800 bl 950 <backlight_startup_executor::RegisterAddress>::from_register>\n"
+    " 936: f000 f800 bl a00 <backlight_startup_executor::RegisterAddress>::address>\n"
+    " 93a: 9a01 ldr r2, [sp, #4]\n"
+    " 93c: 6002 str r2, [r0, #0]\n"
+    " 93e: bd80 pop {r7, pc}",
+    "00000930 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>:\n"
+    " 930: d006 beq.n 940 <write_return>\n"
+    " 932: 4608 mov r0, r1\n"
+    " 934: f000 f800 bl 950 <backlight_startup_executor::RegisterAddress>::from_register>\n"
+    " 938: f000 f800 bl a00 <backlight_startup_executor::RegisterAddress>::address>\n"
+    " 93c: 9a01 ldr r2, [sp, #4]\n"
+    " 93e: 6002 str r2, [r0, #0]\n"
+    " 940: bd80 pop {r7, pc}",
+)
+
+BACKLIGHT_INITIALIZER_EARLY_RETURN = """
+00000840 <initialize_backlight_hardware>:
+ 840: 4280 cmp r0, r0
+ 842: d001 beq.n 848 <early_return>
+ 844: f000 f800 bl 846 <backlight_startup_executor::apply_with_io>
+ 848: bd80 pop {r7, pc}
+"""
 
 BACKLIGHT_EXECUTOR_RETURN_AT_854 = CONNECTED_DISPATCH.replace(
     " 854: 9901 ldr r1, [sp, #8]",
@@ -1076,7 +1124,7 @@ class StartupWitnessCheckerTests(unittest.TestCase):
 
     def test_rejects_register_mapping_evidence_after_early_return(self):
         with self.assertRaisesRegex(
-            WitnessError, "backlight register read does not preserve its mapped register"
+            WitnessError, "backlight register read.*instruction continuation"
         ):
             validate_call_path(BACKLIGHT_REGISTER_READ_EARLY_RETURN)
 
@@ -1193,8 +1241,39 @@ class StartupWitnessCheckerTests(unittest.TestCase):
             validate_call_path(BACKLIGHT_MISSING_FRESH_READ)
 
     def test_rejects_wrong_backlight_rmw_order(self):
-        with self.assertRaisesRegex(WitnessError, "ordered fresh RMW register evidence"):
+        with self.assertRaisesRegex(
+            WitnessError, "write case 0 has an unexpected register continuation"
+        ):
             validate_call_path(BACKLIGHT_WRONG_RMW_ORDER)
+
+    def test_rejects_backlight_rmw_value_clobber(self):
+        self.assertIn("8c0: 2200 movs r2, #0", BACKLIGHT_RMW_VALUE_CLOBBER)
+
+        with self.assertRaisesRegex(
+            WitnessError, "write case 0 has an unexpected register continuation"
+        ):
+            validate_call_path(BACKLIGHT_RMW_VALUE_CLOBBER)
+
+    def test_rejects_register_read_bypassing_mapping_and_mmio(self):
+        self.assertIn("920: d005 beq.n 92e", BACKLIGHT_REGISTER_READ_BYPASSES_ACCESS)
+        self.assertIn("92e: bd80 pop {r7, pc}", BACKLIGHT_REGISTER_READ_BYPASSES_ACCESS)
+
+        with self.assertRaisesRegex(WitnessError, "register read.*continuation"):
+            validate_call_path(BACKLIGHT_REGISTER_READ_BYPASSES_ACCESS)
+
+    def test_rejects_register_write_bypassing_mapping_and_mmio(self):
+        self.assertIn("930: d006 beq.n 940", BACKLIGHT_REGISTER_WRITE_BYPASSES_ACCESS)
+        self.assertIn("940: bd80 pop {r7, pc}", BACKLIGHT_REGISTER_WRITE_BYPASSES_ACCESS)
+
+        with self.assertRaisesRegex(WitnessError, "register write.*continuation"):
+            validate_call_path(BACKLIGHT_REGISTER_WRITE_BYPASSES_ACCESS)
+
+    def test_rejects_initializer_returning_before_executor_call(self):
+        self.assertIn("842: d001 beq.n 848", BACKLIGHT_INITIALIZER_EARLY_RETURN)
+        self.assertIn("844: f000 f800 bl 846", BACKLIGHT_INITIALIZER_EARLY_RETURN)
+
+        with self.assertRaisesRegex(WitnessError, "initializer.*continuation"):
+            validate_backlight_initializer_path(BACKLIGHT_INITIALIZER_EARLY_RETURN)
 
     def test_literal_load_accepts_gnu_annotation_styles(self):
         for marker in ("@", ";"):

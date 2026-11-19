@@ -385,6 +385,122 @@ def matches_instruction(
     )
 
 
+def matches_instruction_sequence(
+    instructions: list[tuple[int, int, str, str, str]],
+    expected: list[tuple[str, str, str | None]],
+) -> bool:
+    return len(instructions) == len(expected) and all(
+        matches_instruction(instruction, mnemonic, operands)
+        and (
+            call_symbol is None
+            or any(
+                call_symbol in target
+                for target in direct_call_targets(instruction[4])
+            )
+        )
+        for instruction, (mnemonic, operands, call_symbol) in zip(
+            instructions, expected, strict=True
+        )
+    )
+
+
+def validate_exact_returning_instruction_path(
+    function: str,
+    description: str,
+    *expected_sequences: list[tuple[str, str, str | None]],
+) -> None:
+    path = reachable_instruction_prefix(function)
+    if not any(
+        matches_instruction_sequence(path, expected)
+        for expected in expected_sequences
+    ):
+        raise WitnessError(f"{description} has an unexpected instruction continuation")
+
+
+def validate_backlight_initializer_path(function: str) -> None:
+    validate_exact_returning_instruction_path(
+        function,
+        "backlight hardware initializer",
+        [
+            (
+                "bl",
+                r"\s*[0-9a-fA-F]+\s+<.*>.*",
+                "backlight_startup_executor::apply_with_io",
+            ),
+            ("pop", r"\s*\{\s*r7,\s*pc\s*\}\s*", None),
+        ],
+        [
+            ("push", r"\s*\{\s*r7,\s*lr\s*\}\s*", None),
+            ("add", r"\s*r7,\s*sp,\s*#0\s*", None),
+            ("sub", r"\s*sp,\s*#8\s*", None),
+            ("add", r"\s*r0,\s*sp,\s*#4\s*", None),
+            (
+                "bl",
+                r"\s*[0-9a-fA-F]+\s+<.*>.*",
+                "backlight_startup_executor::apply_with_io",
+            ),
+            ("add", r"\s*sp,\s*#8\s*", None),
+            ("pop", r"\s*\{\s*r7,\s*pc\s*\}\s*", None),
+        ],
+    )
+
+
+def validate_backlight_register_io_path(function: str, method: str) -> None:
+    if method == "read":
+        compact = [
+            ("mov", r"\s*r0,\s*r1\s*", None),
+            (
+                "bl",
+                r"\s*[0-9a-fA-F]+\s+<.*>.*",
+                "RegisterAddress>::from_register",
+            ),
+            (
+                "bl",
+                r"\s*[0-9a-fA-F]+\s+<.*>.*",
+                "RegisterAddress>::address",
+            ),
+            ("ldr", r"\s*r0,\s*\[r0,\s*#0\]\s*", None),
+            ("pop", r"\s*\{\s*r7,\s*pc\s*\}\s*", None),
+        ]
+        emitted = [
+            ("push", r"\s*\{\s*r7,\s*lr\s*\}\s*", None),
+            ("add", r"\s*r7,\s*sp,\s*#0\s*", None),
+            *compact,
+        ]
+    elif method == "write":
+        compact = [
+            ("mov", r"\s*r0,\s*r1\s*", None),
+            (
+                "bl",
+                r"\s*[0-9a-fA-F]+\s+<.*>.*",
+                "RegisterAddress>::from_register",
+            ),
+            (
+                "bl",
+                r"\s*[0-9a-fA-F]+\s+<.*>.*",
+                "RegisterAddress>::address",
+            ),
+            ("ldr", r"\s*r2,\s*\[sp,\s*#4\]\s*", None),
+            ("str", r"\s*r2,\s*\[r0,\s*#0\]\s*", None),
+            ("pop", r"\s*\{\s*r7,\s*pc\s*\}\s*", None),
+        ]
+        emitted = [
+            ("push", r"\s*\{\s*r7,\s*lr\s*\}\s*", None),
+            ("add", r"\s*r7,\s*sp,\s*#0\s*", None),
+            ("sub", r"\s*sp,\s*#8\s*", None),
+            ("str", r"\s*r2,\s*\[sp,\s*#4\]\s*", None),
+            *compact[:-1],
+            ("add", r"\s*sp,\s*#8\s*", None),
+            compact[-1],
+        ]
+    else:
+        raise ValueError(f"unsupported backlight register I/O method: {method}")
+
+    validate_exact_returning_instruction_path(
+        function, f"backlight register {method}", compact, emitted
+    )
+
+
 def validate_stopped_guard(
     prefix: list[tuple[int, int, str, str, str]],
     branch: tuple[int, int, str, str, str],
@@ -825,11 +941,63 @@ def validate_backlight_executor_paths(function: str) -> None:
         ("RegisterIo>::read", "RegisterIo>::write"),
         ("RegisterIo>::write",),
     )
+    expected_case_sequences = (
+        [
+            ("ldr", r"\s*r0,\s*\[sp,\s*#16\]\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#148\]\s*", None),
+            ("str", r"\s*r1,\s*\[sp,\s*#8\]\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#156\]\s*", None),
+            ("bl", r"\s*[0-9a-fA-F]+\s+<.*>.*", "RegisterIo>::read"),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#8\]\s*", None),
+            ("mov", r"\s*r2,\s*r0\s*", None),
+            ("ldr", r"\s*r0,\s*\[sp,\s*#16\]\s*", None),
+            ("orrs", r"\s*r2,\s*r1\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#156\]\s*", None),
+            ("bl", r"\s*[0-9a-fA-F]+\s+<.*>.*", "RegisterIo>::write"),
+            ("b.n", r"\s*[0-9a-fA-F]+\b.*", None),
+        ],
+        [
+            ("ldr", r"\s*r0,\s*\[sp,\s*#16\]\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#148\]\s*", None),
+            ("str", r"\s*r1,\s*\[sp,\s*#4\]\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#156\]\s*", None),
+            ("bl", r"\s*[0-9a-fA-F]+\s+<.*>.*", "RegisterIo>::read"),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#4\]\s*", None),
+            ("mov", r"\s*r2,\s*r0\s*", None),
+            ("ldr", r"\s*r0,\s*\[sp,\s*#16\]\s*", None),
+            ("bics", r"\s*r2,\s*r1\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#156\]\s*", None),
+            ("bl", r"\s*[0-9a-fA-F]+\s+<.*>.*", "RegisterIo>::write"),
+            ("b.n", r"\s*[0-9a-fA-F]+\b.*", None),
+        ],
+        [
+            ("ldr", r"\s*r0,\s*\[sp,\s*#16\]\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#148\]\s*", None),
+            ("str", r"\s*r1,\s*\[sp,\s*#0\]\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#156\]\s*", None),
+            ("bl", r"\s*[0-9a-fA-F]+\s+<.*>.*", "RegisterIo>::read"),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#0\]\s*", None),
+            ("mov", r"\s*r2,\s*r0\s*", None),
+            ("ldr", r"\s*r0,\s*\[sp,\s*#16\]\s*", None),
+            ("orrs", r"\s*r2,\s*r1\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#156\]\s*", None),
+            ("bl", r"\s*[0-9a-fA-F]+\s+<.*>.*", "RegisterIo>::write"),
+            ("b.n", r"\s*[0-9a-fA-F]+\b.*", None),
+        ],
+        [
+            ("ldr", r"\s*r0,\s*\[sp,\s*#16\]\s*", None),
+            ("ldr", r"\s*r2,\s*\[sp,\s*#152\]\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#156\]\s*", None),
+            ("bl", r"\s*[0-9a-fA-F]+\s+<.*>.*", "RegisterIo>::write"),
+            ("b.n", r"\s*[0-9a-fA-F]+\b.*", None),
+        ],
+    )
     case_branches = []
     for variant, (target, expected_calls) in enumerate(
         zip(case_targets, expected_case_calls, strict=True)
     ):
         case_calls = []
+        case_instructions = []
         address = target
         for _ in range(32):
             instruction = by_address.get(address)
@@ -843,6 +1011,7 @@ def validate_backlight_executor_paths(function: str) -> None:
                     raise WitnessError(
                         f"backlight executor write case {variant} does not return to its loop"
                     )
+                case_instructions.append(instruction)
                 break
             if re.fullmatch(
                 r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.(?:n|w))?",
@@ -854,10 +1023,17 @@ def validate_backlight_executor_paths(function: str) -> None:
                     f"backlight executor write case {variant} has an unsupported branch"
                 )
             case_calls.extend(direct_call_targets(instruction[4]))
+            case_instructions.append(instruction)
             address += instruction[1]
         else:
             raise WitnessError(
                 f"backlight executor write case {variant} has no loop continuation"
+            )
+        if not matches_instruction_sequence(
+            case_instructions, expected_case_sequences[variant]
+        ):
+            raise WitnessError(
+                f"backlight executor write case {variant} has an unexpected register continuation"
             )
         observed_calls = [
             "RegisterIo>::read" if "RegisterIo>::read" in target else "RegisterIo>::write"
@@ -1086,14 +1262,7 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
     )
 
     initialize = function_block(disassembly, "initialize_backlight_hardware")
-    if not any(
-        "backlight_startup_executor::apply_with_io" in target
-        for instruction in reachable_control_flow(
-            initialize, "backlight hardware initializer"
-        )
-        for target in direct_call_targets(instruction[4])
-    ):
-        raise WitnessError("backlight hardware initializer does not reach the register executor")
+    validate_backlight_initializer_path(initialize)
 
     plan = function_block(disassembly, "BacklightInitPlan>::from_snapshot")
     plan_instructions, plan_dominators, _ = reachable_control_flow_analysis(
@@ -1351,59 +1520,11 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
         ):
             raise WitnessError("backlight executor returns before the ordered MMIO writes")
 
-    for method, operation in (("read", "ldr"), ("write", "str")):
+    for method in ("read", "write"):
         io_body = function_block(
             disassembly, f"backlight_startup_executor::RegisterIo>::{method}"
         )
-        io_instructions = reachable_control_flow(
-            io_body, f"backlight register {method}"
-        )
-        conversion_call = next(
-            (
-                index
-                for index, instruction in enumerate(io_instructions)
-                if any(
-                    "RegisterAddress>::from_register" in target
-                    for target in direct_call_targets(instruction[4])
-                )
-            ),
-            None,
-        )
-        address_call = next(
-            (
-                index
-                for index, instruction in enumerate(io_instructions)
-                if any(
-                    "RegisterAddress>::address" in target
-                    for target in direct_call_targets(instruction[4])
-                )
-            ),
-            None,
-        )
-        expected_access = (
-            (("ldr", r"\s*r0,\s*\[r0,\s*#0\]\s*"),)
-            if method == "read"
-            else (
-                ("ldr", r"\s*r2,\s*\[sp,\s*#4\]\s*"),
-                ("str", r"\s*r2,\s*\[r0,\s*#0\]\s*"),
-            )
-        )
-        if (
-            conversion_call is None
-            or address_call != conversion_call + 1
-            or conversion_call == 0
-            or not matches_instruction(
-                io_instructions[conversion_call - 1], "mov", r"\s*r0,\s*r1\s*"
-            )
-        ):
-            raise WitnessError(f"backlight register {method} does not preserve its mapped register")
-        access_start = address_call + 1
-        if any(
-            access_start + offset >= len(io_instructions)
-            or not matches_instruction(io_instructions[access_start + offset], mnemonic, operands)
-            for offset, (mnemonic, operands) in enumerate(expected_access)
-        ):
-            raise WitnessError(f"backlight register {method} lacks a volatile word access")
+        validate_backlight_register_io_path(io_body, method)
 
 
 def validate_returning_call_path(
