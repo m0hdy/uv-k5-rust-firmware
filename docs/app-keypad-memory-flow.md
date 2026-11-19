@@ -1,8 +1,9 @@
 # Offline keypad memory-channel flow
 
 [`src/app_keypad_memory_flow.rs`](../src/app_keypad_memory_flow.rs) composes
-the real matrix scan, 10 ms debounce/repeat state, and
-[`app_numeric_input_flow`](../src/app-numeric-input-flow.md). The caller
+[`KeyboardPollFlow`](../src/keyboard_poll_flow.rs) with
+[`app_numeric_input_flow`](../src/app-numeric-input-flow.md). This reuses one
+matrix scan, key mapping, and retained 10 ms debounce/repeat state. The caller
 retains `KeypadMemoryFlow`, supplies a `MatrixIo` implementation and invokes
 `poll` once per 10 ms tick. It also supplies the current memory-mode, F-key,
 selected-VFO, and active-TX-VFO state; the flow owns none of those application

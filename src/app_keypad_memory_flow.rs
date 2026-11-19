@@ -6,15 +6,11 @@
 #[allow(unused_attributes)]
 #[path = "app_numeric_input_flow.rs"]
 mod app_numeric_input_flow;
-#[allow(unused_attributes)]
-#[path = "keyboard_matrix_scan.rs"]
-mod keyboard_matrix_scan;
 
-use app_numeric_input_flow::KeyboardDecisions;
 use app_numeric_input_flow::process_memory_channel_key_event;
-pub use app_numeric_input_flow::{Digit, FlowEffect, Key, KeyEvent, NumericInputBox};
-use keyboard_matrix_scan::Key as MatrixKey;
-pub use keyboard_matrix_scan::MatrixIo;
+pub use app_numeric_input_flow::{
+    Digit, FlowEffect, Key, KeyEvent, KeyboardPollFlow, MatrixIo, NumericInputBox,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MemoryChannelContext {
@@ -35,15 +31,49 @@ pub trait KeypadMemoryEffects {
     fn memory_effect(&mut self, effect: FlowEffect);
 }
 
+struct MemoryFlowAdapter<'a, E, V> {
+    context: MemoryChannelContext,
+    input_box: &'a mut NumericInputBox,
+    effects: &'a mut E,
+    is_valid_channel: V,
+    event: Option<KeyEvent>,
+}
+
+impl<E, V> app_numeric_input_flow::KeypadEffects for MemoryFlowAdapter<'_, E, V>
+where
+    E: KeypadMemoryEffects,
+    V: FnMut(u16) -> bool,
+{
+    fn cancel_boot_counter(&mut self) {
+        self.effects.cancel_boot_counter();
+    }
+
+    fn key_event(&mut self, event: KeyEvent) {
+        self.event = Some(event);
+        if self.context.is_eligible() {
+            let memory_effects = process_memory_channel_key_event(
+                self.input_box,
+                event,
+                self.context.f_key_pressed,
+                self.context.selected_vfo,
+                &mut self.is_valid_channel,
+            );
+            for effect in memory_effects.iter() {
+                self.effects.memory_effect(effect);
+            }
+        }
+    }
+}
+
 pub struct KeypadMemoryFlow {
-    decisions: KeyboardDecisions,
+    keyboard: KeyboardPollFlow,
     input_box: NumericInputBox,
 }
 
 impl KeypadMemoryFlow {
     pub const fn new() -> Self {
         Self {
-            decisions: KeyboardDecisions::new(),
+            keyboard: KeyboardPollFlow::new(),
             input_box: NumericInputBox::new(),
         }
     }
@@ -60,55 +90,20 @@ impl KeypadMemoryFlow {
         effects: &mut impl KeypadMemoryEffects,
         is_valid_channel: impl FnMut(u16) -> bool,
     ) -> Option<KeyEvent> {
-        let matrix_key = keyboard_matrix_scan::poll(io);
-        if matrix_key.is_some() {
-            effects.cancel_boot_counter();
-        }
-
-        let event = self.decisions.sample(matrix_key.map(logical_key));
-        if let Some(event) = event
-            && context.is_eligible()
-        {
-            let memory_effects = process_memory_channel_key_event(
-                &mut self.input_box,
-                event,
-                context.f_key_pressed,
-                context.selected_vfo,
-                is_valid_channel,
-            );
-            for effect in memory_effects.iter() {
-                effects.memory_effect(effect);
-            }
-        }
-        event
+        let mut adapter = MemoryFlowAdapter {
+            context,
+            input_box: &mut self.input_box,
+            effects,
+            is_valid_channel,
+            event: None,
+        };
+        self.keyboard.poll(io, &mut adapter);
+        adapter.event
     }
 }
 
 impl Default for KeypadMemoryFlow {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-fn logical_key(key: MatrixKey) -> Key {
-    match key {
-        MatrixKey::Digit0 => Key::Digit0,
-        MatrixKey::Digit1 => Key::Digit1,
-        MatrixKey::Digit2 => Key::Digit2,
-        MatrixKey::Digit3 => Key::Digit3,
-        MatrixKey::Digit4 => Key::Digit4,
-        MatrixKey::Digit5 => Key::Digit5,
-        MatrixKey::Digit6 => Key::Digit6,
-        MatrixKey::Digit7 => Key::Digit7,
-        MatrixKey::Digit8 => Key::Digit8,
-        MatrixKey::Digit9 => Key::Digit9,
-        MatrixKey::Menu => Key::Menu,
-        MatrixKey::Up => Key::Up,
-        MatrixKey::Down => Key::Down,
-        MatrixKey::Exit => Key::Exit,
-        MatrixKey::Star => Key::Star,
-        MatrixKey::F => Key::F,
-        MatrixKey::Side2 => Key::Side2,
-        MatrixKey::Side1 => Key::Side1,
     }
 }
