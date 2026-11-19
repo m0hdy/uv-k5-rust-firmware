@@ -21,17 +21,22 @@ const ADC_CHANNEL_4_MASK: u32 = 1 << 4;
 const ADC_CHANNEL_9_MASK: u32 = 1 << 9;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Register {
+pub enum ReadRegister {
     Start,
     Channel9Status,
-    InterruptFlags,
     Channel4Data,
     Channel9Data,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WriteRegister {
+    Start,
+    InterruptFlags,
+}
+
 pub trait RegisterIo {
-    fn read(&mut self, register: Register) -> u32;
-    fn write(&mut self, register: Register, value: u32);
+    fn read(&mut self, register: ReadRegister) -> u32;
+    fn write(&mut self, register: WriteRegister, value: u32);
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -49,9 +54,9 @@ fn read_sample(
     io: &mut impl RegisterIo,
     channel_mask: u32,
     interrupt_flag: u32,
-    data: Register,
+    data: ReadRegister,
 ) -> u16 {
-    io.write(Register::InterruptFlags, interrupt_flag);
+    io.write(WriteRegister::InterruptFlags, interrupt_flag);
     let data = io.read(data);
     decode_adc_sample(channel_mask, AdcRegisterSnapshot { status: 0, data }).value
 }
@@ -64,14 +69,14 @@ pub fn acquire_battery_samples(
         return Err(AcquisitionError::PollBudgetExhausted);
     }
 
-    let start = io.read(Register::Start);
+    let start = io.read(ReadRegister::Start);
     io.write(
-        Register::Start,
+        WriteRegister::Start,
         (start & !SARADC_START_START_MASK) | SARADC_START_START_MASK,
     );
 
     let ready = (0..poll_budget).any(|_| {
-        let status = io.read(Register::Channel9Status);
+        let status = io.read(ReadRegister::Channel9Status);
         decode_adc_sample(ADC_CHANNEL_9_MASK, AdcRegisterSnapshot { status, data: 0 })
             .end_of_conversion
     });
@@ -83,13 +88,13 @@ pub fn acquire_battery_samples(
         io,
         ADC_CHANNEL_4_MASK,
         SARADC_IF_CHANNEL_4,
-        Register::Channel4Data,
+        ReadRegister::Channel4Data,
     );
     let current = read_sample(
         io,
         ADC_CHANNEL_9_MASK,
         SARADC_IF_CHANNEL_9,
-        Register::Channel9Data,
+        ReadRegister::Channel9Data,
     );
 
     Ok(BatterySamples { voltage, current })

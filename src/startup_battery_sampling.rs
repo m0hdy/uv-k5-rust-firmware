@@ -8,7 +8,7 @@ mod adc_battery_acquisition;
 use adc_battery_acquisition::acquire_battery_samples;
 pub use adc_battery_acquisition::adc_samples::CalibrationError;
 use adc_battery_acquisition::adc_samples::calibrated_battery_voltage;
-pub use adc_battery_acquisition::{AcquisitionError, Register, RegisterIo};
+pub use adc_battery_acquisition::{AcquisitionError, ReadRegister, RegisterIo, WriteRegister};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StartupBatteryReadings {

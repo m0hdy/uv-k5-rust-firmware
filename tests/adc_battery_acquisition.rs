@@ -2,42 +2,42 @@
 mod adc_battery_acquisition;
 
 use adc_battery_acquisition::{
-    AcquisitionError, BatterySamples, Register, RegisterIo, acquire_battery_samples,
+    AcquisitionError, BatterySamples, ReadRegister, RegisterIo, WriteRegister,
+    acquire_battery_samples,
 };
 use std::collections::VecDeque;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Event {
-    Read(Register, u32),
-    Write(Register, u32),
+    Read(ReadRegister, u32),
+    Write(WriteRegister, u32),
 }
 
 struct FakeRegisterIo {
-    scripted_reads: [VecDeque<u32>; 5],
+    scripted_reads: [VecDeque<u32>; 4],
     events: Vec<Event>,
 }
 
 impl FakeRegisterIo {
-    fn new(scripted_reads: [VecDeque<u32>; 5]) -> Self {
+    fn new(scripted_reads: [VecDeque<u32>; 4]) -> Self {
         Self {
             scripted_reads,
             events: Vec::new(),
         }
     }
 
-    fn index(register: Register) -> usize {
+    fn index(register: ReadRegister) -> usize {
         match register {
-            Register::Start => 0,
-            Register::Channel9Status => 1,
-            Register::InterruptFlags => 2,
-            Register::Channel4Data => 3,
-            Register::Channel9Data => 4,
+            ReadRegister::Start => 0,
+            ReadRegister::Channel9Status => 1,
+            ReadRegister::Channel4Data => 2,
+            ReadRegister::Channel9Data => 3,
         }
     }
 }
 
 impl RegisterIo for FakeRegisterIo {
-    fn read(&mut self, register: Register) -> u32 {
+    fn read(&mut self, register: ReadRegister) -> u32 {
         let value = self.scripted_reads[Self::index(register)]
             .pop_front()
             .expect("unexpected read");
@@ -45,12 +45,12 @@ impl RegisterIo for FakeRegisterIo {
         value
     }
 
-    fn write(&mut self, register: Register, value: u32) {
+    fn write(&mut self, register: WriteRegister, value: u32) {
         self.events.push(Event::Write(register, value));
     }
 }
 
-fn empty_reads() -> [VecDeque<u32>; 5] {
+fn empty_reads() -> [VecDeque<u32>; 4] {
     core::array::from_fn(|_| VecDeque::new())
 }
 
@@ -70,8 +70,8 @@ fn first_ready_poll_acknowledges_channels_before_data_and_returns_voltage_then_c
     let mut reads = empty_reads();
     reads[0] = VecDeque::from([0xa5a5_5aae]);
     reads[1] = VecDeque::from([0xdead_beef]);
-    reads[3] = VecDeque::from([0xdead_beef]);
-    reads[4] = VecDeque::from([0x1234_5678]);
+    reads[2] = VecDeque::from([0xdead_beef]);
+    reads[3] = VecDeque::from([0x1234_5678]);
     let mut io = FakeRegisterIo::new(reads);
 
     assert_eq!(
@@ -84,13 +84,13 @@ fn first_ready_poll_acknowledges_channels_before_data_and_returns_voltage_then_c
     assert_eq!(
         io.events,
         vec![
-            Event::Read(Register::Start, 0xa5a5_5aae),
-            Event::Write(Register::Start, 0xa5a5_5aaf),
-            Event::Read(Register::Channel9Status, 0xdead_beef),
-            Event::Write(Register::InterruptFlags, 1 << 4),
-            Event::Read(Register::Channel4Data, 0xdead_beef),
-            Event::Write(Register::InterruptFlags, 1 << 9),
-            Event::Read(Register::Channel9Data, 0x1234_5678),
+            Event::Read(ReadRegister::Start, 0xa5a5_5aae),
+            Event::Write(WriteRegister::Start, 0xa5a5_5aaf),
+            Event::Read(ReadRegister::Channel9Status, 0xdead_beef),
+            Event::Write(WriteRegister::InterruptFlags, 1 << 4),
+            Event::Read(ReadRegister::Channel4Data, 0xdead_beef),
+            Event::Write(WriteRegister::InterruptFlags, 1 << 9),
+            Event::Read(ReadRegister::Channel9Data, 0x1234_5678),
         ]
     );
 }
@@ -100,8 +100,8 @@ fn readiness_on_final_allowed_poll_is_accepted() {
     let mut reads = empty_reads();
     reads[0] = VecDeque::from([0]);
     reads[1] = VecDeque::from([0, 0, 1]);
-    reads[3] = VecDeque::from([0xabc]);
-    reads[4] = VecDeque::from([0xdef]);
+    reads[2] = VecDeque::from([0xabc]);
+    reads[3] = VecDeque::from([0xdef]);
     let mut io = FakeRegisterIo::new(reads);
 
     assert_eq!(
@@ -114,7 +114,7 @@ fn readiness_on_final_allowed_poll_is_accepted() {
     assert_eq!(
         io.events
             .iter()
-            .filter(|event| matches!(event, Event::Read(Register::Channel9Status, _)))
+            .filter(|event| matches!(event, Event::Read(ReadRegister::Channel9Status, _)))
             .count(),
         3
     );
@@ -134,10 +134,10 @@ fn exhausted_poll_budget_does_not_acknowledge_channels_or_read_data() {
     assert_eq!(
         io.events,
         vec![
-            Event::Read(Register::Start, 0x8000_0000),
-            Event::Write(Register::Start, 0x8000_0001),
-            Event::Read(Register::Channel9Status, 0),
-            Event::Read(Register::Channel9Status, 0),
+            Event::Read(ReadRegister::Start, 0x8000_0000),
+            Event::Write(WriteRegister::Start, 0x8000_0001),
+            Event::Read(ReadRegister::Channel9Status, 0),
+            Event::Read(ReadRegister::Channel9Status, 0),
         ]
     );
 }
