@@ -42,9 +42,27 @@ components, and target from `rust-toolchain.toml`; Cargo commands use the
 tracked lockfile. Host checks exercise startup-layout and ELF/raw-payload
 memory-budget fixtures with positive and negative cases. The target job checks
 the built ELF and linker map, records their SHA-256 hashes in the workflow
-summary, and attaches only those files as the `cortex-m0-target-report`
-artifact. CI does not generate or upload raw or packed images. The bootstrap
-has not been validated on hardware and must not be treated as flashable.
+summary, and always attaches those diagnostics after a successful link. The
+separate development-image artifact is uploaded only after the startup-layout,
+memory-budget, and packed-container checks pass. The raw and packed files are
+unvalidated development outputs: the bootstrap is not hardware-validated and
+must not be treated as flashable or release-ready. The isolated negative job
+adds one byte to a disposable raw payload, requires the memory gate to reject it,
+and keeps its ELF/map diagnostics without uploading raw or packed output.
+
+```mermaid
+flowchart LR
+  A[Build ELF and linker map] --> B[Generate raw with objcopy]
+  B --> C[Pack raw container]
+  C --> D[Startup layout check]
+  D --> E[Memory budget and ELF/raw check]
+  E --> F[Container CRC/version and round-trip check]
+  F --> G[Upload unvalidated development image]
+  A --> H[Retain ELF/map diagnostics after link]
+  I[Disposable negative build] --> J[Append one byte to raw]
+  J --> K[Gate rejects raw span]
+  K --> L[Retain ELF/map diagnostics only]
+```
 
 For local offline inspection of a candidate raw payload, create it from the
 linked ELF and run the memory gate:

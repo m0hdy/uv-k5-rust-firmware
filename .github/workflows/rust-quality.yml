@@ -114,6 +114,10 @@ jobs:
               command.extend(["--target", target])
           subprocess.run(command, check=True)
           PY
+      - name: Install ARM binutils for development image
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binutils-arm-none-eabi
       - name: Build Cortex-M0 release and link map
         id: target-build
         run: >-
@@ -121,11 +125,36 @@ jobs:
           --bin uv-k5-rust-firmware --
           -D warnings
           -C link-arg=-Map=target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
-      - name: Validate startup ELF and linker map
+      - name: Generate and validate development image
+        id: image-gate
         run: |
-          python3 scripts/check_startup_layout.py \
-            --elf target/thumbv6m-none-eabi/release/uv-k5-rust-firmware \
-            --map target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
+          set -o pipefail
+          output=target/thumbv6m-none-eabi/release
+          elf="$output/uv-k5-rust-firmware"
+          raw="$output/uv-k5-rust-firmware.raw"
+          packed="$output/uv-k5-rust-firmware.packed"
+          report="$output/image-budget-report.txt"
+          arm-none-eabi-objcopy -O binary "$elf" "$raw"
+          python3 scripts/firmware_container.py pack "$raw" "$packed" \
+            --author UV-K5 --version dev
+          python3 scripts/check_firmware_image.py \
+            --elf "$elf" \
+            --map "$elf.map" \
+            --raw "$raw" \
+            --packed "$packed" \
+            --author UV-K5 \
+            --version dev 2>&1 | tee "$report"
+      - name: Record development image publication evidence
+        if: steps.image-gate.outcome == 'success'
+        run: |
+          {
+            echo '### Development image gate'
+            echo '- Gate result: passed startup, memory-budget, and container checks.'
+            echo '- Artifact: `unvalidated-development-image` (development output only; not hardware validated or release-ready).'
+            sha256sum \
+              target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.raw \
+              target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.packed
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Record target report hashes
         if: always() && steps.target-build.outcome == 'success'
         run: |
@@ -143,6 +172,19 @@ jobs:
           path: |
             target/thumbv6m-none-eabi/release/uv-k5-rust-firmware
             target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
+            target/thumbv6m-none-eabi/release/image-budget-report.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Attach gate-passing development image
+        if: steps.image-gate.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unvalidated-development-image
+          path: |
+            target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.raw
+            target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.packed
+            target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
+            target/thumbv6m-none-eabi/release/image-budget-report.txt
           if-no-files-found: error
           retention-days: 14
       - name: Inject a target compile error
@@ -155,3 +197,107 @@ jobs:
       - name: Build Cortex-M0 release (expected to fail)
         if: github.event_name == 'workflow_dispatch' && inputs.failure_probe == 'target-build'
         run: cargo build --locked --target thumbv6m-none-eabi --release
+
+  image-gate-negative:
+    name: Reject invalid development image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          import tomllib
+
+          with open("rust-toolchain.toml", "rb") as toolchain_file:
+              toolchain = tomllib.load(toolchain_file)["toolchain"]
+
+          command = [
+              "rustup",
+              "toolchain",
+              "install",
+              toolchain["channel"],
+              "--profile",
+              toolchain["profile"],
+          ]
+          for component in toolchain.get("components", []):
+              command.extend(["--component", component])
+          for target in toolchain.get("targets", []):
+              command.extend(["--target", target])
+          subprocess.run(command, check=True)
+          PY
+      - name: Install ARM binutils for image fixtures
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binutils-arm-none-eabi
+      - name: Build disposable Cortex-M0 ELF and map
+        id: target-build
+        run: >-
+          cargo rustc --locked --target thumbv6m-none-eabi --release
+          --bin uv-k5-rust-firmware --
+          -D warnings
+          -C link-arg=-Map=target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
+      - name: Generate disposable raw and packed images
+        run: |
+          output=target/thumbv6m-none-eabi/release
+          elf="$output/uv-k5-rust-firmware"
+          arm-none-eabi-objcopy -O binary \
+            "$elf" "$output/uv-k5-rust-firmware.raw"
+          python3 scripts/firmware_container.py pack \
+            "$output/uv-k5-rust-firmware.raw" \
+            "$output/uv-k5-rust-firmware.packed" \
+            --author UV-K5 --version dev
+          python3 -c \
+            "from pathlib import Path; p = Path('$output/uv-k5-rust-firmware.raw'); p.write_bytes(p.read_bytes() + b'\\x00')"
+      - name: Gate deliberately oversized raw image
+        id: invalid-gate
+        continue-on-error: true
+        run: |
+          output=target/thumbv6m-none-eabi/release
+          set -o pipefail
+          python3 scripts/check_firmware_image.py \
+            --elf "$output/uv-k5-rust-firmware" \
+            --map "$output/uv-k5-rust-firmware.map" \
+            --raw "$output/uv-k5-rust-firmware.raw" \
+            --packed "$output/uv-k5-rust-firmware.packed" \
+            --author UV-K5 \
+            --version dev 2>&1 | tee "$output/negative-image-gate-report.txt"
+      - name: Require clear rejection of invalid raw payload
+        if: always() && steps.target-build.outcome == 'success'
+        run: |
+          report=target/thumbv6m-none-eabi/release/negative-image-gate-report.txt
+          test "${{ steps.invalid-gate.outcome }}" = failure
+          grep -Fq 'raw payload span is' "$report"
+          echo 'Expected rejection confirmed: raw payload span does not match the ELF load span.'
+          {
+            echo '### Negative development image gate'
+            echo '- Deliberately oversized raw payload: rejected by the memory gate.'
+            echo '- Diagnostic artifact: `image-gate-negative-diagnostics` (ELF/map and gate report).'
+            echo '- `unvalidated-development-image-negative`: not uploaded; its upload step is skipped after gate failure.'
+            echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Attach negative-case ELF/map diagnostics
+        if: always() && steps.target-build.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-gate-negative-diagnostics
+          path: |
+            target/thumbv6m-none-eabi/release/uv-k5-rust-firmware
+            target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
+            target/thumbv6m-none-eabi/release/negative-image-gate-report.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Invalid image upload guard (must remain skipped)
+        if: steps.invalid-gate.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unvalidated-development-image-negative
+          path: |
+            target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.raw
+            target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.packed
+          if-no-files-found: error
+          retention-days: 14

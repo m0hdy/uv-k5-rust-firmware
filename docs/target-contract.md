@@ -228,30 +228,32 @@ For the same real-image regression CI runs, install GNU ARM binutils
 `ARM_BINUTILS_PREFIX=arm-none-eabi-`. The test assembles and links a disposable
 Cortex-M0 ELF, then generates and checks its raw image using ARM objcopy.
 
-For a candidate application image, create the raw payload from its ELF and run
-the checker before any flashable artifact is uploaded or published:
+For the CI development-image pipeline, create the raw payload from its ELF,
+pack that same raw file, and run all checks before uploading raw or packed
+outputs:
 
 ```sh
 arm-none-eabi-objcopy -O binary firmware.elf firmware.bin
-python3 scripts/check_memory_budget.py \
+python3 scripts/firmware_container.py pack firmware.bin firmware.packed \
+  --author UV-K5 --version dev
+python3 scripts/check_firmware_image.py \
   --elf firmware.elf \
+  --map firmware.map \
   --raw firmware.bin \
-  --stack-reservation 0x800 \
-  --packed firmware.packed.bin
+  --packed firmware.packed \
+  --author UV-K5 \
+  --version dev
 ```
 
-Omit `--packed` if no packed container exists. The checker rejects malformed
-or truncated ELF input, missing flash load content, invalid raw-image origin,
-span or bytes, out-of-region or overlapping load/runtime ranges, XIP
-VMA/LMA disagreement, stack overlap, and either raw-flash or RAM-plus-stack
-overflow. Its report includes loadable segment ranges and used/remaining flash
-and RAM. CI runs the fixture suite; the current target build remains a
-non-flashable bootstrap and does not generate a raw payload. The image gate is
-exercised by the host fixtures and can be run against any explicitly generated
-ELF/raw pair. Any future flashable publishing job must gate the exact ELF/raw
-pair successfully before its flashable artifact-upload or release step. The
-current target report upload retains the ELF and map after a successful build,
-including when startup-layout validation fails.
+The image gate checks startup layout, the exact ELF/raw load bytes and memory
+budgets, then the packed container's CRC/version and equality with the raw
+payload. The budget report includes loadable segment ranges and used/remaining
+flash and RAM. CI retains the ELF/map diagnostics after a successful link even
+when validation fails, and only uploads raw/packed development outputs when all
+checks pass. A separate disposable CI job appends one byte to the raw image and
+requires the gate to reject it before any raw/packed upload. These outputs are
+unvalidated development artifacts; the current target is not hardware-validated
+and is not a flashable or release image.
 
 Sources: [linker memory regions and data load/run placement](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/firmware.ld#L1-L12), [`.data`/`.bss` placement](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/firmware.ld#L34-L68), [raw image writer invocation](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/Makefile#L432-L436).
 
