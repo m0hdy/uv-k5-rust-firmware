@@ -100,6 +100,22 @@ fn falls_back_at_the_first_invalid_value_for_each_field() {
             },
         ),
         (
+            "backlight min greater than decoded max below the clamp",
+            [0x54, 0, 0, 0, 0, 0, 0, 0],
+            DisplayBootDefaults {
+                backlight_max: 4,
+                ..DEFAULTS_WITH_FEATURE
+            },
+        ),
+        (
+            "backlight min equal to decoded max below the clamp",
+            [0x44, 0, 0, 0, 0, 0, 0, 0],
+            DisplayBootDefaults {
+                backlight_max: 4,
+                ..DEFAULTS_WITH_FEATURE
+            },
+        ),
+        (
             "channel display mode",
             [0, 4, 0, 0, 0, 0, 0, 0],
             DEFAULTS_WITH_FEATURE,
