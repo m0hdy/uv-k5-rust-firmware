@@ -66,6 +66,46 @@ pub fn welcome_with_version_and_io<T: I2cTransport, I: RegisterIo, D: DelayMs + 
         .map_err(EepromWelcomeError::Welcome)
 }
 
+/// Acquires the mode and displays the package version on an initialized display.
+///
+/// Acquisition, including STOP, precedes any display access or page mutation.
+pub fn welcome_on_initialized_display_with_io<T: I2cTransport, I: RegisterIo>(
+    transport: &mut T,
+    io: &mut I,
+    pages: &mut [[u8; LCD_WIDTH]],
+    fifo_poll_limit: NonZeroU32,
+) -> Result<(), EepromWelcomeError<T::Error>> {
+    welcome_on_initialized_display_with_version_and_io(
+        transport,
+        io,
+        Some(env!("CARGO_PKG_VERSION")),
+        pages,
+        fifo_poll_limit,
+    )
+}
+
+/// As [`welcome_on_initialized_display_with_io`], with an explicit version.
+///
+/// The controller must already be initialized. After acquisition, rendering and
+/// transfer have the semantics of the corresponding `welcome_startup` entry.
+pub fn welcome_on_initialized_display_with_version_and_io<T: I2cTransport, I: RegisterIo>(
+    transport: &mut T,
+    io: &mut I,
+    version: Option<&str>,
+    pages: &mut [[u8; LCD_WIDTH]],
+    fifo_poll_limit: NonZeroU32,
+) -> Result<(), EepromWelcomeError<T::Error>> {
+    let mode = acquire_mode(transport).map_err(EepromWelcomeError::Acquisition)?;
+    welcome_startup::welcome_on_initialized_display_with_version_and_io(
+        io,
+        mode,
+        version,
+        pages,
+        fifo_poll_limit,
+    )
+    .map_err(EepromWelcomeError::Welcome)
+}
+
 /// Uses the existing GPIO-bitbang EEPROM backend and volatile welcome entry.
 ///
 /// The bus is stopped and handed back to the keypad before display startup,
@@ -100,5 +140,38 @@ pub unsafe fn welcome_mmio<D: crate::i2c_bitbang_flow::target_gpio::Delay1us>(
     let mode = mode.map_err(EepromWelcomeError::Acquisition)?;
     // SAFETY: the caller retains exclusive configured display ownership.
     unsafe { welcome_startup::welcome_mmio(display_delay, mode, pages, fifo_poll_limit) }
+        .map_err(EepromWelcomeError::Welcome)
+}
+
+/// Acquires the EEPROM mode and continues on an already-initialized display.
+///
+/// GPIO is handed back to the keypad on acquisition success or error.
+///
+/// # Safety
+///
+/// Controller initialization must already have succeeded. The caller must
+/// satisfy all mapping, clock, pin, timing and whole-register ownership
+/// requirements of [`crate::i2c_bitbang_flow::target_gpio::GpioI2cIo::new_target`]
+/// and [`welcome_startup::welcome_on_initialized_display_mmio`], including
+/// serialization against all writers through GPIO handoff and drop. The delay
+/// must not panic or access shared registers. Polling is bounded.
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+pub unsafe fn welcome_on_initialized_display_mmio<
+    D: crate::i2c_bitbang_flow::target_gpio::Delay1us,
+>(
+    i2c_delay: D,
+    pages: &mut [[u8; LCD_WIDTH]],
+    fifo_poll_limit: NonZeroU32,
+) -> Result<(), EepromWelcomeError<core::convert::Infallible>> {
+    use crate::eeprom_i2c_bridge::I2cBitbangTransport;
+    use crate::i2c_bitbang_flow::target_gpio::GpioI2cIo;
+
+    // SAFETY: the caller guarantees GPIO mapping, board setup and serialization.
+    let mut gpio = unsafe { GpioI2cIo::new_target(i2c_delay) };
+    let mode = acquire_mode(&mut I2cBitbangTransport::new(&mut gpio));
+    gpio.handoff_to_keypad();
+    let mode = mode.map_err(EepromWelcomeError::Acquisition)?;
+    // SAFETY: the caller guarantees initialized, exclusively owned display hardware.
+    unsafe { welcome_startup::welcome_on_initialized_display_mmio(mode, pages, fifo_poll_limit) }
         .map_err(EepromWelcomeError::Welcome)
 }
