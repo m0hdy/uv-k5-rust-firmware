@@ -154,7 +154,11 @@ def reachable_instruction_prefix(function: str) -> list[tuple[int, int, str, str
 
 def reachable_control_flow_analysis(
     function: str, description: str
-) -> tuple[list[tuple[int, int, str, str, str]], dict[int, set[int]]]:
+) -> tuple[
+    list[tuple[int, int, str, str, str]],
+    dict[int, set[int]],
+    dict[int, set[int]],
+]:
     instructions = parse_instructions(function)
     if not instructions:
         raise WitnessError(f"{description} has no reachable instructions")
@@ -293,6 +297,7 @@ def reachable_control_flow_analysis(
     return (
         [instruction for instruction in instructions if instruction[0] in reachable],
         dominators,
+        predecessors,
     )
 
 
@@ -724,7 +729,7 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
         raise WitnessError("backlight hardware initializer does not reach the register executor")
 
     plan = function_block(disassembly, "BacklightInitPlan>::from_snapshot")
-    plan_instructions, plan_dominators = reachable_control_flow_analysis(
+    plan_instructions, plan_dominators, _ = reachable_control_flow_analysis(
         plan, "backlight initialization plan"
     )
     expected_plan_operations = (
@@ -768,7 +773,7 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
         raise WitnessError("backlight plan assignments do not match the pinned register sequence")
 
     apply = function_block(disassembly, "backlight_startup_executor::apply_with_io")
-    instructions, apply_dominators = reachable_control_flow_analysis(
+    instructions, apply_dominators, apply_predecessors = reachable_control_flow_analysis(
         apply, "backlight executor"
     )
     apply_calls = [
@@ -789,9 +794,32 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
     ):
         raise WitnessError("backlight executor does not apply the ordered initialization plan")
     writes = function_block(disassembly, "BacklightInitPlan>::writes")
-    if not any(
-        matches_instruction(instruction, "movs", r"\s*r1,\s*#6\s*")
-        for instruction in reachable_control_flow(writes, "backlight initialization writes")
+    writes_instructions = reachable_control_flow(
+        writes, "backlight initialization writes"
+    )
+    write_count = next(
+        (
+            instruction
+            for instruction in writes_instructions
+            if matches_instruction(instruction, "movs", r"\s*r1,\s*#6\s*")
+        ),
+        None,
+    )
+    iterator_call = next(
+        (
+            instruction
+            for instruction in writes_instructions
+            if any(
+                "BacklightWrite>::iter" in target
+                for target in direct_call_targets(instruction[4])
+            )
+        ),
+        None,
+    )
+    if (
+        write_count is None
+        or iterator_call is None
+        or write_count[0] + write_count[1] != iterator_call[0]
     ):
         raise WitnessError("backlight initialization plan does not contain six ordered writes")
 
@@ -813,20 +841,6 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
         for instruction, _ in register_calls
     ):
         raise WitnessError("backlight executor does not apply the ordered initialization plan")
-    if any(
-        plan_calls[1] not in apply_dominators[instruction[0]]
-        for instruction in instructions
-        if (
-            instruction[2] == "bx"
-            and re.fullmatch(r"\s*lr\s*", instruction[3])
-        )
-        or (
-            (instruction[2] == "pop" or instruction[2].startswith("ldm"))
-            and re.search(r"\bpc\b", instruction[3])
-        )
-    ):
-        raise WitnessError("backlight executor does not apply the ordered initialization plan")
-
     instruction_indexes = {instruction[0]: index for index, instruction in enumerate(instructions)}
     for pair, operation in zip(
         (register_calls[0:2], register_calls[2:4], register_calls[4:6]),
@@ -866,6 +880,106 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
             )
         ):
             raise WitnessError("backlight executor is missing ordered fresh RMW register evidence")
+
+    return_instructions = [
+        instruction
+        for instruction in instructions
+        if (
+            instruction[2] == "bx"
+            and re.fullmatch(r"\s*lr\s*", instruction[3])
+        )
+        or (
+            (instruction[2] == "pop" or instruction[2].startswith("ldm"))
+            and re.search(r"\bpc\b", instruction[3])
+        )
+    ]
+    final_write = register_calls[-1][0][0]
+    if not all(
+        final_write in apply_dominators[instruction[0]]
+        for instruction in return_instructions
+    ):
+        instruction_by_address = {instruction[0]: instruction for instruction in instructions}
+        if len(return_instructions) != 1 or return_instructions[0][2] != "pop":
+            raise WitnessError("backlight executor returns before the ordered MMIO writes")
+
+        return_instruction = return_instructions[0]
+        epilogue = instruction_by_address.get(return_instruction[0] - 2)
+        exit_branches = [
+            instruction
+            for instruction in instructions
+            if instruction[2].startswith("b")
+            and branch_target(instruction) == (epilogue[0] if epilogue else None)
+        ]
+        if not (
+            epilogue is not None
+            and epilogue[2] == "add"
+            and re.fullmatch(r"\s*sp,\s*#\d+\s*", epilogue[3])
+            and len(exit_branches) == 1
+            and exit_branches[0][2] == "beq.n"
+            and apply_predecessors.get(epilogue[0]) == {exit_branches[0][0]}
+        ):
+            raise WitnessError("backlight executor returns before the ordered MMIO writes")
+
+        exit_branch = exit_branches[0]
+        comparison = instruction_by_address.get(exit_branch[0] - 2)
+        increment = instruction_by_address.get(exit_branch[0] - 4)
+        option = instruction_by_address.get(exit_branch[0] - 6)
+        next_call = instruction_by_address.get(exit_branch[0] - 10)
+        if not (
+            comparison is not None
+            and matches_instruction(comparison, "cmp", r"\s*r0,\s*#0\s*")
+            and increment is not None
+            and matches_instruction(increment, "adds", r"\s*r0,\s*r0,\s*#1\s*")
+            and option is not None
+            and matches_instruction(option, "ldr", r"\s*r0,\s*\[sp,\s*#\d+\]\s*")
+            and next_call is not None
+            and next_call[0] + next_call[1] == option[0]
+            and any(
+                "Iterator>::next" in target
+                for target in direct_call_targets(next_call[4])
+            )
+        ):
+            raise WitnessError("backlight executor returns before the ordered MMIO writes")
+
+        dispatches = [
+            instruction
+            for instruction in instructions
+            if instruction[2] == "mov"
+            and re.fullmatch(r"\s*pc,\s*r0\s*", instruction[3])
+        ]
+        write_sites = {
+            instruction[0]
+            for instruction, target in register_calls
+            if "RegisterIo>::write" in target
+        }
+        by_following_address = {
+            instruction[0] + instruction[1]: instruction for instruction in instructions
+        }
+        back_edges = [
+            (instruction, by_following_address.get(instruction[0]))
+            for instruction in instructions
+            if instruction[2] in ("b", "b.n", "b.w")
+            and (target := branch_target(instruction)) is not None
+            and target < instruction[0]
+        ]
+        if (
+            len(dispatches) != 1
+            or len(back_edges) != len(write_sites)
+            or {previous[0] for _, previous in back_edges if previous is not None}
+            != write_sites
+            or len({branch_target(branch) for branch, _ in back_edges}) != 1
+            or any(
+                previous is None
+                or not any(
+                    "RegisterIo>::write" in target
+                    for target in direct_call_targets(previous[4])
+                )
+                or dispatches[0][0] not in apply_dominators[previous[0]]
+                for _, previous in back_edges
+            )
+            or exit_branch[0] + exit_branch[1] not in apply_dominators[dispatches[0][0]]
+        ):
+            raise WitnessError("backlight executor returns before the ordered MMIO writes")
 
     for method, operation in (("read", "ldr"), ("write", "str")):
         io_body = function_block(
