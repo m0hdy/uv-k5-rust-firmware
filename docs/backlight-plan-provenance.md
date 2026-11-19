@@ -14,7 +14,7 @@ generator and configuration bits follow
 
 `BacklightInitPlan::from_snapshot` takes the initial PWM_PLUS0 clock-source
 register and PORTB SEL0 value and records the post-operation value for each
-source write. The integer source expression is
+source write as an offline prediction. The integer source expression is
 `(48_000_000 / 1024 / 1000) << 16`, so the OR operand is `0x002e0000`.
 This preserves the C integer divisions and clock-register OR; it does not
 derive a PWM frequency from the stale nearby comment or establish physical
@@ -34,6 +34,14 @@ register values affected by the initial snapshot are calculated from that
 snapshot; fixed assignments are recorded literally. The trace is fixed-size
 and allocation-free and performs no MMIO.
 
+`src/backlight_startup_executor.rs` applies the same ordered operations
+through typed `RegisterIo`. It uses the plan only for operation order,
+registers, operands, and assignment values: each OR, clear, and set reads the
+register immediately before its write. In particular, the B6 set performs a
+second PORTB SEL0 read after the clear write. Assignments issue no reads. The
+executor is isolated and mockable; it is not connected to target MMIO or
+firmware startup.
+
 `brightness_compare_value` models `(1 << brightness) - 1` for the supported
 settings range 0–10, returning compare values 0 through 1023. Values outside
 that range return `BrightnessOutOfRange` before any shift is evaluated, rather
@@ -49,13 +57,20 @@ Focused checks from the repository root:
 
 ```sh
 cargo test --locked --test backlight_plan
+cargo test --locked --test backlight_startup_executor
 cargo clippy --locked --test backlight_plan -- -D warnings
-rustfmt --check --edition 2024 src/backlight_plan.rs tests/backlight_plan.rs
+cargo clippy --locked --test backlight_startup_executor -- -D warnings
+rustfmt --check --edition 2024 src/backlight_plan.rs src/backlight_startup_executor.rs \
+  tests/backlight_plan.rs tests/backlight_startup_executor.rs
 rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
   -D warnings src/backlight_plan.rs -o /tmp/backlight_plan.rlib
+rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
+  -D warnings src/backlight_startup_executor.rs -o /tmp/backlight_startup_executor.rlib
 ```
 
 The host tests check exact ordered operations and values across distinct clock
-and mux snapshots, plus every supported brightness value and out-of-range
-inputs. Standalone Cortex-M0 compilation verifies that the plan needs neither
-`std` nor an allocator; it does not link the module into firmware startup.
+and mux snapshots, the live executor's chronological reads and writes
+(including changing PORTB values), assignments without reads, and every
+supported brightness value and out-of-range input. Standalone Cortex-M0
+compilation verifies that both modules need neither `std` nor an allocator;
+it does not link the executor into firmware startup.
