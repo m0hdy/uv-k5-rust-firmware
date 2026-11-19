@@ -2,20 +2,44 @@
 #![no_main]
 
 use core::{arch::global_asm, panic::PanicInfo};
+use core::num::NonZeroU32;
 
+#[path = "../../src/st7565_display.rs"]
+#[allow(dead_code, unused_attributes, unused_imports)]
+mod st7565_display;
+#[path = "../../src/st7565_line_transport.rs"]
+#[allow(dead_code, unused_attributes, unused_imports)]
+mod st7565_line_transport;
+#[path = "../../src/st7565_mmio_transport.rs"]
+#[allow(dead_code, unused_attributes, unused_imports)]
+mod st7565_mmio_transport;
+#[path = "../../src/st7565_startup.rs"]
+#[allow(dead_code, unused_attributes, unused_imports)]
+mod st7565_startup;
+#[path = "../../src/st7565_startup_executor.rs"]
+#[allow(dead_code, unused_attributes, unused_imports)]
+mod st7565_startup_executor;
 #[path = "../../src/board_startup_adapters.rs"]
 #[allow(unused_attributes)]
 mod board_startup_adapters;
 
 use board_startup_adapters::{Defines, run_hardware};
+use st7565_startup_executor::target_spi0::DelayMs;
 
 global_asm!(include_str!("startup.S"));
 
 // Link-only forwarding input; this is not a production trigger selection.
 const LINK_ONLY_EXTTRIG_SEL: u16 = 0x5aa5;
 
+struct LinkOnlyDelay;
+
+impl DelayMs for LinkOnlyDelay {
+    fn delay_ms(&mut self, _milliseconds: u16) {}
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn witness_main() -> ! {
+    let mut delay = LinkOnlyDelay;
     // SAFETY: The link-only witness is not configured for hardware execution.
     let _ = unsafe {
         run_hardware(
@@ -26,6 +50,8 @@ pub extern "C" fn witness_main() -> ! {
             },
             false,
             LINK_ONLY_EXTTRIG_SEL,
+            &mut delay,
+            NonZeroU32::MIN,
         )
     };
     loop {

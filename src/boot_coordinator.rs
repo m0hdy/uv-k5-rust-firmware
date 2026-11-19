@@ -14,9 +14,11 @@ pub use crate::settings_boot_composition::{
     Acknowledgement, I2cTransport, ReadError, ReadPlan, SettingsBoot, SettingsBootBlock,
     SettingsBootReadError,
 };
+use crate::st7565_startup_executor::target_spi0::DelayMs;
 pub use board_startup_adapters::{
     Call as BoardCall, Defines as BoardDefines, StartupError as BoardStartupError, StartupIo,
 };
+use core::num::NonZeroU32;
 use startup_battery_sampling::sample_startup_battery;
 pub use startup_battery_sampling::{
     ReadRegister as BatteryReadRegister, RegisterIo as BatteryRegisterIo, StartupBatteryError,
@@ -33,6 +35,8 @@ pub struct BootConfig {
     pub enable_swd: bool,
     /// Caller-selected SARADC EXTTRIG_SEL; the board initializer provides no value.
     pub exttrig_sel: u16,
+    /// Caller-selected nonzero per-byte ST7565 FIFO polling budget.
+    pub st7565_fifo_poll_limit: NonZeroU32,
     pub settings: settings_boot_composition::Features,
     pub battery_poll_budget: usize,
     pub battery_calibration: u16,
@@ -54,10 +58,18 @@ pub enum BootError<E> {
 /// Returns application startup state only after every required stage succeeds.
 pub fn coordinate<IO: BootIo>(
     io: &mut IO,
+    display_delay: &mut dyn DelayMs,
     config: BootConfig,
 ) -> Result<ApplicationStartup, BootError<<IO as I2cTransport>::Error>> {
-    board_startup_adapters::run(config.board, config.enable_swd, config.exttrig_sel, io)
-        .map_err(BootError::Board)?;
+    board_startup_adapters::run(
+        config.board,
+        config.enable_swd,
+        config.exttrig_sel,
+        display_delay,
+        config.st7565_fifo_poll_limit,
+        io,
+    )
+    .map_err(BootError::Board)?;
     let settings = settings_boot_composition::compose_with_transport(io, config.settings)
         .map_err(BootError::Settings)?;
     let battery =

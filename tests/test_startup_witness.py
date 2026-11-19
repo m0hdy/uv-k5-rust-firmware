@@ -11,6 +11,8 @@ from check_startup_witness import (  # noqa: E402
     validate_backlight_initializer_path,
     validate_backlight_register_io_path,
     validate_call_path,
+    validate_st7565_backend_case,
+    validate_st7565_executor_path,
     validate_systick_handler,
 )
 
@@ -75,29 +77,17 @@ CONNECTED_DISPATCH = """
  200: f000 f800 bl 300 <run_hardware>
  204: e7fe b.n 204 <witness_main+0x4>
 00000300 <run_hardware>:
- 300: f000 f800 bl 400 <board_startup_adapters::run::<Hardware>>
- 304: b004 add sp, #16
- 306: bd80 pop {r7, pc}
+ 300: b5f0 push {r4, r5, r6, r7, lr}
+ 302: af03 add r7, sp, #12
+ 304: b087 sub sp, #28
+ 306: f000 f800 bl 400 <board_startup_adapters::run::<Hardware>>
+ 30a: b007 add sp, #28
+ 30c: bdf0 pop {r4, r5, r6, r7, pc}
 00000400 <board_startup_adapters::run::<Hardware>>:
  400: f000 f800 bl 500 <board_sequence::run::<Backend>>
- 404: 9801 ldr r0, [sp, #8]
- 406: 7980 ldrb r0, [r0, #8]
- 408: 07c0 lsls r0, r0, #31
- 40a: 2800 cmp r0, #0
- 40c: d104 bne.n 418
- 40e: e7ff b.n 410
- 410: a905 add r1, sp, #20
- 412: 2000 movs r0, #0
- 414: 7008 strb r0, [r1, #0]
- 416: e003 b.n 420
- 418: a905 add r1, sp, #20
- 41a: 2001 movs r0, #1
- 41c: 7008 strb r0, [r1, #0]
- 41e: e7ff b.n 420
- 420: a805 add r0, sp, #20
- 422: 7800 ldrb r0, [r0, #0]
- 424: b00a add sp, #40
- 426: bdd0 pop {r4, r6, r7, pc}
+ 404: 980b ldr r0, [sp, #44]
+ 406: b00d add sp, #52
+ 408: bdf0 pop {r4, r5, r6, r7, pc}
 00000500 <board_sequence::run::<Backend>>:
  500: 2100 movs r1, #0
  502: f000 f800 bl 5f6 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>
@@ -150,20 +140,20 @@ CONNECTED_DISPATCH = """
 000005f6 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>:
  5f6: b580 push {r7, lr}
  5f8: af00 add r7, sp, #0
- 5fa: b084 sub sp, #16
- 5fc: 9001 str r0, [sp, #4]
- 5fe: 9102 str r1, [sp, #8]
+ 5fa: b086 sub sp, #24
+ 5fc: 9002 str r0, [sp, #8]
+ 5fe: 9103 str r1, [sp, #12]
  600: 7980 ldrb r0, [r0, #8]
  602: 07c0 lsls r0, r0, #31
  604: 2800 cmp r0, #0
  606: d112 bne.n 670 <SequencerBackend as Backend>::call+0x70
  608: e7ff b.n 60a <SequencerBackend as Backend>::call+0xa
- 60a: 9802 ldr r0, [sp, #8]
+ 60a: 9803 ldr r0, [sp, #12]
  60c: b2c0 uxtb r0, r0
- 60e: 9000 str r0, [sp, #0]
- 610: 2805 cmp r0, #5
+ 60e: 9001 str r0, [sp, #4]
+ 610: 2806 cmp r0, #6
  612: d81d bhi.n 650 <SequencerBackend as Backend>::call+0x50
- 614: 9800 ldr r0, [sp, #0]
+ 614: 9801 ldr r0, [sp, #4]
  616: 0081 lsls r1, r0, #2
  618: a001 add r0, pc, #4 @ (adr r0, 620 <SequencerBackend as Backend>::call+0x20)
  61a: 5840 ldr r0, [r0, r1]
@@ -174,52 +164,73 @@ CONNECTED_DISPATCH = """
  62c: 1091 .word 0x1091
  630: 10b1 .word 0x10b1
  634: 10c1 .word 0x10c1
- 650: 9902 ldr r1, [sp, #8]
- 652: 9801 ldr r0, [sp, #4]
+ 638: 1379 .word 0x1379
+ 650: 9903 ldr r1, [sp, #12]
+ 652: 9802 ldr r0, [sp, #8]
  654: 6800 ldr r0, [r0, #0]
  656: f000 f8f3 bl 1300 <<startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::placeholder>
  65a: e709 b.n 670 <SequencerBackend as Backend>::call+0x70
- 670: b004 add sp, #16
+ 670: b006 add sp, #24
  672: bd80 pop {r7, pc}
- 1020: 9801 ldr r0, [sp, #4]
+ 1020: 9802 ldr r0, [sp, #8]
  1022: 6800 ldr r0, [r0, #0]
  1024: f000 f800 bl 700 <HardwareIo as StartupIo>::device_clock_gates>
  1028: e722 b.n 670 <SequencerBackend as Backend>::call+0x70>
- 1030: 9801 ldr r0, [sp, #4]
+ 1030: 9802 ldr r0, [sp, #8]
  1032: 6800 ldr r0, [r0, #0]
  1034: 490d ldr r1, [pc, #52]
  1036: f000 f800 bl 710 <HardwareIo as StartupIo>::systick>
  103a: 4601 mov r1, r0
- 103c: a803 add r0, sp, #12
+ 103c: a804 add r0, sp, #16
  103e: 7001 strb r1, [r0, #0]
  1040: f000 f800 bl 1310 <<core::result::Result<(), startup_adapter_witness::board_startup_adapters::StartupError>>::is_err>
  1044: 2800 cmp r0, #0
  1046: d10b bne.n 1060 <SequencerBackend as Backend>::call+0x80>
  1048: e712 b.n 670 <SequencerBackend as Backend>::call+0x70>
- 1060: 9901 ldr r1, [sp, #4]
+ 1060: 9902 ldr r1, [sp, #8]
  1062: 2001 movs r0, #1
  1064: 7208 strb r0, [r1, #8]
- 1066: e703 b.n 670 <SequencerBackend as Backend>::call+0x70>
- 1070: 9901 ldr r1, [sp, #4]
+ 1066: 20ff movs r0, #255
+ 1068: 7328 strb r0, [r1, #24]
+ 106a: e701 b.n 670 <SequencerBackend as Backend>::call+0x70>
+ 1070: 9902 ldr r1, [sp, #8]
  1072: 6808 ldr r0, [r1, #0]
- 1074: 7989 ldrb r1, [r1, #6]
+ 1074: 7949 ldrb r1, [r1, #4]
  1076: f000 f800 bl 720 <HardwareIo as StartupIo>::portcon>
  107a: e6f9 b.n 670 <SequencerBackend as Backend>::call+0x70>
- 1090: 9901 ldr r1, [sp, #4]
+ 1090: 9902 ldr r1, [sp, #8]
  1092: 6808 ldr r0, [r1, #0]
- 1094: 79c9 ldrb r1, [r1, #7]
+ 1094: 7949 ldrb r1, [r1, #5]
  1096: f000 f800 bl 730 <HardwareIo as StartupIo>::gpio>
  109a: e6e9 b.n 670 <SequencerBackend as Backend>::call+0x70>
- 10b0: 9801 ldr r0, [sp, #4]
+ 10b0: 9802 ldr r0, [sp, #8]
  10b2: 6800 ldr r0, [r0, #0]
  10b4: f000 f800 bl 740 <HardwareIo as StartupIo>::backlight_init_hardware>
  10b8: e6d6 b.n 670 <SequencerBackend as Backend>::call+0x70>
- 10c0: 9901 ldr r1, [sp, #4]
+ 10c0: 9902 ldr r1, [sp, #8]
  10c2: 6808 ldr r0, [r1, #0]
- 10c4: 8889 ldrh r1, [r1, #4]
+ 10c4: 88c9 ldrh r1, [r1, #6]
  10c6: f000 f800 bl 1320 <HardwareIo as StartupIo>::adc_init>
  10ca: e6d6 b.n 670 <SequencerBackend as Backend>::call+0x70>
- 10d0: 4770 bx lr
+ 1378: 9b02 ldr r3, [sp, #8]
+ 137a: 6818 ldr r0, [r3, #0]
+ 137c: 68d9 ldr r1, [r3, #12]
+ 137e: 691a ldr r2, [r3, #16]
+ 1380: 695b ldr r3, [r3, #20]
+ 1382: f000 f800 bl 1400 <HardwareIo as StartupIo>::st7565_init>
+ 1386: 4601 mov r1, r0
+ 1388: a805 add r0, sp, #20
+ 138a: 7001 strb r1, [r0, #0]
+ 138c: 7800 ldrb r0, [r0, #0]
+ 138e: 28ff cmp r0, #255
+ 1390: d102 bne.n 1398
+ 1392: e66d b.n 670 <SequencerBackend as Backend>::call+0x70>
+ 1398: 9902 ldr r1, [sp, #8]
+ 139a: 9805 ldr r0, [sp, #20]
+ 139c: 2201 movs r2, #1
+ 139e: 720a strb r2, [r1, #8]
+ 13a0: 7608 strb r0, [r1, #24]
+ 13a2: e665 b.n 670 <SequencerBackend as Backend>::call+0x70>
 00000700 <<HardwareIo as StartupIo>::device_clock_gates>:
  700: f000 f800 bl 800 <apply_device_clock_gates>
  704: bd80 pop {r7, pc}
@@ -240,6 +251,22 @@ CONNECTED_DISPATCH = """
 00001320 <<HardwareIo as StartupIo>::adc_init>:
  1320: f000 f800 bl 1330 <adc_startup_adapter::physical::target::apply_to_hardware>
  1324: bd80 pop {r7, pc}
+00001400 <<HardwareIo as StartupIo>::st7565_init>:
+ 1400: b580 push {r7, lr}
+ 1402: af00 add r7, sp, #0
+ 1404: b082 sub sp, #8
+ 1406: f000 f800 bl 1410 <target_spi0::startup_mmio>
+ 140a: b002 add sp, #8
+ 140c: bd80 pop {r7, pc}
+00001410 <target_spi0::startup_mmio>:
+ 1410: b580 push {r7, lr}
+ 1412: af00 add r7, sp, #0
+ 1414: b082 sub sp, #8
+ 1416: f000 f800 bl 1420 <target_spi0::startup_with_io::<Registers, Delay>>
+ 141a: b002 add sp, #8
+ 141c: bd80 pop {r7, pc}
+00001420 <target_spi0::startup_with_io::<Registers, Delay>>:
+ 1420: 4770 bx lr
 00001330 <adc_startup_adapter::physical::target::apply_to_hardware>:
  1330: b580 push {r7, lr}
  1332: af00 add r7, sp, #0
@@ -572,6 +599,50 @@ CONNECTED_DISPATCH = re.sub(
     CONNECTED_DISPATCH,
     flags=re.S,
 )
+CONNECTED_WITHOUT_DISPLAY_STAGE = (
+    CONNECTED_DISPATCH.replace(" 638: 1379 .word 0x1379\n", "")
+    .replace(
+        " 1378: 9b02 ldr r3, [sp, #8]\n"
+        " 137a: 6818 ldr r0, [r3, #0]\n"
+        " 137c: 68d9 ldr r1, [r3, #12]\n"
+        " 137e: 691a ldr r2, [r3, #16]\n"
+        " 1380: 695b ldr r3, [r3, #20]\n"
+        " 1382: f000 f800 bl 1400 <HardwareIo as StartupIo>::st7565_init>\n"
+        " 1386: 4601 mov r1, r0\n"
+        " 1388: a805 add r0, sp, #20\n"
+        " 138a: 7001 strb r1, [r0, #0]\n"
+        " 138c: 7800 ldrb r0, [r0, #0]\n"
+        " 138e: 28ff cmp r0, #255\n"
+        " 1390: d102 bne.n 1398\n"
+        " 1392: e66d b.n 670 <SequencerBackend as Backend>::call+0x70>\n"
+        " 1398: 9902 ldr r1, [sp, #8]\n"
+        " 139a: 9805 ldr r0, [sp, #20]\n"
+        " 139c: 2201 movs r2, #1\n"
+        " 139e: 720a strb r2, [r1, #8]\n"
+        " 13a0: 7608 strb r0, [r1, #24]\n"
+        " 13a2: e665 b.n 670 <SequencerBackend as Backend>::call+0x70>\n",
+        "",
+    )
+    .replace(
+        "00001400 <<HardwareIo as StartupIo>::st7565_init>:\n"
+        " 1400: b580 push {r7, lr}\n"
+        " 1402: af00 add r7, sp, #0\n"
+        " 1404: b082 sub sp, #8\n"
+        " 1406: f000 f800 bl 1410 <target_spi0::startup_mmio>\n"
+        " 140a: b002 add sp, #8\n"
+        " 140c: bd80 pop {r7, pc}\n"
+        "00001410 <target_spi0::startup_mmio>:\n"
+        " 1410: b580 push {r7, lr}\n"
+        " 1412: af00 add r7, sp, #0\n"
+        " 1414: b082 sub sp, #8\n"
+        " 1416: f000 f800 bl 1420 <target_spi0::startup_with_io::<Registers, Delay>>\n"
+        " 141a: b002 add sp, #8\n"
+        " 141c: bd80 pop {r7, pc}\n"
+        "00001420 <target_spi0::startup_with_io::<Registers, Delay>>:\n"
+        " 1420: 4770 bx lr\n",
+        "",
+    )
+)
 
 ENTRY_SELF_LOOP = CONNECTED_DISPATCH.replace(
     " 200: f000 f800 bl 300 <run_hardware>",
@@ -580,9 +651,9 @@ ENTRY_SELF_LOOP = CONNECTED_DISPATCH.replace(
 )
 
 WRAPPER_EARLY_RETURN = CONNECTED_DISPATCH.replace(
-    " 300: f000 f800 bl 400 <board_startup_adapters::run::<Hardware>>",
-    " 300: 4770 bx lr\n"
-    " 302: f000 f800 bl 400 <board_startup_adapters::run::<Hardware>>",
+    " 306: f000 f800 bl 400 <board_startup_adapters::run::<Hardware>>",
+    " 306: 4770 bx lr\n"
+    " 308: f000 f800 bl 400 <board_startup_adapters::run::<Hardware>>",
 )
 
 HARDWARE_WRAPPER_EARLY_RETURN = CONNECTED_DISPATCH.replace(
@@ -597,7 +668,7 @@ SKIPPED_SEQUENCER_DISPATCH = CONNECTED_DISPATCH.replace(
 )
 
 DISCONNECTED_DISPATCH = CONNECTED_DISPATCH.replace(
-    " 614: 9800 ldr r0, [sp, #0]",
+    " 614: 9801 ldr r0, [sp, #4]",
     " 614: 4770 bx lr",
 )
 
@@ -608,22 +679,22 @@ DISCONNECTED_BACKEND_PREFIX = CONNECTED_DISPATCH.replace(
 )
 
 CONSTANT_VARIANT_RELOAD = CONNECTED_DISPATCH.replace(
-    " 614: 9800 ldr r0, [sp, #0]",
+    " 614: 9801 ldr r0, [sp, #4]",
     " 614: 2000 movs r0, #0",
 )
 
 OVERWRITTEN_INCOMING_VARIANT = CONNECTED_DISPATCH.replace(
-    " 5fe: 9102 str r1, [sp, #8]",
-    " 5fe: 9202 str r2, [sp, #8]",
+    " 5fe: 9103 str r1, [sp, #12]",
+    " 5fe: 9203 str r2, [sp, #12]",
 )
 
 ALWAYS_TAKEN_BACKEND_BRANCH = CONNECTED_DISPATCH.replace(
-    " 610: 2805 cmp r0, #5\n 612: d81d bhi.n 650",
+    " 610: 2806 cmp r0, #6\n 612: d81d bhi.n 650",
     " 610: 4280 cmp r0, r0\n 612: d01d beq.n 650",
 )
 
 UNSUPPORTED_BACKEND_CONDITIONAL = CONNECTED_DISPATCH.replace(
-    " 610: 2805 cmp r0, #5\n 612: d81d bhi.n 650",
+    " 610: 2806 cmp r0, #6\n 612: d81d bhi.n 650",
     " 610: 4288 cmp r0, r1\n 612: d02b beq.n 650",
 )
 
@@ -638,8 +709,8 @@ WRONG_STOPPED_GUARD_TARGET = CONNECTED_DISPATCH.replace(
 )
 
 WRONG_VARIANT_GUARD_INPUT = CONNECTED_DISPATCH.replace(
+    " 60a: 9803 ldr r0, [sp, #12]",
     " 60a: 9802 ldr r0, [sp, #8]",
-    " 60a: 9801 ldr r0, [sp, #4]",
 )
 
 WRONG_VARIANT_GUARD_TARGET = CONNECTED_DISPATCH.replace(
@@ -674,9 +745,29 @@ BACKEND_CROSS_CASE_CONTINUATION = CONNECTED_DISPATCH.replace(
     " 1028: e702 b.n 1030 <SequencerBackend as Backend>::call+0x50>",
 )
 
+ST7565_POST_CALL_SELF_LOOP = CONNECTED_DISPATCH.replace(
+    " 1386: 4601 mov r1, r0",
+    " 1386: e7fe b.n 1386",
+)
+
+ST7565_ERROR_PATH_BYPASS = CONNECTED_DISPATCH.replace(
+    " 1390: d102 bne.n 1398",
+    " 1390: d16d bne.n 670",
+)
+
+ST7565_SUCCESS_PATH_SELF_LOOP = CONNECTED_DISPATCH.replace(
+    " 1392: e66d b.n 670 <SequencerBackend as Backend>::call+0x70>",
+    " 1392: e7fe b.n 1392",
+)
+
+ST7565_ERROR_PATH_SELF_LOOP = CONNECTED_DISPATCH.replace(
+    " 13a2: e665 b.n 670 <SequencerBackend as Backend>::call+0x70>",
+    " 13a2: e7fe b.n 13a2",
+)
+
 DISCONNECTED_ADC_DISPATCH = CONNECTED_DISPATCH.replace(
     " 634: 10c1 .word 0x10c1",
-    " 634: 10d1 .word 0x10d1",
+    " 634: 0651 .word 0x0651",
 )
 
 BYPASSED_ADC_EXECUTOR = CONNECTED_DISPATCH.replace(
@@ -690,18 +781,139 @@ HARDWARE_WRAPPER_POST_CALL_SELF_LOOP = CONNECTED_DISPATCH.replace(
 )
 
 RUN_HARDWARE_POST_CALL_SELF_LOOP = CONNECTED_DISPATCH.replace(
-    " 304: b004 add sp, #16",
-    " 304: e7fe b.n 304\n 306: b004 add sp, #16",
+    " 30a: b007 add sp, #28",
+    " 30a: e7fe b.n 30a\n 30c: b007 add sp, #28",
 )
 
-ADAPTER_RUN_ERROR_SELF_LOOP = CONNECTED_DISPATCH.replace(
-    " 41e: e7ff b.n 420",
-    " 41e: e7fe b.n 41e",
+RUN_HARDWARE_WRONG_RETURN = CONNECTED_DISPATCH.replace(
+    " 30c: bdf0 pop {r4, r5, r6, r7, pc}",
+    " 30c: bdf1 pop {r0, r4, r5, r6, r7, pc}",
 )
 
-ADAPTER_RUN_SUCCESS_SELF_LOOP = CONNECTED_DISPATCH.replace(
-    " 416: e003 b.n 420",
-    " 416: e7fe b.n 416",
+ADC_INIT_WRONG_RETURN = CONNECTED_DISPATCH.replace(
+    " 1324: bd80 pop {r7, pc}",
+    " 1324: bd81 pop {r0, r7, pc}",
+)
+
+ADC_TARGET_WRONG_RETURN = CONNECTED_DISPATCH.replace(
+    " 1340: bd80 pop {r7, pc}",
+    " 1340: bd81 pop {r0, r7, pc}",
+)
+
+ST7565_EXECUTOR_PATH = """
+00000100 <<HardwareIo as StartupIo>::st7565_init>:
+ 100: b580 push {r7, lr}
+ 102: af00 add r7, sp, #0
+ 104: b082 sub sp, #8
+ 106: f000 f800 bl 200 <target_spi0::startup_mmio>
+ 10a: b002 add sp, #8
+ 10c: bd80 pop {r7, pc}
+00000200 <target_spi0::startup_mmio>:
+ 200: b580 push {r7, lr}
+ 202: af00 add r7, sp, #0
+ 204: b082 sub sp, #8
+ 206: f000 f800 bl 300 <target_spi0::startup_with_io::<Registers, Delay>>
+ 20a: b002 add sp, #8
+ 20c: bd80 pop {r7, pc}
+00000300 <target_spi0::startup_with_io::<Registers, Delay>>:
+ 300: 4770 bx lr
+"""
+
+ST7565_INIT_ENTRY_WORD_LOOP = CONNECTED_DISPATCH.replace(
+    """00001400 <<HardwareIo as StartupIo>::st7565_init>:
+ 1400: b580 push {r7, lr}
+ 1402: af00 add r7, sp, #0
+ 1404: b082 sub sp, #8
+ 1406: f000 f800 bl 1410 <target_spi0::startup_mmio>
+ 140a: b002 add sp, #8
+ 140c: bd80 pop {r7, pc}
+00001410 <target_spi0::startup_mmio>:
+ 1410: b580 push {r7, lr}
+ 1412: af00 add r7, sp, #0
+ 1414: b082 sub sp, #8
+ 1416: f000 f800 bl 1420 <target_spi0::startup_with_io::<Registers, Delay>>
+ 141a: b002 add sp, #8
+ 141c: bd80 pop {r7, pc}
+00001420 <target_spi0::startup_with_io::<Registers, Delay>>:
+ 1420: 4770 bx lr""",
+    """00001400 <<HardwareIo as StartupIo>::st7565_init>:
+ 1400: e7fe e7fe .word 0xe7fee7fe
+ 1404: b580 push {r7, lr}
+ 1406: af00 add r7, sp, #0
+ 1408: b082 sub sp, #8
+ 140a: f000 f800 bl 1412 <target_spi0::startup_mmio>
+ 140e: b002 add sp, #8
+ 1410: bd80 pop {r7, pc}
+00001412 <target_spi0::startup_mmio>:
+ 1412: b580 push {r7, lr}
+ 1414: af00 add r7, sp, #0
+ 1416: b082 sub sp, #8
+ 1418: f000 f800 bl 1422 <target_spi0::startup_with_io::<Registers, Delay>>
+ 141c: b002 add sp, #8
+ 141e: bd80 pop {r7, pc}
+00001422 <target_spi0::startup_with_io::<Registers, Delay>>:
+ 1422: 4770 bx lr"""
+)
+
+ST7565_MMIO_ENTRY_WORD_LOOP = CONNECTED_DISPATCH.replace(
+    """00001410 <target_spi0::startup_mmio>:
+ 1410: b580 push {r7, lr}
+ 1412: af00 add r7, sp, #0
+ 1414: b082 sub sp, #8
+ 1416: f000 f800 bl 1420 <target_spi0::startup_with_io::<Registers, Delay>>
+ 141a: b002 add sp, #8
+ 141c: bd80 pop {r7, pc}
+00001420 <target_spi0::startup_with_io::<Registers, Delay>>:
+ 1420: 4770 bx lr""",
+    """00001410 <target_spi0::startup_mmio>:
+ 1410: e7fe e7fe .word 0xe7fee7fe
+ 1414: b580 push {r7, lr}
+ 1416: af00 add r7, sp, #0
+ 1418: b082 sub sp, #8
+ 141a: f000 f800 bl 1422 <target_spi0::startup_with_io::<Registers, Delay>>
+ 141e: b002 add sp, #8
+ 1420: bd80 pop {r7, pc}
+00001422 <target_spi0::startup_with_io::<Registers, Delay>>:
+ 1422: 4770 bx lr"""
+)
+
+ST7565_DISPATCH_CASE = """
+ 100: 9b02 ldr r3, [sp, #8]
+ 102: 6818 ldr r0, [r3, #0]
+ 104: 68d9 ldr r1, [r3, #12]
+ 106: 691a ldr r2, [r3, #16]
+ 108: 695b ldr r3, [r3, #20]
+ 10a: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>
+ 10e: 4601 mov r1, r0
+ 110: a805 add r0, sp, #20
+ 112: 7001 strb r1, [r0, #0]
+ 114: 7800 ldrb r0, [r0, #0]
+ 116: 28ff cmp r0, #255
+ 118: d102 bne.n 120
+ 11a: e011 b.n 140
+ 120: 9902 ldr r1, [sp, #8]
+ 122: 9805 ldr r0, [sp, #20]
+ 124: 2201 movs r2, #1
+ 126: 720a strb r2, [r1, #8]
+ 128: 7608 strb r0, [r1, #24]
+ 12a: e009 b.n 140
+ 140: b006 add sp, #24
+ 142: bd80 pop {r7, pc}
+"""
+
+ADAPTER_RUN_WRONG_RESULT_LOAD = CONNECTED_DISPATCH.replace(
+    " 404: 980b ldr r0, [sp, #44]",
+    " 404: 980a ldr r0, [sp, #40]",
+)
+
+ADAPTER_RUN_WRONG_STACK_TEARDOWN = CONNECTED_DISPATCH.replace(
+    " 406: b00d add sp, #52",
+    " 406: b00c add sp, #48",
+)
+
+ADAPTER_RUN_WRONG_RETURN = CONNECTED_DISPATCH.replace(
+    " 408: bdf0 pop {r4, r5, r6, r7, pc}",
+    " 408: bcf0 pop {r4, r5, r6, r7}",
 )
 
 SEQUENCER_FM_POST_CALL_SELF_LOOP = CONNECTED_DISPATCH.replace(
@@ -720,7 +932,7 @@ SEQUENCER_CRC_SKIP_SELF_LOOP = CONNECTED_DISPATCH.replace(
 )
 
 BACKLIGHT_DISPATCH_UNREACHABLE = CONNECTED_DISPATCH.replace(
-    " 10b0: 9801 ldr r0, [sp, #4]",
+    " 10b0: 9802 ldr r0, [sp, #8]",
     " 10b0: 4770 bx lr",
 )
 
@@ -1056,6 +1268,139 @@ TRAP_BEFORE_RETURN = """
 
 
 class StartupWitnessCheckerTests(unittest.TestCase):
+    def test_accepts_reachable_st7565_dispatch_variant(self):
+        validate_st7565_backend_case(ST7565_DISPATCH_CASE, 0x100)
+
+    def test_rejects_st7565_dispatch_call_after_early_return(self):
+        disconnected = ST7565_DISPATCH_CASE.replace(
+            " 10a: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>",
+            " 10a: 4770 bx lr\n"
+            " 10e: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>",
+        )
+        with self.assertRaisesRegex(
+            WitnessError, "display variant has no reachable ST7565 startup call"
+        ):
+            validate_st7565_backend_case(disconnected, 0x100)
+
+    def test_rejects_bypassed_st7565_dispatch_call_with_symbol_retained(self):
+        bypassed = ST7565_DISPATCH_CASE.replace(
+            " 10a: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>",
+            " 10a: f000 f800 bl 300 <startup_noop>",
+        ) + "\n 14a: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>\n"
+        with self.assertRaisesRegex(WitnessError, "display variant has no reachable ST7565 startup call"):
+            validate_st7565_backend_case(bypassed, 0x100)
+
+    def test_rejects_st7565_post_call_self_loop(self):
+        self_loop = ST7565_DISPATCH_CASE.replace(
+            " 10e: 4601 mov r1, r0",
+            " 10e: e7fe b.n 10e",
+        )
+        with self.assertRaisesRegex(
+            WitnessError, "display variant has an unexpected argument/result continuation"
+        ):
+            validate_st7565_backend_case(self_loop, 0x100)
+
+    def test_rejects_jump_table_word_before_later_st7565_call(self):
+        disconnected = (
+            " 100: e7fe .word 0xe7fee7fe\n"
+            " 104: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>\n"
+        )
+        with self.assertRaisesRegex(
+            WitnessError, "display variant has an unexpected argument/result continuation"
+        ):
+            validate_st7565_backend_case(disconnected, 0x100)
+
+    def test_accepts_concrete_st7565_executor_call_chain(self):
+        validate_st7565_executor_path(ST7565_EXECUTOR_PATH)
+
+    def test_rejects_trapping_st7565_executor_wrapper_entries(self):
+        for original in (
+            " 100: b580 push {r7, lr}",
+            " 200: b580 push {r7, lr}",
+        ):
+            with self.subTest(wrapper=original):
+                trapped = ST7565_EXECUTOR_PATH.replace(
+                    original, original.split(":")[0] + ": de00 udf #0"
+                )
+                with self.assertRaisesRegex(WitnessError, "unsupported trap instruction"):
+                    validate_st7565_executor_path(trapped)
+
+    def test_rejects_unbalanced_st7565_executor_wrapper_restores(self):
+        for original in (
+            " 10c: bd80 pop {r7, pc}",
+            " 20c: bd80 pop {r7, pc}",
+        ):
+            with self.subTest(wrapper=original):
+                unbalanced = ST7565_EXECUTOR_PATH.replace(
+                    original,
+                    original.replace("bd80 pop {r7, pc}", "bc81 pop {r0, r7, pc}"),
+                )
+                with self.assertRaisesRegex(
+                    WitnessError, "non-returning call continuation"
+                ):
+                    validate_st7565_executor_path(unbalanced)
+
+    def test_rejects_unbalanced_st7565_executor_wrapper_entries(self):
+        for original in (
+            (" 100: b580 push {r7, lr}", " 100: b581 push {r0, r7, lr}"),
+            (" 200: b580 push {r7, lr}", " 200: b581 push {r0, r7, lr}"),
+            (" 104: b082 sub sp, #8", " 104: b083 sub sp, #12"),
+            (" 204: b082 sub sp, #8", " 204: b083 sub sp, #12"),
+        ):
+            with self.subTest(entry=original):
+                unbalanced = ST7565_EXECUTOR_PATH.replace(*original)
+                with self.assertRaisesRegex(WitnessError, "unexpected frame setup"):
+                    validate_st7565_executor_path(unbalanced)
+
+    def test_rejects_extra_st7565_executor_wrapper_stack_allocation(self):
+        cases = (
+            (
+                (" 106: f000 f800 bl 200 <target_spi0::startup_mmio>",
+                 " 106: b081 sub sp, #4\n 108: f000 f800 bl 200 <target_spi0::startup_mmio>"),
+                (" 10a: b002 add sp, #8", " 10c: b002 add sp, #8"),
+                (" 10c: bd80 pop {r7, pc}", " 10e: bd80 pop {r7, pc}"),
+            ),
+            (
+                (" 206: f000 f800 bl 300 <target_spi0::startup_with_io::<Registers, Delay>>",
+                 " 206: b081 sub sp, #4\n"
+                 " 208: f000 f800 bl 300 <target_spi0::startup_with_io::<Registers, Delay>>"),
+                (" 20a: b002 add sp, #8", " 20c: b002 add sp, #8"),
+                (" 20c: bd80 pop {r7, pc}", " 20e: bd80 pop {r7, pc}"),
+            ),
+        )
+        for replacements in cases:
+            with self.subTest(call=replacements[0][0]):
+                unbalanced = ST7565_EXECUTOR_PATH
+                for original, replacement in replacements:
+                    unbalanced = unbalanced.replace(original, replacement)
+                with self.assertRaisesRegex(WitnessError, "unexpected frame setup"):
+                    validate_st7565_executor_path(unbalanced)
+
+    def test_rejects_st7565_call_disconnected_after_early_return(self):
+        disconnected = ST7565_EXECUTOR_PATH.replace(
+            " 106: f000 f800 bl 200 <target_spi0::startup_mmio>",
+            " 106: 4770 bx lr\n"
+            " 108: f000 f800 bl 200 <target_spi0::startup_mmio>",
+        )
+        with self.assertRaisesRegex(WitnessError, "target ST7565 init path does not reach"):
+            validate_st7565_executor_path(disconnected)
+
+    def test_rejects_st7565_call_bypassed_to_unrelated_target(self):
+        bypassed = ST7565_EXECUTOR_PATH.replace(
+            " 106: f000 f800 bl 200 <target_spi0::startup_mmio>",
+            " 106: f000 f800 bl 400 <startup_noop>",
+        ) + "\n00000400 <startup_noop>:\n 400: 4770 bx lr\n"
+        with self.assertRaisesRegex(WitnessError, "target ST7565 init path does not reach"):
+            validate_st7565_executor_path(bypassed)
+
+    def test_rejects_hardware_display_wrapper_entry_word_loop(self):
+        with self.assertRaisesRegex(WitnessError, "no instruction at its symbol entry"):
+            validate_call_path(ST7565_INIT_ENTRY_WORD_LOOP)
+
+    def test_rejects_mmio_display_wrapper_entry_word_loop(self):
+        with self.assertRaisesRegex(WitnessError, "no instruction at its symbol entry"):
+            validate_call_path(ST7565_MMIO_ENTRY_WORD_LOOP)
+
     def test_accepts_immediate_systick_return_at_symbol_entry(self):
         validate_systick_handler(SYSTICK_RETURN, 0x100)
 
@@ -1206,17 +1551,65 @@ class StartupWitnessCheckerTests(unittest.TestCase):
         ):
             validate_call_path(RUN_HARDWARE_POST_CALL_SELF_LOOP)
 
-    def test_rejects_adapter_error_result_self_loop(self):
+    def test_rejects_extra_register_restore_in_run_hardware(self):
         with self.assertRaisesRegex(
-            WitnessError, "board startup adapter result paths do not reach"
+            WitnessError, "run_hardware.*non-returning call continuation"
         ):
-            validate_call_path(ADAPTER_RUN_ERROR_SELF_LOOP)
+            validate_call_path(RUN_HARDWARE_WRONG_RETURN)
 
-    def test_rejects_adapter_success_result_self_loop(self):
+    def test_rejects_extra_register_restore_in_adc_init(self):
         with self.assertRaisesRegex(
-            WitnessError, "board startup adapter result paths do not reach"
+            WitnessError, "target adc_init.*non-returning call continuation"
         ):
-            validate_call_path(ADAPTER_RUN_SUCCESS_SELF_LOOP)
+            validate_call_path(ADC_INIT_WRONG_RETURN)
+
+    def test_rejects_extra_register_restore_in_adc_target_executor(self):
+        with self.assertRaisesRegex(
+            WitnessError, "target ADC executor.*non-returning call continuation"
+        ):
+            validate_call_path(ADC_TARGET_WRONG_RETURN)
+
+    def test_rejects_adapter_result_load_mismatch(self):
+        with self.assertRaisesRegex(
+            WitnessError, "board startup adapter result path has an unexpected continuation"
+        ):
+            validate_call_path(ADAPTER_RUN_WRONG_RESULT_LOAD)
+
+    def test_rejects_adapter_stack_teardown_mismatch(self):
+        with self.assertRaisesRegex(
+            WitnessError, "board startup adapter result path has an unexpected continuation"
+        ):
+            validate_call_path(ADAPTER_RUN_WRONG_STACK_TEARDOWN)
+
+    def test_rejects_adapter_return_mismatch(self):
+        with self.assertRaisesRegex(
+            WitnessError, "board startup adapter result path has an unexpected continuation"
+        ):
+            validate_call_path(ADAPTER_RUN_WRONG_RETURN)
+
+    def test_rejects_full_validator_display_post_call_self_loop(self):
+        with self.assertRaisesRegex(
+            WitnessError, "display variant has an unexpected argument/result continuation"
+        ):
+            validate_call_path(ST7565_POST_CALL_SELF_LOOP)
+
+    def test_rejects_full_validator_display_error_path_bypass(self):
+        with self.assertRaisesRegex(
+            WitnessError, "display variant has an unexpected argument/result continuation"
+        ):
+            validate_call_path(ST7565_ERROR_PATH_BYPASS)
+
+    def test_rejects_full_validator_display_success_path_self_loop(self):
+        with self.assertRaisesRegex(
+            WitnessError, "display variant result paths do not reach the shared return epilogue"
+        ):
+            validate_call_path(ST7565_SUCCESS_PATH_SELF_LOOP)
+
+    def test_rejects_full_validator_display_error_path_self_loop(self):
+        with self.assertRaisesRegex(
+            WitnessError, "display variant result paths do not reach the shared return epilogue"
+        ):
+            validate_call_path(ST7565_ERROR_PATH_SELF_LOOP)
 
     def test_rejects_fm_optional_call_self_loop(self):
         with self.assertRaisesRegex(
@@ -1238,6 +1631,77 @@ class StartupWitnessCheckerTests(unittest.TestCase):
 
     def test_accepts_linked_backend_dispatch_to_matching_hardware_methods(self):
         validate_call_path(CONNECTED_DISPATCH)
+
+    def test_rejects_full_validator_fixture_without_display_stage(self):
+        with self.assertRaisesRegex(
+            WitnessError, "disassembly is missing StartupIo>::st7565_init"
+        ):
+            validate_call_path(CONNECTED_WITHOUT_DISPLAY_STAGE)
+
+    def test_full_validator_rejects_trapping_st7565_executor_wrappers(self):
+        for original in (
+            " 1400: b580 push {r7, lr}",
+            " 1410: b580 push {r7, lr}",
+        ):
+            with self.subTest(wrapper=original):
+                trapped = CONNECTED_DISPATCH.replace(
+                    original, original.split(":")[0] + ": de00 udf #0"
+                )
+                with self.assertRaisesRegex(
+                    WitnessError, "unsupported trap instruction"
+                ):
+                    validate_call_path(trapped)
+
+    def test_full_validator_rejects_unbalanced_st7565_executor_restores(self):
+        for original in (
+            " 140c: bd80 pop {r7, pc}",
+            " 141c: bd80 pop {r7, pc}",
+        ):
+            with self.subTest(wrapper=original):
+                unbalanced = CONNECTED_DISPATCH.replace(
+                    original,
+                    original.replace("bd80 pop {r7, pc}", "bc81 pop {r0, r7, pc}"),
+                )
+                with self.assertRaisesRegex(
+                    WitnessError, "non-returning call continuation"
+                ):
+                    validate_call_path(unbalanced)
+
+    def test_full_validator_rejects_unbalanced_st7565_executor_entries(self):
+        for original in (
+            (" 1400: b580 push {r7, lr}", " 1400: b581 push {r0, r7, lr}"),
+            (" 1410: b580 push {r7, lr}", " 1410: b581 push {r0, r7, lr}"),
+            (" 1404: b082 sub sp, #8", " 1404: b083 sub sp, #12"),
+            (" 1414: b082 sub sp, #8", " 1414: b083 sub sp, #12"),
+        ):
+            with self.subTest(entry=original):
+                unbalanced = CONNECTED_DISPATCH.replace(*original)
+                with self.assertRaisesRegex(WitnessError, "unexpected frame setup"):
+                    validate_call_path(unbalanced)
+
+    def test_full_validator_rejects_extra_st7565_executor_stack_allocation(self):
+        cases = (
+            (
+                (" 1406: f000 f800 bl 1410 <target_spi0::startup_mmio>",
+                 " 1406: b081 sub sp, #4\n 1408: f000 f800 bl 1410 <target_spi0::startup_mmio>"),
+                (" 140a: b002 add sp, #8", " 140c: b002 add sp, #8"),
+                (" 140c: bd80 pop {r7, pc}", " 140e: bd80 pop {r7, pc}"),
+            ),
+            (
+                (" 1416: f000 f800 bl 1420 <target_spi0::startup_with_io::<Registers, Delay>>",
+                 " 1416: b081 sub sp, #4\n"
+                 " 1418: f000 f800 bl 1420 <target_spi0::startup_with_io::<Registers, Delay>>"),
+                (" 141a: b002 add sp, #8", " 141c: b002 add sp, #8"),
+                (" 141c: bd80 pop {r7, pc}", " 141e: bd80 pop {r7, pc}"),
+            ),
+        )
+        for replacements in cases:
+            with self.subTest(call=replacements[0][0]):
+                unbalanced = CONNECTED_DISPATCH
+                for original, replacement in replacements:
+                    unbalanced = unbalanced.replace(original, replacement)
+                with self.assertRaisesRegex(WitnessError, "unexpected frame setup"):
+                    validate_call_path(unbalanced)
 
     def test_rejects_required_calls_that_do_not_target_the_symbol_entry(self):
         mutations = (

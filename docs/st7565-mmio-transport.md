@@ -3,9 +3,9 @@
 [`src/st7565_mmio_transport.rs`](../src/st7565_mmio_transport.rs) adapts the
 bounded [`LineTransport`](../src/st7565_line_transport.rs) executor to only
 the DP32G030 SPI0 and GPIOB registers used by the pinned ST7565 line path. It
-is also used by the callable [display startup](st7565-startup.md) and
-[welcome execution](startup-version-display.md#callable-welcome-execution)
-boundaries; neither is wired into firmware boot.
+is used by the integrated board [display startup](st7565-startup.md) and the
+separate callable [welcome execution](startup-version-display.md#callable-welcome-execution)
+boundary.
 
 The register addresses and fields follow
 [`spi.c`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/driver/spi.c#L46-L109),
