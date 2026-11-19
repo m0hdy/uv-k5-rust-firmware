@@ -10,22 +10,29 @@ tuning/signalling including squelch, scan state, and channel validity remain
 referenced by the result written to a volatile sink. The witness map and ELF
 contain the corresponding public symbols.
 
-| Image | Flash load | Static RAM | Reserved stack | RAM with stack |
+| Environment | Debug bootstrap flash | Witness flash | Witness static RAM | Reserved stack |
 | --- | ---: | ---: | ---: | ---: |
-| Debug bootstrap | 296 bytes | 0 bytes | 2,048 bytes | 2,048 bytes |
-| Portable module witness | 34,832 bytes | 4 bytes | 2,048 bytes | 2,052 bytes |
-| Witness minus bootstrap | **+34,536 bytes** | **+4 bytes** | 0 bytes | **+4 bytes** |
+| Original Linux measurement | 296 bytes | 34,832 bytes | 4 bytes | 2,048 bytes |
+| Independent macOS measurement | 296 bytes | 34,992 bytes | 4 bytes | 2,048 bytes |
+
+The Linux aggregate delta is +34,536 bytes flash and +4 bytes static RAM; the
+reported macOS delta is +34,696 bytes flash and +4 bytes static RAM. The 160-byte
+witness flash difference is an environment-scoped observation, not a universal
+reproducibility guarantee. The independent macOS result was reported for the
+same PR source and pinned Rust target; its complete tool versions and artifact
+hashes were not recorded here.
 
 The existing budget gate passed both images with
 `--stack-reservation 0x800`. The witness leaves 26,608 bytes of the 61,440-byte
-flash budget and 14,332 bytes of the 16,384-byte RAM-plus-stack budget. Its
-4-byte static RAM use is the result sink; the 2 KiB stack figure is a linker
-reservation, not a measured stack high-water mark.
+flash budget and 14,332 bytes of the 16,384-byte RAM-plus-stack budget in the
+Linux measurement. The macOS witness also passed the gate. Its 4-byte static
+RAM use is the result sink; the 2 KiB stack figure is a linker reservation,
+not a measured stack high-water mark.
 
 The witness has a 192-byte vector table, 34,624 bytes of `.text`, and 16 bytes
-of `.ARM.exidx`. Its four-byte `.bss` is the volatile result sink. The ELF's
-flash `PT_LOAD` covers 34,832 bytes, matching the raw payload; zero-file-size
-RAM and stack segments do not add bytes to that payload.
+of `.ARM.exidx` in the Linux measurement. Its four-byte `.bss` is the volatile
+result sink. The ELF's flash `PT_LOAD` covers 34,832 bytes, matching the raw
+payload; zero-file-size RAM and stack segments do not add bytes to that payload.
 
 ## Reproduction
 
@@ -34,14 +41,13 @@ Run from the repository root with the pinned Rust toolchain, the installed
 
 ```sh
 set -eu
-export CARGO_TARGET_DIR=target/portable-witness
-rm -rf "$CARGO_TARGET_DIR"
+export CARGO_TARGET_DIR="$(mktemp -d "${TMPDIR:-/tmp}/portable-witness.XXXXXX")"
 
 cargo rustc --locked --target thumbv6m-none-eabi \
   --bin uv-k5-rust-firmware -- \
-  -C link-arg=-Map="$PWD/$CARGO_TARGET_DIR/thumbv6m-none-eabi/debug/uv-k5-rust-firmware.map"
+  -C link-arg=-Map="$CARGO_TARGET_DIR/thumbv6m-none-eabi/debug/uv-k5-rust-firmware.map"
 
-RUSTFLAGS="-C link-arg=-T$PWD/linker/firmware.ld -C link-arg=-Map=$PWD/$CARGO_TARGET_DIR/thumbv6m-none-eabi/debug/portable-size-witness.map" \
+RUSTFLAGS="-C link-arg=-T$PWD/linker/firmware.ld -C link-arg=-Map=$CARGO_TARGET_DIR/thumbv6m-none-eabi/debug/portable-size-witness.map" \
   cargo rustc --manifest-path portable-witness/Cargo.toml --locked \
   --target thumbv6m-none-eabi --bin portable-size-witness
 
@@ -82,7 +88,7 @@ by the witness, and `configure_squelch`. Inspect the current artifacts with:
 
 ```sh
 arm-none-eabi-nm -C --defined-only \
-  target/portable-witness/thumbv6m-none-eabi/debug/portable-size-witness
+  "$CARGO_TARGET_DIR/thumbv6m-none-eabi/debug/portable-size-witness"
 ```
 
 The bootstrap and witness use the same Rust/Cargo versions, target, linker
@@ -92,6 +98,17 @@ optimization. The reported difference is an aggregate linked-image delta for
 these exact inputs, not an additive per-module cost. Optimization, inlining,
 section retention, and dead stripping in a release firmware build can change
 the result substantially.
+
+Other inputs that can affect a reproduction include the host OS and
+architecture, the Rust host toolchain's compiler and LLVM versions, the
+effective linker and binutils versions, Cargo/Rust flags and configuration, and
+the workspace and output paths. Absolute paths can appear in maps and ELF
+debug metadata, so artifact hashes are specific to their build environment and
+paths; the hashes below identify the original Linux artifacts, not expected
+cross-platform hashes. Compare measured flash load and budget-gate results
+within each environment rather than treating ELF or map hash equality as a
+requirement. The reproduction commands use a new temporary target directory
+per run and do not remove or overwrite an existing build directory.
 
 ## Host validation
 
@@ -139,9 +156,9 @@ claim about radio behavior.
 
 ## Provenance
 
-Build environment: `rustc 1.99.1 (58cf8f9c3 2026-10-13)`, LLVM 23.1.1,
-Cargo 1.99.1, GNU Arm binutils 2.42. The measured source revision and SHA-256
-hashes are:
+Original Linux build environment: `rustc 1.99.1 (58cf8f9c3 2026-10-13)`,
+LLVM 23.1.1, Cargo 1.99.1, GNU Arm binutils 2.42. The measured source
+revision and SHA-256 hashes for that build are:
 
 | Artifact | SHA-256 |
 | --- | --- |
