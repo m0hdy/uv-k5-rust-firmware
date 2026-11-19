@@ -179,10 +179,48 @@ def backend_dispatch_targets(function: str) -> list[int]:
             break
         prefix.append(instruction)
         next_address = address + size
-        if re.fullmatch(
-            r"b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.(?:n|w))?",
+        conditional = re.fullmatch(
+            r"b(eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.(?:n|w))?",
             mnemonic,
-        ):
+        )
+        if conditional:
+            comparison = prefix[-2] if len(prefix) > 1 else None
+            always_equal = False
+            if comparison and comparison[2] == "cmp":
+                operands_match = re.fullmatch(
+                    r"\s*(r\d+),\s*(r\d+)\s*", comparison[3]
+                )
+                always_equal = (
+                    operands_match is not None
+                    and operands_match.group(1) == operands_match.group(2)
+                )
+                if not always_equal and len(prefix) > 2:
+                    prior = prefix[-3]
+                    move = re.search(
+                        r"\bmovs?\s+(r\d+),\s*#(\d+)\b", prior[4]
+                    )
+                    compared = re.fullmatch(
+                        r"\s*(r\d+),\s*#(\d+)\s*", comparison[3]
+                    )
+                    always_equal = (
+                        move is not None
+                        and compared is not None
+                        and move.group(1) == compared.group(1)
+                        and move.group(2) == compared.group(2)
+                    )
+            if always_equal and conditional.group(1) in {
+                "eq",
+                "cs",
+                "hs",
+                "pl",
+                "vc",
+                "ls",
+                "ge",
+                "le",
+            }:
+                raise WitnessError(
+                    "sequencer backend dispatch has an always-taken conditional branch"
+                )
             target = re.match(r"\s*([0-9a-fA-F]+)\b", operands)
             if target is None or int(target.group(1), 16) <= address:
                 raise WitnessError("sequencer backend dispatch has an unsupported conditional branch")

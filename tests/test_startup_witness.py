@@ -143,6 +143,22 @@ DISCONNECTED_BACKEND_PREFIX = CONNECTED_DISPATCH.replace(
  61c: 1051 .word 0x1051""",
 )
 
+ALWAYS_TAKEN_BACKEND_BRANCH = CONNECTED_DISPATCH.replace(
+    """ 600: 0081 lsls r1, r0, #2
+ 602: a001 add r0, pc, #4 @ (adr r0, 610 <SequencerBackend as Backend>::call+0x10)
+ 604: 5840 ldr r0, [r0, r1]
+ 606: 4687 mov pc, r0
+ 610: 1021 .word 0x1021""",
+    """ 600: 2000 movs r0, #0
+ 602: 4280 cmp r0, r0
+ 604: d000 beq.n 630 <SequencerBackend as Backend>::call+0x30
+ 606: 0081 lsls r1, r0, #2
+ 608: a001 add r0, pc, #4 @ (adr r0, 610 <SequencerBackend as Backend>::call+0x10)
+ 60a: 5840 ldr r0, [r0, r1]
+ 60c: 4687 mov pc, r0
+ 610: 1021 .word 0x1021""",
+).replace(" 61c: 1051 .word 0x1051", " 61c: 1051 .word 0x1051\n 630: 4770 bx lr")
+
 SWAPPED_DISPATCH = CONNECTED_DISPATCH.replace(
     " 610: 1021 .word 0x1021\n 614: 1031 .word 0x1031",
     " 610: 1031 .word 0x1031\n 614: 1021 .word 0x1021",
@@ -206,6 +222,14 @@ class StartupWitnessCheckerTests(unittest.TestCase):
 
         with self.assertRaisesRegex(WitnessError, "sequencer backend dispatch"):
             validate_call_path(DISCONNECTED_BACKEND_PREFIX)
+
+    def test_rejects_dispatch_after_always_taken_conditional_branch(self):
+        self.assertIn("beq.n 630", ALWAYS_TAKEN_BACKEND_BRANCH)
+        self.assertIn("600: 2000 movs r0, #0", ALWAYS_TAKEN_BACKEND_BRANCH)
+        self.assertIn("StartupIo>::gpio", ALWAYS_TAKEN_BACKEND_BRANCH)
+
+        with self.assertRaisesRegex(WitnessError, "always-taken conditional"):
+            validate_call_path(ALWAYS_TAKEN_BACKEND_BRANCH)
 
     def test_rejects_swapped_backend_dispatch_targets(self):
         with self.assertRaisesRegex(WitnessError, "variant 0.*device_clock_gates"):
