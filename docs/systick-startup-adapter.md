@@ -8,9 +8,11 @@ The startup sequence uses the existing 24-bit reload validation and follows
 CMSIS Cortex-M0 `SysTick_Config`: LOAD, SysTick priority, VAL, then CTRL.
 For the default 480,000 ticks, the trace writes LOAD `479999`, updates the
 SysTick priority field to the lowest priority, clears VAL, and enables the
-core-clock timer and its interrupt (`CTRL = 7`). The delay multiplier `48`
-remains distinct from the period and does not establish or measure the core
-frequency. This module contains no delay loop.
+core-clock timer and its interrupt (`CTRL = 7`). The operation order and
+priority update follow [CMSIS Cortex-M0 `SysTick_Config` and
+`NVIC_SetPriority`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/external/CMSIS_5/CMSIS/Core/Include/core_cm0.h).
+The delay multiplier `48` remains distinct from the period and does not
+establish or measure the core frequency. This module contains no delay loop.
 
 CMSIS Cortex-M0 accesses system-handler priorities as 32-bit words. The
 adapter therefore updates only SHPR3's SysTick byte (`mask = 0xff000000`,

@@ -2,6 +2,7 @@
 
 //! Typed SysTick startup operations and a restricted Cortex-M0 adapter.
 
+#[allow(dead_code)]
 #[path = "systick_timing.rs"]
 pub mod systick_timing;
 
@@ -26,6 +27,10 @@ pub struct StartupSequence {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InvalidReload;
+
+pub const fn merge_priority_word(current: u32, mask: u32, value: u32) -> u32 {
+    (current & !mask) | (value & mask)
+}
 
 pub fn startup_sequence(period_ticks: u32) -> Result<StartupSequence, InvalidReload> {
     let reload = systick_timing::reload_value(period_ticks).ok_or(InvalidReload)?;
@@ -71,7 +76,7 @@ pub unsafe fn apply_to_hardware(period_ticks: u32) -> Result<(), InvalidReload> 
             RegisterOperation::UpdateSysTickPriorityWord { mask, value } => {
                 let priority = 0xe000_ed20 as *mut u32;
                 let current = core::ptr::read_volatile(priority);
-                core::ptr::write_volatile(priority, (current & !mask) | (value & mask));
+                core::ptr::write_volatile(priority, merge_priority_word(current, mask, value));
             }
             RegisterOperation::WriteSysTickValue(value) => {
                 core::ptr::write_volatile(0xe000_e018 as *mut u32, value);

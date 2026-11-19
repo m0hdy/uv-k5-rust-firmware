@@ -2,8 +2,8 @@
 mod systick_startup_adapter;
 
 use systick_startup_adapter::{
-    InvalidReload, RegisterOperation, SYS_TICK_DELAY_MULTIPLIER, SYS_TICK_PERIOD_TICKS,
-    apply_with, startup_sequence,
+    InvalidReload, RegisterOperation, SYS_TICK_DELAY_MULTIPLIER, SYS_TICK_PERIOD_TICKS, apply_with,
+    merge_priority_word, startup_sequence,
 };
 
 #[test]
@@ -57,7 +57,7 @@ fn priority_word_update_preserves_neighboring_exception_priorities() {
         panic!("priority update must be the second operation");
     };
 
-    let updated = (original & !mask) | (value & mask);
+    let updated = merge_priority_word(original, mask, value);
     assert_eq!(updated, 0xc012_3456);
     assert_eq!(updated & !mask, original & !mask);
 }
