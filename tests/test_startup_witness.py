@@ -123,6 +123,26 @@ DISCONNECTED_DISPATCH = CONNECTED_DISPATCH.replace(
     " 600: 4770 bx lr",
 )
 
+DISCONNECTED_BACKEND_PREFIX = CONNECTED_DISPATCH.replace(
+    """ 600: 0081 lsls r1, r0, #2
+ 602: a001 add r0, pc, #4 @ (adr r0, 610 <SequencerBackend as Backend>::call+0x10)
+ 604: 5840 ldr r0, [r0, r1]
+ 606: 4687 mov pc, r0
+ 610: 1021 .word 0x1021
+ 614: 1031 .word 0x1031
+ 618: 1041 .word 0x1041
+ 61c: 1051 .word 0x1051""",
+    """ 600: 4770 bx lr
+ 602: 0081 lsls r1, r0, #2
+ 604: a001 add r0, pc, #4 @ (adr r0, 610 <SequencerBackend as Backend>::call+0x10)
+ 606: 5840 ldr r0, [r0, r1]
+ 608: 4687 mov pc, r0
+ 610: 1021 .word 0x1021
+ 614: 1031 .word 0x1031
+ 618: 1041 .word 0x1041
+ 61c: 1051 .word 0x1051""",
+)
+
 SWAPPED_DISPATCH = CONNECTED_DISPATCH.replace(
     " 610: 1021 .word 0x1021\n 614: 1031 .word 0x1031",
     " 610: 1031 .word 0x1031\n 614: 1021 .word 0x1021",
@@ -178,6 +198,14 @@ class StartupWitnessCheckerTests(unittest.TestCase):
 
         with self.assertRaisesRegex(WitnessError, "sequencer backend.*dispatch"):
             validate_call_path(DISCONNECTED_DISPATCH)
+
+    def test_rejects_dispatch_prefix_disconnected_at_function_entry(self):
+        self.assertIn("600: 4770 bx lr", DISCONNECTED_BACKEND_PREFIX)
+        self.assertIn("608: 4687 mov pc, r0", DISCONNECTED_BACKEND_PREFIX)
+        self.assertIn("StartupIo>::gpio", DISCONNECTED_BACKEND_PREFIX)
+
+        with self.assertRaisesRegex(WitnessError, "sequencer backend dispatch"):
+            validate_call_path(DISCONNECTED_BACKEND_PREFIX)
 
     def test_rejects_swapped_backend_dispatch_targets(self):
         with self.assertRaisesRegex(WitnessError, "variant 0.*device_clock_gates"):
