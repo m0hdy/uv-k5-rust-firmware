@@ -11,6 +11,7 @@ enum Event {
     Portcon(bool),
     Gpio(bool),
     BacklightInit,
+    AdcInit(u16),
     BacklightRead(Register),
     BacklightWrite(Register, u32),
     Placeholder(Call),
@@ -59,6 +60,10 @@ impl StartupIo for FakeIo {
         apply_with_io(self);
     }
 
+    fn adc_init(&mut self, exttrig_sel: u16) {
+        self.events.push(Event::AdcInit(exttrig_sel));
+    }
+
     fn placeholder(&mut self, call: Call) {
         self.events.push(Event::Placeholder(call));
     }
@@ -98,7 +103,10 @@ fn defines(enable_fmradio: bool, enable_uart: bool, enabled_aircopy: bool) -> De
 #[test]
 fn sequencer_dispatches_adapters_in_pinned_order_and_keeps_other_calls_typed() {
     let mut io = FakeIo::default();
-    assert_eq!(run(defines(true, true, false), true, &mut io), Ok(()));
+    assert_eq!(
+        run(defines(true, true, false), true, 0x5aa5, &mut io),
+        Ok(())
+    );
 
     assert_eq!(
         io.events,
@@ -117,7 +125,7 @@ fn sequencer_dispatches_adapters_in_pinned_order_and_keeps_other_calls_typed() {
             Event::BacklightWrite(Register::PortBSel0, 0x81ab_cdef),
             Event::BacklightWrite(Register::PwmPlus0Generator, 0x0101_0000),
             Event::BacklightWrite(Register::PwmPlus0Config, 5),
-            Event::Placeholder(Call::AdcInit),
+            Event::AdcInit(0x5aa5),
             Event::Placeholder(Call::St7565Init),
             Event::Placeholder(Call::Bk1080Init0),
             Event::Placeholder(Call::CrcInit),
@@ -133,7 +141,12 @@ fn swd_and_fm_features_are_forwarded_to_their_adapters() {
         for enable_fmradio in [false, true] {
             let mut io = FakeIo::default();
             assert_eq!(
-                run(defines(enable_fmradio, false, false), enable_swd, &mut io),
+                run(
+                    defines(enable_fmradio, false, false),
+                    enable_swd,
+                    0x35c7,
+                    &mut io
+                ),
                 Ok(())
             );
             assert!(io.events.contains(&Event::Portcon(enable_swd)));
@@ -150,7 +163,7 @@ fn invalid_systick_setup_stops_before_portcon_gpio_backlight_and_placeholders() 
     };
 
     assert_eq!(
-        run(defines(true, true, true), true, &mut io),
+        run(defines(true, true, true), true, 0x35c7, &mut io),
         Err(StartupError)
     );
     assert_eq!(

@@ -6,7 +6,7 @@
 //! `ADC_Enable`, and `ADC_SoftReset` in `driver/adc.c`, and the DP32G030
 //! definitions in `bsp/dp32g030/{saradc,syscon}.h` at
 //! [`7607f0a`](https://github.com/egzumer/uv-k5-firmware-custom/tree/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3).
-//! It is not connected to firmware startup.
+//! The board startup dispatcher reuses this executor; callers supply EXTTRIG_SEL.
 
 const DEVICE_CLK_GATE_SARADC: u32 = 1 << 25;
 
