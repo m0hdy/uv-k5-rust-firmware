@@ -11,7 +11,9 @@ use uv_k5_rust_firmware::startup_version_display::{
 };
 use uv_k5_rust_firmware::startup_version_row_plan::StartupVersionRowError;
 use uv_k5_rust_firmware::welcome_startup::{
-    WelcomeError, welcome_with_io, welcome_with_version_and_io,
+    WelcomeError, welcome_on_initialized_display_with_io,
+    welcome_on_initialized_display_with_version_and_io, welcome_with_io,
+    welcome_with_version_and_io,
 };
 
 const CR: usize = 0x400b_8000;
@@ -344,6 +346,157 @@ fn drain_timeouts_short_circuit_initialization_and_row_and_restore_mode() {
             _ => unreachable!(),
         };
         assert_eq!(io.bytes().len(), byte_count);
+        io.assert_restored();
+    }
+}
+
+#[test]
+fn initialized_text_modes_transfer_only_the_exact_golden_row() {
+    for mode in [StartupDisplayMode::Custom, StartupDisplayMode::Voltage] {
+        let mut io = Registers::default();
+        let mut frame = pages();
+        welcome_on_initialized_display_with_version_and_io(
+            &mut io,
+            mode,
+            Some("dev"),
+            &mut frame,
+            limit(),
+        )
+        .unwrap();
+        let mut expected = vec![
+            Event::Read(CR, 0),
+            Event::Write(CR, 0),
+            Event::Read(GPIOB, 0),
+            Event::Write(GPIOB, 0),
+        ];
+        expected.extend([0x40, 0xb7, 0x10, 0x04].map(|byte| Event::Write(WDR, byte)));
+        expected.extend([Event::Read(GPIOB, 0), Event::Write(GPIOB, A0)]);
+        expected.extend(golden_dev()[6].map(|byte| Event::Write(WDR, u32::from(byte))));
+        expected.extend([Event::Read(CR, 0), Event::Write(CR, MODE)]);
+        assert_eq!(io.events, expected);
+        assert_eq!(io.fifo_reads, 132);
+        assert_eq!(io.drain_reads, 2);
+        assert_eq!(frame, golden_dev());
+    }
+}
+
+#[test]
+fn initialized_suppressed_and_invalid_inputs_have_no_display_effects() {
+    for mode in [StartupDisplayMode::None, StartupDisplayMode::FullScreen] {
+        let mut io = Registers::default();
+        let mut frame = pages();
+        welcome_on_initialized_display_with_version_and_io(
+            &mut io,
+            mode,
+            Some("é"),
+            &mut frame,
+            limit(),
+        )
+        .unwrap();
+        assert!(io.events.is_empty());
+        assert_eq!(frame, pages());
+        welcome_on_initialized_display_with_version_and_io(
+            &mut io,
+            mode,
+            Some(""),
+            &mut [],
+            limit(),
+        )
+        .unwrap();
+    }
+    let mut io = Registers::default();
+    let mut frame = pages();
+    assert_eq!(
+        welcome_on_initialized_display_with_version_and_io(
+            &mut io,
+            StartupDisplayMode::Custom,
+            Some("é"),
+            &mut frame,
+            limit()
+        ),
+        Err(WelcomeError::Version(
+            StartupVersionError::UnsupportedCharacter
+        ))
+    );
+    assert_eq!(
+        welcome_on_initialized_display_with_version_and_io(
+            &mut io,
+            StartupDisplayMode::Voltage,
+            Some("dev"),
+            &mut frame[..6],
+            limit()
+        ),
+        Err(WelcomeError::Row(StartupVersionRowError::Render(
+            StartupVersionRenderError::MissingPage
+        )))
+    );
+    assert!(io.events.is_empty());
+    assert_eq!(frame, pages());
+}
+
+#[test]
+fn initialized_package_entry_uses_package_version() {
+    let mut actual = pages();
+    let mut explicit = pages();
+    let mut io = Registers::default();
+    let mut reference = Registers::default();
+    welcome_on_initialized_display_with_io(
+        &mut io,
+        StartupDisplayMode::Custom,
+        &mut actual,
+        limit(),
+    )
+    .unwrap();
+    welcome_on_initialized_display_with_version_and_io(
+        &mut reference,
+        StartupDisplayMode::Custom,
+        Some(env!("CARGO_PKG_VERSION")),
+        &mut explicit,
+        limit(),
+    )
+    .unwrap();
+    assert_eq!(io.events, reference.events);
+    assert_eq!(actual, explicit);
+}
+
+#[test]
+fn initialized_transfer_timeouts_are_bounded_and_restore_mode() {
+    for failed_byte in [0, 3, 4, 59, 131] {
+        let mut io = Registers {
+            fifo_fail_after: Some(failed_byte),
+            ..Registers::default()
+        };
+        assert_eq!(
+            welcome_on_initialized_display_with_version_and_io(
+                &mut io,
+                StartupDisplayMode::Custom,
+                Some("dev"),
+                &mut pages(),
+                limit()
+            ),
+            Err(WelcomeError::Transfer(LineError::FifoTimeout))
+        );
+        assert_eq!(io.bytes().len(), failed_byte);
+        assert_eq!(io.fifo_reads, failed_byte + limit().get() as usize);
+        io.assert_restored();
+    }
+    for failed_drain in [0, 1] {
+        let mut io = Registers {
+            drain_fail_after: Some(failed_drain),
+            ..Registers::default()
+        };
+        assert_eq!(
+            welcome_on_initialized_display_with_version_and_io(
+                &mut io,
+                StartupDisplayMode::Voltage,
+                Some("dev"),
+                &mut pages(),
+                limit()
+            ),
+            Err(WelcomeError::Transfer(LineError::DrainTimeout))
+        );
+        assert_eq!(io.drain_reads, failed_drain + DRAIN_POLL_LIMIT as usize);
+        assert_eq!(io.bytes().len(), if failed_drain == 0 { 4 } else { 132 });
         io.assert_restored();
     }
 }

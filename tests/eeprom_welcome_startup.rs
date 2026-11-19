@@ -5,7 +5,9 @@ use std::rc::Rc;
 
 use uv_k5_rust_firmware::eeprom_read_transport::{Acknowledgement, I2cTransport, ReadError};
 use uv_k5_rust_firmware::eeprom_welcome_startup::{
-    EepromWelcomeError, welcome_with_io, welcome_with_version_and_io,
+    EepromWelcomeError, welcome_on_initialized_display_with_io,
+    welcome_on_initialized_display_with_version_and_io, welcome_with_io,
+    welcome_with_version_and_io,
 };
 use uv_k5_rust_firmware::st7565_line_transport::LineError;
 use uv_k5_rust_firmware::st7565_startup_executor::target_spi0::{DelayMs, RegisterIo};
@@ -396,6 +398,223 @@ fn successful_read_preserves_concrete_welcome_errors_and_short_circuiting() {
             assert!(
                 matches!(trace.borrow().last(), Some(Event::DisplayWrite(0x400b_8000, value)) if value & (1 << 12) != 0)
             );
+        }
+    }
+}
+
+#[test]
+fn initialized_continuation_acquires_all_modes_before_display_effects() {
+    for (raw, mode) in [
+        (0, StartupDisplayMode::FullScreen),
+        (1, StartupDisplayMode::Custom),
+        (2, StartupDisplayMode::Voltage),
+        (3, StartupDisplayMode::None),
+        (4, StartupDisplayMode::Voltage),
+        (255, StartupDisplayMode::Voltage),
+    ] {
+        let trace = Trace::default();
+        let mut frame = [[0xa5; LCD_WIDTH]; 7];
+        let mut display = Display {
+            trace: trace.clone(),
+            ..Display::default()
+        };
+        welcome_on_initialized_display_with_version_and_io(
+            &mut Bus::new(trace.clone(), raw),
+            &mut display,
+            Some("dev"),
+            &mut frame,
+            limit(),
+        )
+        .unwrap();
+        let reference = Trace::default();
+        let mut expected_frame = [[0xa5; LCD_WIDTH]; 7];
+        welcome_startup::welcome_on_initialized_display_with_version_and_io(
+            &mut Display {
+                trace: reference.clone(),
+                ..Display::default()
+            },
+            mode,
+            Some("dev"),
+            &mut expected_frame,
+            limit(),
+        )
+        .unwrap();
+        let mut expected = transaction();
+        expected.extend(reference.borrow().iter().cloned());
+        assert_eq!(*trace.borrow(), expected, "encoding {raw}");
+        assert_eq!(frame, expected_frame);
+        assert_eq!(display.bytes, if [0, 3].contains(&raw) { 0 } else { 132 });
+        if [0, 3].contains(&raw) {
+            assert_eq!(frame, [[0xa5; LCD_WIDTH]; 7]);
+            assert_eq!(*trace.borrow(), transaction());
+        }
+    }
+}
+
+#[test]
+fn initialized_package_entry_uses_package_version() {
+    let trace = Trace::default();
+    let reference = Trace::default();
+    let mut actual = [[0; LCD_WIDTH]; 7];
+    let mut expected = actual;
+    welcome_on_initialized_display_with_io(
+        &mut Bus::new(trace.clone(), 1),
+        &mut Display {
+            trace: trace.clone(),
+            ..Display::default()
+        },
+        &mut actual,
+        limit(),
+    )
+    .unwrap();
+    welcome_on_initialized_display_with_version_and_io(
+        &mut Bus::new(reference.clone(), 1),
+        &mut Display {
+            trace: reference.clone(),
+            ..Display::default()
+        },
+        Some(env!("CARGO_PKG_VERSION")),
+        &mut expected,
+        limit(),
+    )
+    .unwrap();
+    assert_eq!(actual, expected);
+    assert_eq!(*trace.borrow(), *reference.borrow());
+}
+
+#[test]
+fn initialized_acquisition_failures_preserve_error_precedence_and_no_display_effects() {
+    for fail in 0..8 {
+        for cleanup_fails in [false, true] {
+            let trace = Trace::default();
+            let mut bus = Bus::new(trace.clone(), 1);
+            bus.fail = Some(fail);
+            bus.cleanup_fails = cleanup_fails;
+            let mut frame = [[0xa5; LCD_WIDTH]; 7];
+            assert_eq!(
+                welcome_on_initialized_display_with_io(
+                    &mut bus,
+                    &mut Display {
+                        trace: trace.clone(),
+                        ..Display::default()
+                    },
+                    &mut frame,
+                    limit()
+                ),
+                Err(EepromWelcomeError::Acquisition(ReadError::Transport(7)))
+            );
+            let mut expected = transaction()[..=fail].to_vec();
+            if fail != 0 && fail != 7 {
+                expected.push(Event::Stop);
+            }
+            assert_eq!(*trace.borrow(), expected);
+            assert_eq!(frame, [[0xa5; LCD_WIDTH]; 7]);
+        }
+    }
+    for nack in [1, 2, 3, 5] {
+        let trace = Trace::default();
+        let mut bus = Bus::new(trace.clone(), 1);
+        bus.nack = Some(nack);
+        bus.cleanup_fails = true;
+        let mut frame = [[0xa5; LCD_WIDTH]; 7];
+        assert_eq!(
+            welcome_on_initialized_display_with_io(
+                &mut bus,
+                &mut Display {
+                    trace: trace.clone(),
+                    ..Display::default()
+                },
+                &mut frame,
+                limit()
+            ),
+            Err(EepromWelcomeError::Acquisition(ReadError::NotAcknowledged))
+        );
+        let mut expected = transaction()[..=nack].to_vec();
+        expected.push(Event::Stop);
+        assert_eq!(*trace.borrow(), expected);
+        assert_eq!(frame, [[0xa5; LCD_WIDTH]; 7]);
+    }
+    let trace = Trace::default();
+    let mut bus = Bus::new(trace.clone(), 1);
+    bus.cleanup_fails = true;
+    let mut frame = [[0xa5; LCD_WIDTH]; 7];
+    assert_eq!(
+        welcome_on_initialized_display_with_io(
+            &mut bus,
+            &mut Display {
+                trace: trace.clone(),
+                ..Display::default()
+            },
+            &mut frame,
+            limit()
+        ),
+        Err(EepromWelcomeError::Acquisition(ReadError::Transport(9)))
+    );
+    assert_eq!(*trace.borrow(), transaction());
+    assert_eq!(frame, [[0xa5; LCD_WIDTH]; 7]);
+}
+
+#[test]
+fn initialized_validation_and_transfer_errors_follow_successful_acquisition() {
+    for (version, count, fifo, drain, expected) in [
+        (
+            Some("é"),
+            7,
+            None,
+            None,
+            WelcomeError::Version(StartupVersionError::UnsupportedCharacter),
+        ),
+        (
+            Some("dev"),
+            6,
+            None,
+            None,
+            WelcomeError::Row(StartupVersionRowError::Render(
+                StartupVersionRenderError::MissingPage,
+            )),
+        ),
+        (
+            Some("dev"),
+            7,
+            Some(0),
+            None,
+            WelcomeError::Transfer(LineError::FifoTimeout),
+        ),
+        (
+            Some("dev"),
+            7,
+            None,
+            Some(0),
+            WelcomeError::Transfer(LineError::DrainTimeout),
+        ),
+    ] {
+        let trace = Trace::default();
+        let mut frame = [[0xa5; LCD_WIDTH]; 7];
+        let mut display = Display {
+            trace: trace.clone(),
+            fail_fifo: fifo,
+            fail_drain: drain,
+            ..Display::default()
+        };
+        assert_eq!(
+            welcome_on_initialized_display_with_version_and_io(
+                &mut Bus::new(trace.clone(), 1),
+                &mut display,
+                version,
+                &mut frame[..count],
+                limit()
+            ),
+            Err(EepromWelcomeError::Welcome(expected))
+        );
+        assert_eq!(&trace.borrow()[..8], transaction());
+        if matches!(expected, WelcomeError::Version(_) | WelcomeError::Row(_)) {
+            assert_eq!(*trace.borrow(), transaction());
+            assert_eq!(frame, [[0xa5; LCD_WIDTH]; 7]);
+        } else {
+            assert!(
+                matches!(trace.borrow().last(), Some(Event::DisplayWrite(0x400b_8000, value)) if value & (1 << 12) != 0)
+            );
+            assert_ne!(frame[6], [0xa5; LCD_WIDTH]);
         }
     }
 }

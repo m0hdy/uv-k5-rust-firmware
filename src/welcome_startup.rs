@@ -104,6 +104,41 @@ pub fn welcome_with_version_and_io<I: RegisterIo, D: DelayMs + ?Sized>(
     Ok(())
 }
 
+/// Displays the package version on an already-initialized controller.
+pub fn welcome_on_initialized_display_with_io<I: RegisterIo>(
+    io: &mut I,
+    mode: StartupDisplayMode,
+    pages: &mut [[u8; LCD_WIDTH]],
+    fifo_poll_limit: NonZeroU32,
+) -> Result<(), WelcomeError> {
+    welcome_on_initialized_display_with_version_and_io(
+        io,
+        mode,
+        Some(env!("CARGO_PKG_VERSION")),
+        pages,
+        fifo_poll_limit,
+    )
+}
+
+/// As [`welcome_on_initialized_display_with_io`], with an explicit version.
+///
+/// The controller must already be initialized. Validation and rendering precede
+/// register access; rendering may modify page 6 even if the transfer fails.
+pub fn welcome_on_initialized_display_with_version_and_io<I: RegisterIo>(
+    io: &mut I,
+    mode: StartupDisplayMode,
+    version: Option<&str>,
+    pages: &mut [[u8; LCD_WIDTH]],
+    fifo_poll_limit: NonZeroU32,
+) -> Result<(), WelcomeError> {
+    let version = startup_version_display_plan(mode, version).map_err(WelcomeError::Version)?;
+    let row = compose_startup_version_row(&version, pages).map_err(WelcomeError::Row)?;
+    if let Some(row) = row {
+        transfer_row(io, row, fifo_poll_limit).map_err(WelcomeError::Transfer)?;
+    }
+    Ok(())
+}
+
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 struct VolatileRegisters;
 
@@ -142,4 +177,24 @@ pub unsafe fn welcome_mmio(
     fifo_poll_limit: NonZeroU32,
 ) -> Result<(), WelcomeError> {
     welcome_with_io(&mut VolatileRegisters, delay, mode, pages, fifo_poll_limit)
+}
+
+/// Displays the package version using an already-initialized controller.
+///
+/// # Safety
+///
+/// Controller initialization must already have succeeded. The caller must meet
+/// the mapping, enabled clock, configured pin mux/output, idle SPI0 and exclusive
+/// whole-register ownership requirements of
+/// [`st7565_mmio_transport::draw_line_mmio`]. Serialize against all writers,
+/// including interrupts and unrelated-bit writers, throughout the call.
+/// FIFO and drain polling are bounded. This does not establish boot integration
+/// or hardware validation.
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+pub unsafe fn welcome_on_initialized_display_mmio(
+    mode: StartupDisplayMode,
+    pages: &mut [[u8; LCD_WIDTH]],
+    fifo_poll_limit: NonZeroU32,
+) -> Result<(), WelcomeError> {
+    welcome_on_initialized_display_with_io(&mut VolatileRegisters, mode, pages, fifo_poll_limit)
 }
