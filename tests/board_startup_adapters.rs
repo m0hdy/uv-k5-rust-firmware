@@ -1,6 +1,7 @@
 #[path = "../src/board_startup_adapters.rs"]
 mod board_startup_adapters;
 
+use board_startup_adapters::backlight_startup_executor::{Register, RegisterIo, apply_with_io};
 use board_startup_adapters::{Call, Defines, StartupError, StartupIo, run};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -9,13 +10,26 @@ enum Event {
     Systick(u32),
     Portcon(bool),
     Gpio(bool),
+    BacklightInit,
+    BacklightRead(Register),
+    BacklightWrite(Register, u32),
     Placeholder(Call),
 }
 
-#[derive(Default)]
 struct FakeIo {
     events: Vec<Event>,
     fail_systick: bool,
+    backlight_registers: [u32; 5],
+}
+
+impl Default for FakeIo {
+    fn default() -> Self {
+        Self {
+            events: Vec::new(),
+            fail_systick: false,
+            backlight_registers: [0xa123_4567, 0xdead_beef, 0x89ab_cdef, 0, 0],
+        }
+    }
 }
 
 impl StartupIo for FakeIo {
@@ -40,8 +54,36 @@ impl StartupIo for FakeIo {
         self.events.push(Event::Gpio(enable_fmradio));
     }
 
+    fn backlight_init_hardware(&mut self) {
+        self.events.push(Event::BacklightInit);
+        apply_with_io(self);
+    }
+
     fn placeholder(&mut self, call: Call) {
         self.events.push(Event::Placeholder(call));
+    }
+}
+
+impl RegisterIo for FakeIo {
+    fn read(&mut self, register: Register) -> u32 {
+        let value = self.backlight_registers[register_index(register)];
+        self.events.push(Event::BacklightRead(register));
+        value
+    }
+
+    fn write(&mut self, register: Register, value: u32) {
+        self.backlight_registers[register_index(register)] = value;
+        self.events.push(Event::BacklightWrite(register, value));
+    }
+}
+
+fn register_index(register: Register) -> usize {
+    match register {
+        Register::PwmPlus0ClockSource => 0,
+        Register::PwmPlus0Period => 1,
+        Register::PortBSel0 => 2,
+        Register::PwmPlus0Generator => 3,
+        Register::PwmPlus0Config => 4,
     }
 }
 
@@ -65,13 +107,24 @@ fn sequencer_dispatches_adapters_in_pinned_order_and_keeps_other_calls_typed() {
             Event::Systick(480_000),
             Event::Portcon(true),
             Event::Gpio(true),
-            Event::Placeholder(Call::BacklightInitHardware),
+            Event::BacklightInit,
+            Event::BacklightRead(Register::PwmPlus0ClockSource),
+            Event::BacklightWrite(Register::PwmPlus0ClockSource, 0xa12f_4567),
+            Event::BacklightWrite(Register::PwmPlus0Period, 1023),
+            Event::BacklightRead(Register::PortBSel0),
+            Event::BacklightWrite(Register::PortBSel0, 0x80ab_cdef),
+            Event::BacklightRead(Register::PortBSel0),
+            Event::BacklightWrite(Register::PortBSel0, 0x81ab_cdef),
+            Event::BacklightWrite(Register::PwmPlus0Generator, 0x0101_0000),
+            Event::BacklightWrite(Register::PwmPlus0Config, 5),
             Event::Placeholder(Call::AdcInit),
             Event::Placeholder(Call::St7565Init),
             Event::Placeholder(Call::Bk1080Init0),
             Event::Placeholder(Call::CrcInit),
         ]
     );
+    assert_eq!(io.backlight_registers[0], 0xa12f_4567);
+    assert_eq!(io.backlight_registers[2], 0x81ab_cdef);
 }
 
 #[test]
@@ -90,7 +143,7 @@ fn swd_and_fm_features_are_forwarded_to_their_adapters() {
 }
 
 #[test]
-fn invalid_systick_setup_stops_before_portcon_gpio_and_placeholders() {
+fn invalid_systick_setup_stops_before_portcon_gpio_backlight_and_placeholders() {
     let mut io = FakeIo {
         fail_systick: true,
         ..FakeIo::default()

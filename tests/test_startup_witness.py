@@ -157,7 +157,7 @@ CONNECTED_DISPATCH = """
  60a: 9802 ldr r0, [sp, #8]
  60c: b2c0 uxtb r0, r0
  60e: 9000 str r0, [sp, #0]
- 610: 2803 cmp r0, #3
+ 610: 2804 cmp r0, #4
  612: d81d bhi.n 650 <SequencerBackend as Backend>::call+0x50
  614: 9800 ldr r0, [sp, #0]
  616: 0081 lsls r1, r0, #2
@@ -168,6 +168,7 @@ CONNECTED_DISPATCH = """
  624: 1031 .word 0x1031
  628: 1071 .word 0x1071
  62c: 1091 .word 0x1091
+ 630: 10b1 .word 0x10b1
  650: 9902 ldr r1, [sp, #8]
  652: 9801 ldr r0, [sp, #4]
  654: 6800 ldr r0, [r0, #0]
@@ -204,6 +205,10 @@ CONNECTED_DISPATCH = """
  1094: 7949 ldrb r1, [r1, #5]
  1096: f000 f800 bl 730 <HardwareIo as StartupIo>::gpio>
  109a: e6e9 b.n 670 <SequencerBackend as Backend>::call+0x70>
+ 10b0: 9801 ldr r0, [sp, #4]
+ 10b2: 6800 ldr r0, [r0, #0]
+ 10b4: f000 f800 bl 740 <HardwareIo as StartupIo>::backlight_init_hardware>
+ 10b8: e6d6 b.n 670 <SequencerBackend as Backend>::call+0x70>
 00000700 <<HardwareIo as StartupIo>::device_clock_gates>:
  700: f000 f800 bl 800 <apply_device_clock_gates>
  704: bd80 pop {r7, pc}
@@ -218,6 +223,119 @@ CONNECTED_DISPATCH = """
  730: f000 f800 bl 830 <apply_gpio_startup_plan>
  734: b00e add sp, #56
  736: bd80 pop {r7, pc}
+00000740 <<HardwareIo as StartupIo>::backlight_init_hardware>:
+ 740: f000 f800 bl 840 <initialize_backlight_hardware>
+ 744: bd80 pop {r7, pc}
+00000840 <initialize_backlight_hardware>:
+ 840: f000 f800 bl 846 <backlight_startup_executor::apply_with_io>
+ 844: bd80 pop {r7, pc}
+00000846 <backlight_startup_executor::apply_with_io>:
+ 846: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>
+ 84a: f000 f800 bl 1100 <backlight_startup_executor::BacklightInitPlan>::writes>
+ 84e: 9900 ldr r1, [sp, #156]
+ 850: f000 f800 bl 900 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::read>
+ 854: 9901 ldr r1, [sp, #8]
+ 856: 4602 mov r2, r0
+ 858: 9804 ldr r0, [sp, #16]
+ 85a: 430a orrs r2, r1
+ 85c: 9900 ldr r1, [sp, #156]
+ 85e: f000 f800 bl 910 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>
+ 862: 9900 ldr r1, [sp, #156]
+ 864: f000 f800 bl 900 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::read>
+ 868: 9901 ldr r1, [sp, #4]
+ 86a: 4602 mov r2, r0
+ 86c: 9804 ldr r0, [sp, #16]
+ 86e: 438a bics r2, r1
+ 870: 9900 ldr r1, [sp, #156]
+ 872: f000 f800 bl 910 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>
+ 876: 9900 ldr r1, [sp, #156]
+ 878: f000 f800 bl 900 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::read>
+ 87c: 9901 ldr r1, [sp, #0]
+ 87e: 4602 mov r2, r0
+ 880: 9804 ldr r0, [sp, #16]
+ 882: 430a orrs r2, r1
+ 884: 9900 ldr r1, [sp, #156]
+ 886: f000 f800 bl 910 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>
+ 88a: f000 f800 bl 910 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>
+00000900 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::read>:
+ 900: 4608 mov r0, r1
+ 902: f000 f800 bl 930 <backlight_startup_executor::RegisterAddress>::from_register>
+ 906: f000 f800 bl a00 <backlight_startup_executor::RegisterAddress>::address>
+ 90a: 6800 ldr r0, [r0, #0]
+ 90c: bd80 pop {r7, pc}
+00000910 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>:
+ 910: 4608 mov r0, r1
+ 912: f000 f800 bl 930 <backlight_startup_executor::RegisterAddress>::from_register>
+ 916: f000 f800 bl a00 <backlight_startup_executor::RegisterAddress>::address>
+ 91a: 9a01 ldr r2, [sp, #4]
+ 91c: 6002 str r2, [r0, #0]
+ 91e: bd80 pop {r7, pc}
+00000930 <backlight_startup_executor::RegisterAddress>::from_register>:
+ 930: a001 add r0, pc, #4 @ (adr r0, 938)
+ 932: 5840 ldr r0, [r0, r1]
+ 934: 4687 mov pc, r0
+ 938: 0951 .word 0x0951
+ 93c: 0959 .word 0x0959
+ 940: 0961 .word 0x0961
+ 944: 0969 .word 0x0969
+ 948: 0971 .word 0x0971
+ 950: a901 add r1, sp, #4
+ 952: 2000 movs r0, #0
+ 954: 7008 strb r0, [r1, #0]
+ 958: a901 add r1, sp, #4
+ 95a: 2001 movs r0, #1
+ 95c: 7008 strb r0, [r1, #0]
+ 960: a901 add r1, sp, #4
+ 962: 2002 movs r0, #2
+ 964: 7008 strb r0, [r1, #0]
+ 968: a901 add r1, sp, #4
+ 96a: 2003 movs r0, #3
+ 96c: 7008 strb r0, [r1, #0]
+ 970: a901 add r1, sp, #4
+ 972: 2004 movs r0, #4
+ 974: 7008 strb r0, [r1, #0]
+00000a00 <backlight_startup_executor::RegisterAddress>::address>:
+ a00: a001 add r0, pc, #4 @ (adr r0, a08)
+ a02: 5840 ldr r0, [r0, r1]
+ a04: 4687 mov pc, r0
+ a08: 0a21 .word 0x0a21
+ a0c: 0a29 .word 0x0a29
+ a10: 0a31 .word 0x0a31
+ a14: 0a39 .word 0x0a39
+ a18: 0a41 .word 0x0a41
+ a20: 480f ldr r0, [pc, #60] @ (a60 <literal>)
+ a22: bd80 pop {r7, pc}
+ a28: 480e ldr r0, [pc, #56] @ (a64 <literal>)
+ a2a: bd80 pop {r7, pc}
+ a30: 480d ldr r0, [pc, #52] @ (a68 <literal>)
+ a32: bd80 pop {r7, pc}
+ a38: 480c ldr r0, [pc, #48] @ (a6c <literal>)
+ a3a: bd80 pop {r7, pc}
+ a40: 480b ldr r0, [pc, #44] @ (a70 <literal>)
+ a42: bd80 pop {r7, pc}
+ a60: 400b4008 .word 0x400b4008
+ a64: 400b401c .word 0x400b401c
+ a68: 400b0008 .word 0x400b0008
+ a6c: 400b4004 .word 0x400b4004
+ a70: 400b4000 .word 0x400b4000
+00001000 <backlight_startup_witness::backlight_startup_executor::BacklightInitPlan>::from_snapshot>:
+ 1000: 2317 movs r3, #23
+ 1002: 045b lsls r3, r3, #17
+ 1004: 4319 orrs r1, r3
+ 1006: 240f movs r4, #15
+ 1008: 0625 lsls r5, r4, #24
+ 100a: 43aa bics r2, r5
+ 100c: 061b lsls r3, r3, #24
+ 100e: 431a orrs r2, r3
+ 1010: 2105 movs r1, #5
+ 1012: 03ff .word 0x000003ff
+ 1016: 01010000 .word 0x01010000
+00001100 <backlight_startup_executor::BacklightInitPlan>::writes>:
+ 1100: 2106 movs r1, #6
+ 1102: f000 f800 bl 1110 <backlight_startup_executor::BacklightWrite>::iter>
+ 1106: bd80 pop {r7, pc}
+00001110 <backlight_startup_executor::BacklightWrite>::iter>:
+ 1110: bd80 pop {r7, pc}
 """
 
 ENTRY_SELF_LOOP = CONNECTED_DISPATCH.replace(
@@ -265,12 +383,12 @@ OVERWRITTEN_INCOMING_VARIANT = CONNECTED_DISPATCH.replace(
 )
 
 ALWAYS_TAKEN_BACKEND_BRANCH = CONNECTED_DISPATCH.replace(
-    " 610: 2803 cmp r0, #3\n 612: d81d bhi.n 650",
+    " 610: 2804 cmp r0, #4\n 612: d81d bhi.n 650",
     " 610: 4280 cmp r0, r0\n 612: d01d beq.n 650",
 )
 
 UNSUPPORTED_BACKEND_CONDITIONAL = CONNECTED_DISPATCH.replace(
-    " 610: 2803 cmp r0, #3\n 612: d81d bhi.n 650",
+    " 610: 2804 cmp r0, #4\n 612: d81d bhi.n 650",
     " 610: 4288 cmp r0, r1\n 612: d02b beq.n 650",
 )
 
@@ -354,6 +472,36 @@ SEQUENCER_CRC_POST_CALL_SELF_LOOP = CONNECTED_DISPATCH.replace(
 SEQUENCER_CRC_SKIP_SELF_LOOP = CONNECTED_DISPATCH.replace(
     " 574: d008 beq.n 588",
     " 574: e7fe b.n 574",
+)
+
+BACKLIGHT_DISPATCH_UNREACHABLE = CONNECTED_DISPATCH.replace(
+    " 10b0: 9801 ldr r0, [sp, #4]",
+    " 10b0: 4770 bx lr",
+)
+
+BACKLIGHT_WRONG_REGISTER_ADDRESS = CONNECTED_DISPATCH.replace(
+    " a68: 400b0008 .word 0x400b0008",
+    " a68: 400b000c .word 0x400b000c",
+)
+
+BACKLIGHT_SWAPPED_REGISTER_ADDRESSES = CONNECTED_DISPATCH.replace(
+    " a60: 400b4008 .word 0x400b4008\n a64: 400b401c .word 0x400b401c",
+    " a60: 400b401c .word 0x400b401c\n a64: 400b4008 .word 0x400b4008",
+)
+
+BACKLIGHT_WRONG_PLAN_OPERAND = CONNECTED_DISPATCH.replace(
+    " 1000: 2317 movs r3, #23",
+    " 1000: 2316 movs r3, #22",
+)
+
+BACKLIGHT_MISSING_FRESH_READ = CONNECTED_DISPATCH.replace(
+    " 864: f000 f800 bl 900 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::read>",
+    " 864: f000 f800 bl 900 <unrelated_read>",
+)
+
+BACKLIGHT_WRONG_RMW_ORDER = CONNECTED_DISPATCH.replace(
+    " 85a: 430a orrs r2, r1",
+    " 85a: 438a bics r2, r1",
 )
 
 
@@ -528,6 +676,32 @@ class StartupWitnessCheckerTests(unittest.TestCase):
 
     def test_accepts_linked_backend_dispatch_to_matching_hardware_methods(self):
         validate_call_path(CONNECTED_DISPATCH)
+
+    def test_rejects_unreachable_backlight_hardware_call(self):
+        with self.assertRaisesRegex(WitnessError, "variant 4.*unexpected continuation"):
+            validate_call_path(BACKLIGHT_DISPATCH_UNREACHABLE)
+
+    def test_rejects_wrong_backlight_register_address(self):
+        with self.assertRaisesRegex(WitnessError, "backlight register address evidence"):
+            validate_call_path(BACKLIGHT_WRONG_REGISTER_ADDRESS)
+
+    def test_rejects_swapped_backlight_register_addresses(self):
+        with self.assertRaisesRegex(
+            WitnessError, "backlight register addresses do not match their register variants"
+        ):
+            validate_call_path(BACKLIGHT_SWAPPED_REGISTER_ADDRESSES)
+
+    def test_rejects_wrong_backlight_plan_operand(self):
+        with self.assertRaisesRegex(WitnessError, "backlight plan operands"):
+            validate_call_path(BACKLIGHT_WRONG_PLAN_OPERAND)
+
+    def test_rejects_missing_backlight_fresh_read(self):
+        with self.assertRaisesRegex(WitnessError, "ordered fresh RMW register evidence"):
+            validate_call_path(BACKLIGHT_MISSING_FRESH_READ)
+
+    def test_rejects_wrong_backlight_rmw_order(self):
+        with self.assertRaisesRegex(WitnessError, "ordered fresh RMW register evidence"):
+            validate_call_path(BACKLIGHT_WRONG_RMW_ORDER)
 
     def test_literal_load_accepts_gnu_annotation_styles(self):
         for marker in ("@", ";"):

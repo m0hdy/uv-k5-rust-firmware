@@ -12,7 +12,7 @@ The supported subsequence is compared with pinned
 
 | Coordinator stage | Relation to pinned C |
 | --- | --- |
-| Board adapter sequence | Models clock gates, SysTick, `BOARD_Init` calls and optional startup calls from `Main`. The target adapter still represents backlight, ADC, display, and other not-yet-executed board calls as typed placeholders. |
+| Board adapter sequence | Models clock gates, SysTick, `BOARD_Init` calls and optional startup calls from `Main`. The target adapter executes backlight initialization through the fresh-read executor; ADC, display, and other not-yet-executed board calls remain typed placeholders. |
 | Fallible settings read | Reads the existing core and display blocks corresponding to the beginning of `SETTINGS_InitEEPROM`; it does not implement the rest of that C routine, build-option writes, or calibration loading. |
 | Bounded battery sampling | Runs four bounded channel-4/channel-9 acquisitions with caller-supplied calibration, corresponding to the four-sample loop after radio setup in this region. |
 
@@ -26,9 +26,14 @@ loop setup. No battery calibration value or poll budget is supplied by
 default.
 
 Production use requires concrete implementations of all three I/O boundaries.
-The board boundary must execute every required hardware stage (including
-currently placeholder calls), with clocks, pin muxes, register mappings,
+The board boundary must execute every required hardware stage, including the
+remaining typed placeholders, with clocks, pin muxes, register mappings,
 exclusive startup ownership, and a valid SysTick vector/handler established.
+Backlight execution specifically requires the PWM_PLUS0 clock gate enabled
+before the stage, DP32G030 PWM_PLUS0/PORTB mappings, B6 reserved and selected
+for PWMP0_CH0 by the backlight mux update, and exclusive access to the touched
+registers. Host tests and link-only inspection do not establish these hardware
+preconditions or validate physical backlight output.
 The EEPROM boundary must be backed by the device's initialized I2C transport.
 The battery boundary requires the SARADC clock, channels 4 and 9 configured
 for software-triggered sampling, exclusive SARADC access, a bounded poll

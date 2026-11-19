@@ -212,7 +212,7 @@ def validate_variant_guard(
         matches_instruction(load, "ldr", r"\s*r0,\s*\[sp,\s*#8\]\s*")
         and matches_instruction(extend, "uxtb", r"\s*r0,\s*r0\s*")
         and matches_instruction(save, "str", r"\s*r0,\s*\[sp,\s*#0\]\s*")
-        and matches_instruction(compare, "cmp", r"\s*r0,\s*#3\s*")
+        and matches_instruction(compare, "cmp", r"\s*r0,\s*#4\s*")
         and branch[2] == "bhi.n"
     ):
         return False
@@ -278,7 +278,7 @@ def backend_dispatch_targets(function: str) -> list[int]:
         (10, "ldr", r"\s*r0,\s*\[sp,\s*#8\]\s*"),
         (11, "uxtb", r"\s*r0,\s*r0\s*"),
         (12, "str", r"\s*r0,\s*\[sp,\s*#0\]\s*"),
-        (13, "cmp", r"\s*r0,\s*#3\s*"),
+        (13, "cmp", r"\s*r0,\s*#4\s*"),
         (14, "bhi.n", r"\s*[0-9a-fA-F]+\b.*"),
         (15, "ldr", r"\s*r0,\s*\[sp,\s*#0\]\s*"),
         (16, "lsls", r"\s*r1,\s*r0,\s*#2\s*"),
@@ -322,16 +322,16 @@ def backend_dispatch_targets(function: str) -> list[int]:
         if match:
             words[int(match.group(1), 16)] = int(match.group(2), 16)
     try:
-        return [words[table_address + offset] & ~1 for offset in range(0, 16, 4)]
+        return [words[table_address + offset] & ~1 for offset in range(0, 20, 4)]
     except KeyError as error:
-        raise WitnessError("sequencer backend dispatch table is missing one of its first four targets") from error
+        raise WitnessError("sequencer backend dispatch table is missing one of its first five targets") from error
 
 
 def validate_backend_dispatch(disassembly: str) -> None:
     backend = function_block(disassembly, ">::call", suffix=True)
     targets = backend_dispatch_targets(backend)
-    if len(set(targets)) != 4:
-        raise WitnessError("sequencer backend first four variants do not have distinct dispatch targets")
+    if len(set(targets)) != 5:
+        raise WitnessError("sequencer backend first five variants do not have distinct dispatch targets")
 
     instructions = parse_instructions(backend)
     by_address = {instruction[0]: instruction for instruction in instructions}
@@ -340,6 +340,7 @@ def validate_backend_dispatch(disassembly: str) -> None:
         "StartupIo>::systick",
         "StartupIo>::portcon",
         "StartupIo>::gpio",
+        "StartupIo>::backlight_init_hardware",
     )
     epilogue = branch_target(parse_instructions(backend)[8])
     if epilogue is None:
@@ -437,6 +438,280 @@ def validate_backend_dispatch(disassembly: str) -> None:
     gpio_end = expect(gpio_end, "ldrb", r"\s*r1,\s*\[r1,\s*#5\]\s*", 3)
     gpio_end = expect_call(gpio_end, methods[3], 3)
     expect_epilogue_branch(gpio_end, 3)
+
+    backlight_end = expect(targets[4], "ldr", r"\s*r0,\s*\[sp,\s*#4\]\s*", 4)
+    backlight_end = expect(backlight_end, "ldr", r"\s*r0,\s*\[r0,\s*#0\]\s*", 4)
+    backlight_end = expect_call(
+        backlight_end, methods[4], 4
+    )
+    expect_epilogue_branch(backlight_end, 4)
+
+
+def validate_backlight_register_evidence(disassembly: str) -> None:
+    def word_entries(function: str) -> dict[int, int]:
+        entries = {}
+        for line in function.splitlines():
+            match = re.match(
+                r"\s*([0-9a-fA-F]+):\s+(?:[0-9a-fA-F]+\s+)+\.word\s+0x([0-9a-fA-F]+)\b",
+                line,
+            )
+            if match:
+                entries[int(match.group(1), 16)] = int(match.group(2), 16)
+        return entries
+
+    address_body = function_block(
+        disassembly, "backlight_startup_executor::RegisterAddress>::address"
+    )
+    words = word_entries(address_body)
+
+    address_literals = [
+        int(match.group(1), 16)
+        for line in address_body.splitlines()
+        if (match := re.search(r"\.word\s+0x([0-9a-fA-F]+)\b", line))
+        and 0x4000_0000 <= int(match.group(1), 16) < 0x5000_0000
+    ]
+    expected_addresses = {
+        0x400B4008,
+        0x400B401C,
+        0x400B0008,
+        0x400B4004,
+        0x400B4000,
+    }
+    if len(address_literals) != 5 or set(address_literals) != expected_addresses:
+        raise WitnessError("backlight register address evidence is missing or incorrect")
+
+    table_match = re.search(
+        r"\badd\s+r0,\s*pc,\s*#[0-9]+\b.*?\badr\s+r0,\s*([0-9a-fA-F]+)\b",
+        address_body,
+    )
+    if table_match is None:
+        raise WitnessError("backlight register address mapping is missing")
+    try:
+        targets = [
+            words[int(table_match.group(1), 16) + offset] & ~1
+            for offset in range(0, 20, 4)
+        ]
+    except KeyError as error:
+        raise WitnessError("backlight register address mapping is incomplete") from error
+    by_address = {
+        instruction[0]: instruction for instruction in parse_instructions(address_body)
+    }
+    mapped_addresses = []
+    for target in targets:
+        load = by_address.get(target)
+        literal = (
+            re.search(r"@\s*\(([0-9a-fA-F]+)\b", load[4])
+            if load is not None
+            and matches_instruction(load, "ldr", r"\s*r0,\s*\[pc,\s*#[0-9]+\].*")
+            else None
+        )
+        if literal is None or int(literal.group(1), 16) not in words:
+            raise WitnessError("backlight register address mapping is incomplete")
+        mapped_addresses.append(words[int(literal.group(1), 16)])
+    if mapped_addresses != [
+        0x400B4008,
+        0x400B401C,
+        0x400B0008,
+        0x400B4004,
+        0x400B4000,
+    ]:
+        raise WitnessError("backlight register addresses do not match their register variants")
+
+    conversion = function_block(
+        disassembly, "backlight_startup_executor::RegisterAddress>::from_register"
+    )
+    conversion_table = re.search(
+        r"\badd\s+r0,\s*pc,\s*#[0-9]+\b.*?\badr\s+r0,\s*([0-9a-fA-F]+)\b",
+        conversion,
+    )
+    if conversion_table is None:
+        raise WitnessError("backlight register conversion is missing")
+    conversion_words = word_entries(conversion)
+    try:
+        conversion_targets = [
+            conversion_words[int(conversion_table.group(1), 16) + offset] & ~1
+            for offset in range(0, 20, 4)
+        ]
+    except KeyError as error:
+        raise WitnessError("backlight register conversion is incomplete") from error
+    conversion_instructions = {
+        instruction[0]: instruction for instruction in parse_instructions(conversion)
+    }
+    for register, target in enumerate(conversion_targets):
+        body = [
+            conversion_instructions.get(target),
+            conversion_instructions.get(target + 2),
+            conversion_instructions.get(target + 4),
+        ]
+        if not (
+            all(body)
+            and matches_instruction(body[0], "add", r"\s*r1,\s*sp,\s*#4\s*")
+            and matches_instruction(body[1], "movs", rf"\s*r0,\s*#{register}\s*")
+            and matches_instruction(body[2], "strb", r"\s*r0,\s*\[r1,\s*#0\]\s*")
+        ):
+            raise WitnessError("backlight register conversion does not preserve register variants")
+
+    initialize = function_block(disassembly, "initialize_backlight_hardware")
+    if not any(
+        "backlight_startup_executor::apply_with_io" in target
+        for target in reachable_call_targets(initialize)
+    ):
+        raise WitnessError("backlight hardware initializer does not reach the register executor")
+
+    plan = function_block(disassembly, "BacklightInitPlan>::from_snapshot")
+    plan_instructions = parse_instructions(plan)
+    expected_plan_operations = (
+        ("movs", r"\s*r3,\s*#23\s*"),
+        ("lsls", r"\s*r3,\s*r3,\s*#17\s*"),
+        ("orrs", r"\s*r1,\s*r3\s*"),
+        ("movs", r"\s*r4,\s*#15\s*"),
+        ("lsls", r"\s*r5,\s*r4,\s*#24\s*"),
+        ("bics", r"\s*r2,\s*r5\s*"),
+        ("lsls", r"\s*r3,\s*r3,\s*#24\s*"),
+        ("orrs", r"\s*r2,\s*r3\s*"),
+        ("movs", r"\s*r1,\s*#5\s*"),
+    )
+    next_instruction = 0
+    for mnemonic, operands in expected_plan_operations:
+        found = next(
+            (
+                index
+                for index in range(next_instruction, len(plan_instructions))
+                if matches_instruction(plan_instructions[index], mnemonic, operands)
+            ),
+            None,
+        )
+        if found is None:
+            raise WitnessError("backlight plan operands do not match the pinned register sequence")
+        next_instruction = found + 1
+    plan_literals = {
+        int(match.group(1), 16)
+        for line in plan.splitlines()
+        if (match := re.search(r"\.word\s+0x([0-9a-fA-F]+)\b", line))
+    }
+    if not {0x000003FF, 0x01010000} <= plan_literals:
+        raise WitnessError("backlight plan assignments do not match the pinned register sequence")
+
+    apply = function_block(disassembly, "backlight_startup_executor::apply_with_io")
+    instructions = parse_instructions(apply)
+    apply_targets = [
+        target for instruction in instructions for target in direct_call_targets(instruction[4])
+    ]
+    plan_calls = [
+        next(
+            (index for index, target in enumerate(apply_targets) if symbol in target),
+            None,
+        )
+        for symbol in ("BacklightInitPlan>::from_snapshot", "BacklightInitPlan>::writes")
+    ]
+    if (
+        any(index is None for index in plan_calls)
+        or plan_calls[0] >= plan_calls[1]
+    ):
+        raise WitnessError("backlight executor does not apply the ordered initialization plan")
+    writes = function_block(disassembly, "BacklightInitPlan>::writes")
+    if not any(
+        matches_instruction(instruction, "movs", r"\s*r1,\s*#6\s*")
+        for instruction in parse_instructions(writes)
+    ):
+        raise WitnessError("backlight initialization plan does not contain six ordered writes")
+
+    register_calls = [
+        (instruction, target)
+        for instruction in instructions
+        for target in direct_call_targets(instruction[4])
+        if "RegisterIo>::read" in target or "RegisterIo>::write" in target
+    ]
+    kinds = [
+        "read" if "RegisterIo>::read" in target else "write"
+        for _, target in register_calls
+    ]
+    if kinds != ["read", "write", "read", "write", "read", "write", "write"]:
+        raise WitnessError("backlight executor is missing ordered fresh RMW register evidence")
+
+    instruction_indexes = {instruction[0]: index for index, instruction in enumerate(instructions)}
+    for pair, operation in zip(
+        (register_calls[0:2], register_calls[2:4], register_calls[4:6]),
+        ("orrs", "bics", "orrs"),
+        strict=True,
+    ):
+        read_instruction, write_instruction = pair[0][0], pair[1][0]
+        read_index = instruction_indexes[read_instruction[0]]
+        write_index = instruction_indexes[write_instruction[0]]
+        before_read = instructions[read_index - 1] if read_index else None
+        between = instructions[read_index + 1 : write_index]
+        expected = (
+            ("mov", r"\s*r2,\s*r0\s*"),
+            (operation, r"\s*r2,\s*r1\s*"),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#156\](?:\s*@.*)?\s*"),
+        )
+        expected_index = 0
+        for instruction in between:
+            mnemonic, operands = expected[expected_index]
+            if matches_instruction(instruction, mnemonic, operands):
+                expected_index += 1
+                if expected_index == len(expected):
+                    break
+        if not (
+            before_read is not None
+            and matches_instruction(
+                before_read, "ldr", r"\s*r1,\s*\[sp,\s*#156\](?:\s*@.*)?\s*"
+            )
+            and expected_index == len(expected)
+        ):
+            raise WitnessError("backlight executor is missing ordered fresh RMW register evidence")
+
+    for method, operation in (("read", "ldr"), ("write", "str")):
+        io_body = function_block(
+            disassembly, f"backlight_startup_executor::RegisterIo>::{method}"
+        )
+        io_instructions = reachable_instruction_prefix(io_body)
+        conversion_call = next(
+            (
+                index
+                for index, instruction in enumerate(io_instructions)
+                if any(
+                    "RegisterAddress>::from_register" in target
+                    for target in direct_call_targets(instruction[4])
+                )
+            ),
+            None,
+        )
+        address_call = next(
+            (
+                index
+                for index, instruction in enumerate(io_instructions)
+                if any(
+                    "RegisterAddress>::address" in target
+                    for target in direct_call_targets(instruction[4])
+                )
+            ),
+            None,
+        )
+        expected_access = (
+            (("ldr", r"\s*r0,\s*\[r0,\s*#0\]\s*"),)
+            if method == "read"
+            else (
+                ("ldr", r"\s*r2,\s*\[sp,\s*#4\]\s*"),
+                ("str", r"\s*r2,\s*\[r0,\s*#0\]\s*"),
+            )
+        )
+        if (
+            conversion_call is None
+            or address_call != conversion_call + 1
+            or conversion_call == 0
+            or not matches_instruction(
+                io_instructions[conversion_call - 1], "mov", r"\s*r0,\s*r1\s*"
+            )
+        ):
+            raise WitnessError(f"backlight register {method} does not preserve its mapped register")
+        access_start = address_call + 1
+        if any(
+            access_start + offset >= len(io_instructions)
+            or not matches_instruction(io_instructions[access_start + offset], mnemonic, operands)
+            for offset, (mnemonic, operands) in enumerate(expected_access)
+        ):
+            raise WitnessError(f"backlight register {method} lacks a volatile word access")
 
 
 def validate_returning_call_path(
@@ -720,6 +995,7 @@ def validate_call_path(disassembly: str) -> None:
         ("systick", "apply_to_hardware"),
         ("portcon", "apply_portcon_startup_plan"),
         ("gpio", "apply_gpio_startup_plan"),
+        ("backlight_init_hardware", "initialize_backlight_hardware"),
     ):
         method_body = function_block(disassembly, f"StartupIo>::{method}", suffix=True)
         if not any(adapter in target for target in reachable_call_targets(method_body)):
@@ -751,6 +1027,11 @@ def validate_call_path(disassembly: str) -> None:
             ("apply_gpio_startup_plan",),
             (("add", r"\s*sp,\s*#56(?:\s+[@;].*)?\s*"),),
         ),
+        (
+            "backlight_init_hardware",
+            ("initialize_backlight_hardware",),
+            (),
+        ),
     ):
         validate_returning_call_path(
             function_block(disassembly, f"StartupIo>::{method}", suffix=True),
@@ -760,6 +1041,7 @@ def validate_call_path(disassembly: str) -> None:
         )
 
     validate_backend_dispatch(disassembly)
+    validate_backlight_register_evidence(disassembly)
 
 
 def validate_systick_handler(disassembly: str, handler_address: int) -> None:
@@ -825,6 +1107,7 @@ def validate(elf: Path) -> tuple[int, int]:
         "apply_to_hardware",
         "apply_portcon_startup_plan",
         "apply_gpio_startup_plan",
+        "initialize_backlight_hardware",
     )
     for symbol in required_symbols:
         if not any(symbol in name for name in symbols):
