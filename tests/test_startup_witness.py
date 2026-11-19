@@ -884,7 +884,9 @@ class StartupWitnessCheckerTests(unittest.TestCase):
             validate_call_path(BACKLIGHT_EXECUTOR_PLAN_BYPASS_REJOIN)
 
     def test_rejects_backlight_executor_branch_that_returns_before_plan(self):
-        with self.assertRaisesRegex(WitnessError, "backlight executor.*initialization plan"):
+        with self.assertRaisesRegex(
+            WitnessError, "backlight executor returns before the ordered MMIO writes"
+        ):
             validate_call_path(BACKLIGHT_EXECUTOR_RETURN_BYPASSES_PLAN)
 
     def test_rejects_always_taken_branch_over_retained_plan_creation(self):
