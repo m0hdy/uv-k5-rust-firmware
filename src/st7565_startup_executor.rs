@@ -2,6 +2,9 @@
 
 //! Bounded execution of the pinned ST7565 startup plan.
 
+#[path = "st7565_startup_executor/target_spi0.rs"]
+pub mod target_spi0;
+
 use core::num::NonZeroU32;
 
 use crate::st7565_line_transport::{self, A0, LineError, LineTransport};

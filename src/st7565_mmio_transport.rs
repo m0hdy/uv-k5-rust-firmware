@@ -38,8 +38,8 @@ pub trait RegisterIo {
     fn write(&mut self, register: RegisterAddress, value: u32);
 }
 
-struct St7565MmioTransport<'a, I> {
-    io: &'a mut I,
+pub(crate) struct St7565MmioTransport<'a, I> {
+    pub(crate) io: &'a mut I,
 }
 
 impl<I: RegisterIo> LineTransport for St7565MmioTransport<'_, I> {
