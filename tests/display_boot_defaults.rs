@@ -75,10 +75,18 @@ fn decodes_valid_boundaries_and_the_packed_backlight_dependency() {
 fn falls_back_at_the_first_invalid_value_for_each_field() {
     let cases = [
         (
-            "backlight max clamps before min is checked",
+            "backlight min below the clamped max is retained",
             [0x4B, 0, 0, 0, 0, 0, 0, 0],
             DisplayBootDefaults {
                 backlight_min: 4,
+                backlight_max: 10,
+                ..DEFAULTS_WITH_FEATURE
+            },
+        ),
+        (
+            "backlight min equal to the clamped max is rejected",
+            [0xAB, 0, 0, 0, 0, 0, 0, 0],
+            DisplayBootDefaults {
                 backlight_max: 10,
                 ..DEFAULTS_WITH_FEATURE
             },
