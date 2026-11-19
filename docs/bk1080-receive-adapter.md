@@ -38,12 +38,14 @@ range 0–33; out-of-range indices return `None`. In particular,
 register-address byte is `0x32`. This enables later initialization/calibration
 code to use the same typed register operations without duplicating bus framing.
 
-The adapter does not implement the missing nonzero-frequency first-init
-sequence: the receiver must already be initialized and powered. `set_muted`
-executes the existing mute command values. `read_frequency_deviation` reads
-register `0x07` and passes it with the supplied base frequency to the existing
-`frequency_deviation` function. These operations do not change PB15 or power
-state and do not provide audio-path integration.
+The receive executor itself requires an initialized and powered receiver.
+The separate standalone nonzero-frequency first-init executor is documented
+in [`bk1080-receive-init-adapter.md`](bk1080-receive-init-adapter.md).
+`set_muted` executes the existing mute command values.
+`read_frequency_deviation` reads register `0x07` and passes it with the
+supplied base frequency to the existing `frequency_deviation` function. These
+operations do not change PB15 or power state and do not provide audio-path
+integration.
 
 ## Target GPIO convenience
 
