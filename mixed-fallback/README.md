@@ -35,3 +35,11 @@ checks with the existing 2 KiB stack reservation. Both Cargo builds use a
 runner-owned target directory under the selected output directory, regardless
 of an ambient `CARGO_TARGET_DIR`. No device execution or release artifact is
 involved.
+
+The path-scoped `Mixed-fallback evidence` workflow runs this same runner for
+relevant pull requests and can also be started with **Actions → Mixed-fallback
+evidence → Run workflow**. It checks out the exact pull-request head, publishes
+the runner's report in the job summary, and retains only that diagnostic report
+as a five-day artifact. The workflow downloads the artifact and compares it
+with the generated report; a missing or changed report fails the job. The
+default Rust firmware and its CI artifacts are unchanged.
