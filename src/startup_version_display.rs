@@ -165,6 +165,8 @@ pub fn startup_version_display_plan(
  * Copyright 2023 Dual Tachyon
  * https://github.com/DualTachyon
  *
+ * Converted from the upstream C gFontSmall table to a Rust byte array.
+ *
  * gFontSmall from font.c at
  * https://github.com/egzumer/uv-k5-firmware-custom/tree/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3.
  *
