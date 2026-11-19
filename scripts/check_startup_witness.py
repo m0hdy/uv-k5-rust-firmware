@@ -414,6 +414,19 @@ def validate_call_path(disassembly: str) -> None:
     validate_backend_dispatch(disassembly)
 
 
+def validate_systick_handler(disassembly: str, handler_address: int) -> None:
+    entry = next(
+        (
+            instruction
+            for instruction in parse_instructions(disassembly)
+            if instruction[0] == handler_address
+        ),
+        None,
+    )
+    if entry is None or not matches_instruction(entry, "bx", r"\s*lr\s*"):
+        raise WitnessError("SysTick_Handler must begin with bx lr at its linked symbol")
+
+
 def validate(elf: Path) -> tuple[int, int]:
     sections = parse_sections(run_tool("objdump", "-h", str(elf)))
     required_sections = {".vector_table", ".text"}
@@ -476,7 +489,9 @@ def validate(elf: Path) -> tuple[int, int]:
     if vector[0] != 0x2000_3FF0:
         raise WitnessError("witness vector has an unexpected initial stack pointer")
     for slot, symbol in ((1, "Reset_Handler"), (15, "SysTick_Handler")):
-        target = next(address for name, address in symbols.items() if symbol in name)
+        target = symbols.get(symbol)
+        if target is None:
+            raise WitnessError(f"ELF does not retain exact {symbol} symbol")
         if vector[slot] != (target | 1):
             raise WitnessError(f"vector {slot} does not point to {symbol} in Thumb state")
 
@@ -484,8 +499,7 @@ def validate(elf: Path) -> tuple[int, int]:
     reset = function_block(disassembly, "Reset_Handler")
     if "witness_main" not in reset:
         raise WitnessError("Reset_Handler does not retain the witness startup call path")
-    if "bx\tlr" not in function_block(disassembly, "SysTick_Handler"):
-        raise WitnessError("SysTick_Handler must return immediately")
+    validate_systick_handler(disassembly, symbols["SysTick_Handler"])
     validate_call_path(disassembly)
 
     return flash_used, ram_used

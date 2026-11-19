@@ -12,7 +12,8 @@ vector table and a returning SysTick handler. Its linker places code at
 `0x10000000` and RAM at `0x20010000`, outside the DP32G030 memory map, and
 enforces 16 KiB code/load and 4 KiB RAM limits. The inspection checks vector
 targets, the linked sequencer-to-adapter call path, retained adapter symbols,
-and section budgets.
+and section budgets. The SysTick vector must match the exact linked handler
+symbol, whose first instruction must be `bx lr`.
 
 The backend-dispatch check is intentionally pinned to the emitted Cortex-M0
 shape. It requires the function entry to save incoming `r1` at `sp+8`, load

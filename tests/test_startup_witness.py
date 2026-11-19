@@ -4,7 +4,29 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from check_startup_witness import WitnessError, validate_call_path  # noqa: E402
+from check_startup_witness import (  # noqa: E402
+    WitnessError,
+    validate_call_path,
+    validate_systick_handler,
+)
+
+
+SYSTICK_RETURN = """
+00000100 <SysTick_Handler>:
+ 100: 4770 bx lr
+"""
+
+SYSTICK_SELF_LOOP = """
+00000100 <SysTick_Handler>:
+ 100: e7fe b.n 100 <SysTick_Handler>
+ 102: 4770 bx lr
+"""
+
+SYSTICK_OTHER_BEFORE_RETURN = """
+00000100 <SysTick_Handler>:
+ 100: 2000 movs r0, #0
+ 102: 4770 bx lr
+"""
 
 
 DISCONNECTED_ENTRY = """
@@ -204,6 +226,21 @@ BRANCHED_DISPATCH = CONNECTED_DISPATCH.replace(
 
 
 class StartupWitnessCheckerTests(unittest.TestCase):
+    def test_accepts_immediate_systick_return_at_symbol_entry(self):
+        validate_systick_handler(SYSTICK_RETURN, 0x100)
+
+    def test_rejects_systick_self_loop_before_retained_return(self):
+        with self.assertRaisesRegex(WitnessError, "SysTick_Handler.*begin with bx lr"):
+            validate_systick_handler(SYSTICK_SELF_LOOP, 0x100)
+
+    def test_rejects_systick_instruction_before_retained_return(self):
+        with self.assertRaisesRegex(WitnessError, "SysTick_Handler.*begin with bx lr"):
+            validate_systick_handler(SYSTICK_OTHER_BEFORE_RETURN, 0x100)
+
+    def test_rejects_return_at_address_other_than_linked_symbol(self):
+        with self.assertRaisesRegex(WitnessError, "SysTick_Handler.*begin with bx lr"):
+            validate_systick_handler(SYSTICK_RETURN, 0x102)
+
     def test_rejects_disconnected_entry_when_downstream_chain_is_retained(self):
         self.assertIn("run_hardware", DISCONNECTED_ENTRY)
         self.assertIn("board_startup_adapters::run", DISCONNECTED_ENTRY)
