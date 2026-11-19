@@ -80,9 +80,11 @@ impl RegisterIo for VolatileRegisterIo {
 ///
 /// # Safety
 ///
-/// The caller must be executing on a DP32G030 with the GPIOA/B/C mapping below,
-/// must have enabled the GPIO peripheral clocks, and must have configured the
-/// required pins for GPIO operation. No other context may concurrently modify
+/// The caller must be executing on a DP32G030 where GPIOA DATA/DIR are at
+/// `0x4006_0000`/`0x4006_0004`, GPIOB at `0x4006_0800`/`0x4006_0804`, and
+/// GPIOC at `0x4006_1000`/`0x4006_1004`, as declared by the pinned DP32G030
+/// GPIO header. GPIOA/B/C clocks must be enabled and the required pins
+/// configured for GPIO operation. No other context may concurrently modify
 /// these DATA or DIR registers during this read-modify-write sequence.
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 pub unsafe fn apply_gpio_startup_plan(plan: &GpioPlan) {
