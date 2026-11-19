@@ -152,9 +152,9 @@ def reachable_instruction_prefix(function: str) -> list[tuple[int, int, str, str
     return reachable
 
 
-def reachable_control_flow(
+def reachable_control_flow_analysis(
     function: str, description: str
-) -> list[tuple[int, int, str, str, str]]:
+) -> tuple[list[tuple[int, int, str, str, str]], dict[int, set[int]]]:
     instructions = parse_instructions(function)
     if not instructions:
         raise WitnessError(f"{description} has no reachable instructions")
@@ -276,7 +276,30 @@ def reachable_control_flow(
                 f"{description} has an indirect branch that bypasses its table setup"
             )
 
-    return [instruction for instruction in instructions if instruction[0] in reachable]
+    entry = instructions[0][0]
+    dominators = {address: set(reachable) for address in reachable}
+    dominators[entry] = {entry}
+    changed = True
+    while changed:
+        changed = False
+        for address in sorted(reachable - {entry}):
+            incoming = predecessors.get(address, set())
+            common = set.intersection(*(dominators[pred] for pred in incoming))
+            updated = {address} | common
+            if updated != dominators[address]:
+                dominators[address] = updated
+                changed = True
+
+    return (
+        [instruction for instruction in instructions if instruction[0] in reachable],
+        dominators,
+    )
+
+
+def reachable_control_flow(
+    function: str, description: str
+) -> list[tuple[int, int, str, str, str]]:
+    return reachable_control_flow_analysis(function, description)[0]
 
 
 def reachable_call_targets(function: str) -> list[str]:
@@ -701,7 +724,9 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
         raise WitnessError("backlight hardware initializer does not reach the register executor")
 
     plan = function_block(disassembly, "BacklightInitPlan>::from_snapshot")
-    plan_instructions = reachable_control_flow(plan, "backlight initialization plan")
+    plan_instructions, plan_dominators = reachable_control_flow_analysis(
+        plan, "backlight initialization plan"
+    )
     expected_plan_operations = (
         ("movs", r"\s*r3,\s*#23\s*"),
         ("lsls", r"\s*r3,\s*r3,\s*#17\s*"),
@@ -714,6 +739,7 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
         ("movs", r"\s*r1,\s*#5\s*"),
     )
     next_instruction = 0
+    previous_operation = None
     for mnemonic, operands in expected_plan_operations:
         found = next(
             (
@@ -723,8 +749,13 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
             ),
             None,
         )
-        if found is None:
+        if found is None or (
+            previous_operation is not None
+            and plan_instructions[previous_operation][0]
+            not in plan_dominators[plan_instructions[found][0]]
+        ):
             raise WitnessError("backlight plan operands do not match the pinned register sequence")
+        previous_operation = found
         next_instruction = found + 1
     plan_words = word_entries(plan)
     plan_literals = {
@@ -737,20 +768,24 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
         raise WitnessError("backlight plan assignments do not match the pinned register sequence")
 
     apply = function_block(disassembly, "backlight_startup_executor::apply_with_io")
-    instructions = reachable_control_flow(apply, "backlight executor")
-    apply_targets = [
-        target for instruction in instructions for target in direct_call_targets(instruction[4])
+    instructions, apply_dominators = reachable_control_flow_analysis(
+        apply, "backlight executor"
+    )
+    apply_calls = [
+        (instruction, target)
+        for instruction in instructions
+        for target in direct_call_targets(instruction[4])
     ]
     plan_calls = [
         next(
-            (index for index, target in enumerate(apply_targets) if symbol in target),
+            (instruction[0] for instruction, target in apply_calls if symbol in target),
             None,
         )
         for symbol in ("BacklightInitPlan>::from_snapshot", "BacklightInitPlan>::writes")
     ]
     if (
-        any(index is None for index in plan_calls)
-        or plan_calls[0] >= plan_calls[1]
+        any(address is None for address in plan_calls)
+        or plan_calls[0] not in apply_dominators[plan_calls[1]]
     ):
         raise WitnessError("backlight executor does not apply the ordered initialization plan")
     writes = function_block(disassembly, "BacklightInitPlan>::writes")
@@ -773,6 +808,12 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
     if kinds != ["read", "write", "read", "write", "read", "write", "write"]:
         raise WitnessError("backlight executor is missing ordered fresh RMW register evidence")
 
+    if any(
+        plan_calls[1] not in apply_dominators[instruction[0]]
+        for instruction, _ in register_calls
+    ):
+        raise WitnessError("backlight executor does not apply the ordered initialization plan")
+
     instruction_indexes = {instruction[0]: index for index, instruction in enumerate(instructions)}
     for pair, operation in zip(
         (register_calls[0:2], register_calls[2:4], register_calls[4:6]),
@@ -790,18 +831,26 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
             ("ldr", r"\s*r1,\s*\[sp,\s*#156\](?:\s*@.*)?\s*"),
         )
         expected_index = 0
+        matched_operations = []
         for instruction in between:
             mnemonic, operands = expected[expected_index]
             if matches_instruction(instruction, mnemonic, operands):
+                matched_operations.append(instruction)
                 expected_index += 1
                 if expected_index == len(expected):
                     break
+        path = [before_read, read_instruction, *matched_operations, write_instruction]
         if not (
             before_read is not None
             and matches_instruction(
                 before_read, "ldr", r"\s*r1,\s*\[sp,\s*#156\](?:\s*@.*)?\s*"
             )
             and expected_index == len(expected)
+            and read_instruction[0] in apply_dominators[write_instruction[0]]
+            and all(
+                previous[0] in apply_dominators[current[0]]
+                for previous, current in zip(path, path[1:])
+            )
         ):
             raise WitnessError("backlight executor is missing ordered fresh RMW register evidence")
 

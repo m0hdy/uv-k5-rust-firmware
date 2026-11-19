@@ -516,6 +516,27 @@ _apply_start = BACKLIGHT_EXECUTOR_EARLY_RETURN.index(_apply_header) + len(_apply
 _apply_end = BACKLIGHT_EXECUTOR_EARLY_RETURN.index(
     "00000900 <<backlight_startup_executor::VolatileRegisterIo as"
 )
+
+
+def _shift_apply_instructions(disassembly, first_address):
+    start = disassembly.index(_apply_header) + len(_apply_header)
+    end = disassembly.index(
+        "00000900 <<backlight_startup_executor::VolatileRegisterIo as"
+    )
+    body = disassembly[start:end]
+
+    def shift(match):
+        address = int(match.group(2), 16)
+        if address < first_address:
+            return match.group(0)
+        return (
+            f"{match.group(1)}"
+            f"{address + 2:0{len(match.group(2))}x}:"
+        )
+
+    return disassembly[:start] + re.sub(r"(?m)^(\s*)([0-9a-fA-F]+):", shift, body) + disassembly[end:]
+
+
 _shifted_apply = re.sub(
     r"(?m)^(\s*)([0-9a-fA-F]+):",
     lambda match: (
@@ -542,9 +563,25 @@ BACKLIGHT_EXECUTOR_CONDITIONAL_SKIPS_PLAN = CONNECTED_DISPATCH.replace(
     " 848: 46c0 nop",
 )
 
+BACKLIGHT_EXECUTOR_PLAN_BYPASS_REJOIN = _shift_apply_instructions(
+    CONNECTED_DISPATCH, 0x84A
+).replace(
+    " 846: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
+    " 846: d001 beq.n 84c <backlight_startup_executor::apply_with_io+0x6>\n"
+    " 848: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
+)
+
 BACKLIGHT_EXECUTOR_UNSUPPORTED_BRANCH = CONNECTED_DISPATCH.replace(
     " 846: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
     " 846: 4687 mov pc, r0",
+)
+
+BACKLIGHT_EXECUTOR_RMW_BYPASS_REJOIN = _shift_apply_instructions(
+    CONNECTED_DISPATCH, 0x852
+).replace(
+    " 850: f000 f800 bl 900 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::read>",
+    " 850: d006 beq.n 860 <backlight_startup_executor::apply_with_io+0x1a>\n"
+    " 852: f000 f800 bl 900 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::read>",
 )
 
 BACKLIGHT_PLAN_EARLY_RETURN = CONNECTED_DISPATCH.replace(
@@ -763,6 +800,14 @@ class StartupWitnessCheckerTests(unittest.TestCase):
     def test_rejects_backlight_executor_conditional_branch_that_skips_plan_creation(self):
         with self.assertRaisesRegex(WitnessError, "backlight executor.*initialization plan"):
             validate_call_path(BACKLIGHT_EXECUTOR_CONDITIONAL_SKIPS_PLAN)
+
+    def test_rejects_backlight_executor_branch_that_bypasses_plan_call_and_rejoins(self):
+        with self.assertRaisesRegex(WitnessError, "backlight executor.*initialization plan"):
+            validate_call_path(BACKLIGHT_EXECUTOR_PLAN_BYPASS_REJOIN)
+
+    def test_rejects_backlight_rmw_branch_that_bypasses_read_and_rejoins(self):
+        with self.assertRaisesRegex(WitnessError, "ordered fresh RMW register evidence"):
+            validate_call_path(BACKLIGHT_EXECUTOR_RMW_BYPASS_REJOIN)
 
     def test_rejects_unsupported_backlight_executor_indirect_branch(self):
         with self.assertRaisesRegex(WitnessError, "backlight executor.*unsupported indirect branch"):
