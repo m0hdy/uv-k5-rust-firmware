@@ -2,7 +2,7 @@
 
 ## Pinned behavior
 
-`src/app_scheduler_composition.rs` composes the existing periodic flag model
+[`scheduler::composition`](../src/scheduler/composition.rs) composes the [periodic flag model](periodic-scheduler-flags.md)
 from [`scheduler.c:45–64`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/scheduler.c#L45-L64)
 with one-iteration dispatch from
 [`main.c:222–233`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/main.c#L222-L233)
@@ -14,7 +14,7 @@ The public reference is `egzumer/uv-k5-firmware-custom` at commit
 
 The composition delegates tick progression and sticky flag state to
 `PeriodicSchedulerFlags`, and delegates the ordering of update, 10 ms and
-500 ms queries to `app_timeslice_dispatch`. It acknowledges each flag at entry
+500 ms queries to the [dispatcher](app-timeslice-dispatch.md). It acknowledges each flag at entry
 to its corresponding timeslice, before invoking the typed application effect.
 The 40 ms flag remains pending for a separate caller; it is not queried or
 dispatched by this main-loop iteration.
@@ -33,11 +33,8 @@ Run from the repository root:
 ```sh
 cargo test --locked --test app_scheduler_composition
 cargo clippy --locked --test app_scheduler_composition -- -D warnings
-rustfmt --check --edition 2024 \
-  src/app_scheduler_composition.rs tests/app_scheduler_composition.rs
-rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
-  -D warnings src/app_scheduler_composition.rs \
-  -o /tmp/app_scheduler_composition.rlib
+cargo fmt --all -- --check
+RUSTFLAGS="-D warnings" cargo check --locked --lib --target thumbv6m-none-eabi
 ```
 
 The host tests cover idle update-only behavior, one pending tick and no

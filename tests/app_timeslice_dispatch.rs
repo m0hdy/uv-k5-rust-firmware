@@ -1,7 +1,4 @@
-#[path = "../src/app_timeslice_dispatch.rs"]
-mod app_timeslice_dispatch;
-
-use app_timeslice_dispatch::{Backend, run};
+use uv_k5_rust_firmware::scheduler::dispatch::{Backend, run};
 
 #[derive(Debug, PartialEq, Eq)]
 enum Event {

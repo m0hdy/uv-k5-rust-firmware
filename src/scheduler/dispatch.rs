@@ -1,5 +1,3 @@
-#![cfg_attr(not(test), no_std)]
-
 //! Offline dispatch order from pinned
 //! [`main.c:222–233`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/main.c#L222-L233).
 //! The backend owns flags and effects; this module only orders calls and queries.
