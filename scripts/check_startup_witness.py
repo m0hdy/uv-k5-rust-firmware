@@ -590,7 +590,7 @@ def validate_backlight_register_io_path(function: str, method: str) -> None:
         raise ValueError(f"unsupported backlight register I/O method: {method}")
 
     validate_exact_returning_instruction_path(
-        function, f"backlight register {method}", compact, emitted
+        function, f"backlight register {method}", emitted
     )
 
 
@@ -898,6 +898,25 @@ def validate_backlight_executor_paths(function: str) -> None:
         raise WitnessError(
             "backlight executor does not reach the initialization plan before its write loop"
         )
+    expected_prefix = [
+        ("push", r"\s*\{\s*r7,\s*lr\s*\}\s*", None),
+        ("add", r"\s*r7,\s*sp,\s*#0\s*", None),
+        ("sub", r"\s*sp,\s*#160\s*", None),
+        ("str", r"\s*r0,\s*\[sp,\s*#16\]\s*", None),
+        ("add", r"\s*r0,\s*sp,\s*#24\s*", None),
+        ("str", r"\s*r0,\s*\[sp,\s*#20\]\s*", None),
+        ("movs", r"\s*r2,\s*#0\s*", None),
+        ("mov", r"\s*r1,\s*r2\s*", None),
+        ("bl", r"\s*[0-9a-fA-F]+\s+<.*>", expected_plan_calls[0]),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#20\]\s*", None),
+        ("bl", r"\s*[0-9a-fA-F]+\s+<.*>", expected_plan_calls[1]),
+        ("bl", r"\s*[0-9a-fA-F]+\s+<.*>", expected_plan_calls[2]),
+        ("str", r"\s*r0,\s*\[sp,\s*#120\]\s*", None),
+        ("str", r"\s*r1,\s*\[sp,\s*#124\]\s*", None),
+        ("b.n", r"\s*[0-9a-fA-F]+\b.*", None),
+    ]
+    if not matches_instruction_sequence(prefix, expected_prefix):
+        raise WitnessError("backlight executor has an unexpected plan input continuation")
 
     loop_head = branch_target(prefix[-1])
     if loop_head is None:
@@ -1405,34 +1424,18 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
     ):
         raise WitnessError("backlight executor does not apply the ordered initialization plan")
     writes = function_block(disassembly, "BacklightInitPlan>::writes")
-    writes_instructions = reachable_control_flow(
-        writes, "backlight initialization writes"
+    validate_exact_returning_instruction_path(
+        writes,
+        "backlight initialization writes",
+        [
+            ("push", r"\s*\{\s*r7,\s*lr\s*\}\s*", None),
+            ("add", r"\s*r7,\s*sp,\s*#0\s*", None),
+            ("movs", r"\s*r1,\s*#6\s*", None),
+            ("bl", r"\s*[0-9a-fA-F]+\s+<.*BacklightWrite.*>::iter>", "BacklightWrite"),
+            ("bl", r"\s*[0-9a-fA-F]+\s+<.*>", "Iterator>::copied"),
+            ("pop", r"\s*\{\s*r7,\s*pc\s*\}\s*", None),
+        ],
     )
-    write_count = next(
-        (
-            instruction
-            for instruction in writes_instructions
-            if matches_instruction(instruction, "movs", r"\s*r1,\s*#6\s*")
-        ),
-        None,
-    )
-    iterator_call = next(
-        (
-            instruction
-            for instruction in writes_instructions
-            if any(
-                "BacklightWrite" in target and target.endswith(">::iter")
-                for target in direct_call_targets(instruction[4])
-            )
-        ),
-        None,
-    )
-    if (
-        write_count is None
-        or iterator_call is None
-        or write_count[0] + write_count[1] != iterator_call[0]
-    ):
-        raise WitnessError("backlight initialization plan does not contain six ordered writes")
 
     register_calls = [
         (instruction, target)

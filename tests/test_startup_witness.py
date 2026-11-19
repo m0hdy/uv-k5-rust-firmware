@@ -9,6 +9,7 @@ from check_startup_witness import (  # noqa: E402
     WitnessError,
     reachable_control_flow,
     validate_backlight_initializer_path,
+    validate_backlight_register_io_path,
     validate_call_path,
     validate_systick_handler,
 )
@@ -287,7 +288,7 @@ CONNECTED_DISPATCH = """
  8c0: 9804 ldr r0, [sp, #16]
  8c2: 430a orrs r2, r1
  8c4: 9927 ldr r1, [sp, #156]
- 8c6: f000 f800 bl 930 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>
+ 8c6: f000 f800 bl 2000 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>
  8ca: e7ce b.n 86a
  8cc: 9804 ldr r0, [sp, #16]
  8ce: 9925 ldr r1, [sp, #148]
@@ -299,7 +300,7 @@ CONNECTED_DISPATCH = """
  8dc: 9804 ldr r0, [sp, #16]
  8de: 438a bics r2, r1
  8e0: 9927 ldr r1, [sp, #156]
- 8e2: f000 f800 bl 930 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>
+ 8e2: f000 f800 bl 2000 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>
  8e6: e7c0 b.n 86a
  8e8: 9804 ldr r0, [sp, #16]
  8ea: 9925 ldr r1, [sp, #148]
@@ -311,26 +312,33 @@ CONNECTED_DISPATCH = """
  8f8: 9804 ldr r0, [sp, #16]
  8fa: 430a orrs r2, r1
  8fc: 9927 ldr r1, [sp, #156]
- 8fe: f000 f800 bl 930 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>
+ 8fe: f000 f800 bl 2000 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>
  902: e7b2 b.n 86a
  904: 9804 ldr r0, [sp, #16]
  906: 9a26 ldr r2, [sp, #152]
  908: 9927 ldr r1, [sp, #156]
- 90a: f000 f800 bl 930 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>
+ 90a: f000 f800 bl 2000 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>
  90e: e7ac b.n 86a
 00000920 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::read>:
- 920: 4608 mov r0, r1
- 922: f000 f800 bl 942 <backlight_startup_executor::RegisterAddress>::from_register>
- 926: f000 f800 bl 9f2 <backlight_startup_executor::RegisterAddress>::address>
- 92a: 6800 ldr r0, [r0, #0]
- 92c: bd80 pop {r7, pc}
-00000930 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>:
- 930: 4608 mov r0, r1
- 932: f000 f800 bl 942 <backlight_startup_executor::RegisterAddress>::from_register>
- 936: f000 f800 bl 9f2 <backlight_startup_executor::RegisterAddress>::address>
- 93a: 9a01 ldr r2, [sp, #4]
- 93c: 6002 str r2, [r0, #0]
- 93e: bd80 pop {r7, pc}
+ 920: b580 push {r7, lr}
+ 922: af00 add r7, sp, #0
+ 924: 4608 mov r0, r1
+ 926: f000 f800 bl 942 <backlight_startup_executor::RegisterAddress>::from_register>
+ 92a: f000 f800 bl 9f2 <backlight_startup_executor::RegisterAddress>::address>
+ 92e: 6800 ldr r0, [r0, #0]
+ 930: bd80 pop {r7, pc}
+00002000 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>:
+ 2000: b580 push {r7, lr}
+ 2002: af00 add r7, sp, #0
+ 2004: b082 sub sp, #8
+ 2006: 9201 str r2, [sp, #4]
+ 2008: 4608 mov r0, r1
+ 200a: f000 f800 bl 942 <backlight_startup_executor::RegisterAddress>::from_register>
+ 200e: f000 f800 bl 9f2 <backlight_startup_executor::RegisterAddress>::address>
+ 2012: 9a01 ldr r2, [sp, #4]
+ 2014: 6002 str r2, [r0, #0]
+ 2016: b002 add sp, #8
+ 2018: bd80 pop {r7, pc}
 00000942 <backlight_startup_executor::RegisterAddress>::from_register>:
  942: b580 push {r7, lr}
  944: af00 add r7, sp, #0
@@ -426,11 +434,14 @@ CONNECTED_DISPATCH = """
  101c: 01010000 .word 0x01010000
  1020: bd80 pop {r7, pc}
 00001100 <backlight_startup_executor::BacklightInitPlan>::writes>:
- 1100: 2106 movs r1, #6
- 1102: f000 f800 bl 1110 <backlight_startup_executor::BacklightWrite>::iter>
- 1106: bd80 pop {r7, pc}
-00001110 <backlight_startup_executor::BacklightWrite>::iter>:
- 1110: bd80 pop {r7, pc}
+ 1100: b580 push {r7, lr}
+ 1102: af00 add r7, sp, #0
+ 1104: 2106 movs r1, #6
+ 1106: f000 f800 bl 1118 <backlight_startup_executor::BacklightWrite>::iter>
+ 110a: f000 f800 bl 1120 <core::iter::Iterator>::copied>
+ 110e: bd80 pop {r7, pc}
+00001118 <backlight_startup_executor::BacklightWrite>::iter>:
+ 1118: bd80 pop {r7, pc}
 """
 
 _plan_instructions = """
@@ -711,36 +722,48 @@ BACKLIGHT_WRONG_RMW_ORDER = CONNECTED_DISPATCH.replace(
 
 BACKLIGHT_REGISTER_READ_BYPASSES_ACCESS = CONNECTED_DISPATCH.replace(
     "00000920 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::read>:\n"
-    " 920: 4608 mov r0, r1\n"
-    " 922: f000 f800 bl 942 <backlight_startup_executor::RegisterAddress>::from_register>\n"
-    " 926: f000 f800 bl 9f2 <backlight_startup_executor::RegisterAddress>::address>\n"
-    " 92a: 6800 ldr r0, [r0, #0]\n"
-    " 92c: bd80 pop {r7, pc}",
+    " 920: b580 push {r7, lr}\n"
+    " 922: af00 add r7, sp, #0\n"
+    " 924: 4608 mov r0, r1\n"
+    " 926: f000 f800 bl 942 <backlight_startup_executor::RegisterAddress>::from_register>\n"
+    " 92a: f000 f800 bl 9f2 <backlight_startup_executor::RegisterAddress>::address>\n"
+    " 92e: 6800 ldr r0, [r0, #0]\n"
+    " 930: bd80 pop {r7, pc}",
     "00000920 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::read>:\n"
-    " 920: d005 beq.n 92e <read_return>\n"
-    " 922: 4608 mov r0, r1\n"
-    " 924: f000 f800 bl 942 <backlight_startup_executor::RegisterAddress>::from_register>\n"
-    " 928: f000 f800 bl 9f2 <backlight_startup_executor::RegisterAddress>::address>\n"
-    " 92c: 6800 ldr r0, [r0, #0]\n"
-    " 92e: bd80 pop {r7, pc}",
+    " 920: d007 beq.n 932 <read_return>\n"
+    " 922: b580 push {r7, lr}\n"
+    " 924: af00 add r7, sp, #0\n"
+    " 926: 4608 mov r0, r1\n"
+    " 928: f000 f800 bl 942 <backlight_startup_executor::RegisterAddress>::from_register>\n"
+    " 92c: f000 f800 bl 9f2 <backlight_startup_executor::RegisterAddress>::address>\n"
+    " 930: 6800 ldr r0, [r0, #0]\n"
+    " 932: bd80 pop {r7, pc}",
 )
 
 BACKLIGHT_REGISTER_WRITE_BYPASSES_ACCESS = CONNECTED_DISPATCH.replace(
-    "00000930 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>:\n"
-    " 930: 4608 mov r0, r1\n"
-    " 932: f000 f800 bl 942 <backlight_startup_executor::RegisterAddress>::from_register>\n"
-    " 936: f000 f800 bl 9f2 <backlight_startup_executor::RegisterAddress>::address>\n"
-    " 93a: 9a01 ldr r2, [sp, #4]\n"
-    " 93c: 6002 str r2, [r0, #0]\n"
-    " 93e: bd80 pop {r7, pc}",
-    "00000930 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>:\n"
-    " 930: d006 beq.n 940 <write_return>\n"
-    " 932: 4608 mov r0, r1\n"
-    " 934: f000 f800 bl 942 <backlight_startup_executor::RegisterAddress>::from_register>\n"
-    " 938: f000 f800 bl 9f2 <backlight_startup_executor::RegisterAddress>::address>\n"
-    " 93c: 9a01 ldr r2, [sp, #4]\n"
-    " 93e: 6002 str r2, [r0, #0]\n"
-    " 940: bd80 pop {r7, pc}",
+    " 2000: b580 push {r7, lr}\n"
+    " 2002: af00 add r7, sp, #0\n"
+    " 2004: b082 sub sp, #8\n"
+    " 2006: 9201 str r2, [sp, #4]\n"
+    " 2008: 4608 mov r0, r1\n"
+    " 200a: f000 f800 bl 942 <backlight_startup_executor::RegisterAddress>::from_register>\n"
+    " 200e: f000 f800 bl 9f2 <backlight_startup_executor::RegisterAddress>::address>\n"
+    " 2012: 9a01 ldr r2, [sp, #4]\n"
+    " 2014: 6002 str r2, [r0, #0]\n"
+    " 2016: b002 add sp, #8\n"
+    " 2018: bd80 pop {r7, pc}",
+    " 2000: d00b beq.n 201a <write_return>\n"
+    " 2002: b580 push {r7, lr}\n"
+    " 2004: af00 add r7, sp, #0\n"
+    " 2006: b082 sub sp, #8\n"
+    " 2008: 9201 str r2, [sp, #4]\n"
+    " 200a: 4608 mov r0, r1\n"
+    " 200c: f000 f800 bl 942 <backlight_startup_executor::RegisterAddress>::from_register>\n"
+    " 2010: f000 f800 bl 9f2 <backlight_startup_executor::RegisterAddress>::address>\n"
+    " 2014: 9a01 ldr r2, [sp, #4]\n"
+    " 2016: 6002 str r2, [r0, #0]\n"
+    " 2018: b002 add sp, #8\n"
+    " 201a: bd80 pop {r7, pc}",
 )
 
 BACKLIGHT_INITIALIZER_EARLY_RETURN = """
@@ -915,7 +938,7 @@ BACKLIGHT_PLAN_EARLY_RETURN = CONNECTED_DISPATCH.replace(
 )
 
 BACKLIGHT_REGISTER_READ_EARLY_RETURN = CONNECTED_DISPATCH.replace(
-    " 920: 4608 mov r0, r1",
+    " 920: b580 push {r7, lr}",
     " 920: 4770 bx lr",
 )
 
@@ -1348,6 +1371,57 @@ class StartupWitnessCheckerTests(unittest.TestCase):
         with self.assertRaisesRegex(WitnessError, "backlight plan operands"):
             validate_call_path(BACKLIGHT_WRONG_PLAN_OPERAND)
 
+    def test_rejects_executor_iterator_with_wrong_plan_pointer(self):
+        original = "85a: 9805 ldr r0, [sp, #20]"
+        replacement = "85a: a80a add r0, sp, #40"
+        self.assertIn(original, CONNECTED_DISPATCH)
+        mutated = CONNECTED_DISPATCH.replace(original, replacement)
+        self.assertIn(replacement, mutated)
+        with self.assertRaisesRegex(WitnessError, "backlight executor"):
+            validate_call_path(mutated)
+
+    def test_rejects_iterator_result_clobber_before_return(self):
+        original = "110e: bd80 pop {r7, pc}"
+        replacement = "110e: 4601 mov r1, r0\n 1110: bd80 pop {r7, pc}"
+        self.assertIn(original, CONNECTED_DISPATCH)
+        mutated = CONNECTED_DISPATCH.replace(original, replacement)
+        self.assertIn(replacement, mutated)
+        with self.assertRaisesRegex(WitnessError, "backlight initialization.*writes"):
+            validate_call_path(mutated)
+
+    def test_rejects_register_io_without_emitted_prologue(self):
+        mutations = (
+            (" 920: b580 push {r7, lr}", " 920: 46c0 nop"),
+            (" 2006: 9201 str r2, [sp, #4]", " 2006: 46c0 nop"),
+        )
+        for original, replacement in mutations:
+            with self.subTest(replacement=replacement):
+                self.assertIn(original, CONNECTED_DISPATCH)
+                mutated = CONNECTED_DISPATCH.replace(original, replacement)
+                with self.assertRaisesRegex(WitnessError, "backlight register.*continuation"):
+                    validate_call_path(mutated)
+
+    def test_rejects_compact_register_io_without_stack_setup(self):
+        compact_read = """
+ 920: 4608 mov r0, r1
+ 922: f000 f800 bl 942 <RegisterAddress>::from_register>
+ 926: f000 f800 bl 9f2 <RegisterAddress>::address>
+ 92a: 6800 ldr r0, [r0, #0]
+ 92c: bd80 pop {r7, pc}
+"""
+        compact_write = """
+ 930: 4608 mov r0, r1
+ 932: f000 f800 bl 942 <RegisterAddress>::from_register>
+ 936: f000 f800 bl 9f2 <RegisterAddress>::address>
+ 93a: 9a01 ldr r2, [sp, #4]
+ 93c: 6002 str r2, [r0, #0]
+ 93e: bd80 pop {r7, pc}
+"""
+        for method, body in (("read", compact_read), ("write", compact_write)):
+            with self.subTest(method=method):
+                with self.assertRaisesRegex(WitnessError, "backlight register.*continuation"):
+                    validate_backlight_register_io_path(body, method)
+
     def test_rejects_changed_plan_construction_and_copy(self):
         mutations = (
             ("1010: 0000 strb r4, [r5, #12]", "1010: 0000 strb r4, [r5, #8]"),
@@ -1435,15 +1509,15 @@ class StartupWitnessCheckerTests(unittest.TestCase):
             validate_call_path(BACKLIGHT_RMW_VALUE_CLOBBER)
 
     def test_rejects_register_read_bypassing_mapping_and_mmio(self):
-        self.assertIn("920: d005 beq.n 92e", BACKLIGHT_REGISTER_READ_BYPASSES_ACCESS)
-        self.assertIn("92e: bd80 pop {r7, pc}", BACKLIGHT_REGISTER_READ_BYPASSES_ACCESS)
+        self.assertIn("920: d007 beq.n 932", BACKLIGHT_REGISTER_READ_BYPASSES_ACCESS)
+        self.assertIn("932: bd80 pop {r7, pc}", BACKLIGHT_REGISTER_READ_BYPASSES_ACCESS)
 
         with self.assertRaisesRegex(WitnessError, "register read.*continuation"):
             validate_call_path(BACKLIGHT_REGISTER_READ_BYPASSES_ACCESS)
 
     def test_rejects_register_write_bypassing_mapping_and_mmio(self):
-        self.assertIn("930: d006 beq.n 940", BACKLIGHT_REGISTER_WRITE_BYPASSES_ACCESS)
-        self.assertIn("940: bd80 pop {r7, pc}", BACKLIGHT_REGISTER_WRITE_BYPASSES_ACCESS)
+        self.assertIn("2000: d00b beq.n 201a", BACKLIGHT_REGISTER_WRITE_BYPASSES_ACCESS)
+        self.assertIn("201a: bd80 pop {r7, pc}", BACKLIGHT_REGISTER_WRITE_BYPASSES_ACCESS)
 
         with self.assertRaisesRegex(WitnessError, "register write.*continuation"):
             validate_call_path(BACKLIGHT_REGISTER_WRITE_BYPASSES_ACCESS)
