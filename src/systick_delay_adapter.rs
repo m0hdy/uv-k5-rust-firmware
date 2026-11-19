@@ -98,7 +98,7 @@ const fn delay_us_target_ticks(microseconds: u32, ticks_per_microsecond: NonZero
 
 /// Volatile reader for the Cortex-M SysTick LOAD and VAL registers.
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-pub struct VolatileSysTickCounter;
+pub struct VolatileSysTickCounter(());
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 impl VolatileSysTickCounter {
@@ -110,7 +110,7 @@ impl VolatileSysTickCounter {
     /// registers and that no other code writes LOAD or VAL or reconfigures
     /// SysTick while this provider is used.
     pub const unsafe fn new() -> Self {
-        Self
+        Self(())
     }
 }
 
