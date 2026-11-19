@@ -11,7 +11,7 @@ use input_plan::{
     PortconInputPlan, PortconInputSnapshot, PortconWrite as InputWrite, Register as InputRegister,
     WriteKind as InputWriteKind,
 };
-pub(crate) use sel_plan::Features;
+pub use sel_plan::Features;
 use sel_plan::WriteKind as SelWriteKind;
 use sel_plan::{PortconPlan, PortconSnapshot, PortconWrite as SelWrite, Register as SelRegister};
 
