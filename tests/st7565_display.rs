@@ -1,7 +1,4 @@
-#[path = "../src/st7565_display.rs"]
-mod st7565_display;
-
-use st7565_display::{CommandStep, DisplayBlitPlan, FRAME_LINES, LCD_WIDTH};
+use uv_k5_rust_firmware::st7565_display::{CommandStep, DisplayBlitPlan, FRAME_LINES, LCD_WIDTH};
 
 fn flattened(plan: DisplayBlitPlan<'_>) -> Vec<(bool, u8)> {
     let mut trace = Vec::new();

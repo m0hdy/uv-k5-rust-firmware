@@ -19,6 +19,12 @@ pub mod scheduler;
 pub mod settings_boot_composition;
 #[allow(unused_attributes)]
 pub mod settings_boot_defaults;
+#[allow(unused_attributes)]
+pub mod st7565_display;
+#[allow(unused_attributes)]
+pub mod startup_version_display;
+#[allow(unused_attributes)]
+pub mod startup_version_row_plan;
 pub mod tuning_signalling;
 
 pub struct ByteQueue<const CAPACITY: usize> {
