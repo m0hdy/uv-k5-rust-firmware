@@ -1,17 +1,17 @@
 #![cfg_attr(not(test), no_std)]
 
-//! Isolated DP32G030 register adapter for bounded SARADC battery acquisition.
+//! Isolated DP32G030 register adapter for composed SARADC battery sampling.
 
 #[allow(dead_code, unused_attributes)]
-#[path = "adc_battery_acquisition.rs"]
-mod adc_battery_acquisition;
+#[path = "startup_battery_sampling.rs"]
+mod startup_battery_sampling;
 
-pub use adc_battery_acquisition::{ReadRegister, WriteRegister};
+pub use startup_battery_sampling::{ReadRegister, WriteRegister};
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-use adc_battery_acquisition::RegisterIo;
+use startup_battery_sampling::{RegisterIo, sample_startup_battery};
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-pub use adc_battery_acquisition::{AcquisitionError, BatterySamples};
+pub use startup_battery_sampling::{StartupBatteryError, StartupBatteryReadings};
 
 const SARADC_BASE: usize = 0x400b_a000;
 const SARADC_START: usize = SARADC_BASE + 0x04;
@@ -87,7 +87,7 @@ impl RegisterIo for VolatileBatteryAdcIo {
     }
 }
 
-/// Acquires channel 4 voltage and channel 9 current samples from the DP32G030.
+/// Acquires and calibrates four battery samples from the DP32G030.
 ///
 /// # Safety
 ///
@@ -95,11 +95,14 @@ impl RegisterIo for VolatileBatteryAdcIo {
 /// addresses, the SARADC clock is enabled, and the ADC is already configured
 /// for channel-memory sampling of channels 4 and 9 with software triggering.
 /// The caller must have exclusive access to SARADC START, channel 9 STAT,
-/// channels 4 and 9 DATA, and IF for the whole call. Polling is bounded by the
-/// supplied `poll_budget`; this function does not choose a timeout policy.
+/// channels 4 and 9 DATA, and IF for the whole call. `poll_budget` independently
+/// bounds each of the four acquisition polls. `calibration` must be the
+/// calibration value selected by the caller; a zero value is rejected before
+/// any register access.
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-pub unsafe fn acquire_battery_samples_mmio(
+pub unsafe fn sample_startup_battery_mmio(
     poll_budget: usize,
-) -> Result<BatterySamples, AcquisitionError> {
-    adc_battery_acquisition::acquire_battery_samples(&mut VolatileBatteryAdcIo, poll_budget)
+    calibration: u16,
+) -> Result<StartupBatteryReadings, StartupBatteryError> {
+    sample_startup_battery(&mut VolatileBatteryAdcIo, poll_budget, calibration)
 }

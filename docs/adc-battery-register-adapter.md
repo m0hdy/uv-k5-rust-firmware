@@ -1,8 +1,8 @@
 # DP32G030 battery SARADC register adapter
 
 [`src/adc_battery_register_adapter.rs`](../src/adc_battery_register_adapter.rs)
-maps the bounded acquisition in
-[`adc_battery_acquisition.rs`](../src/adc_battery_acquisition.rs) to the
+maps the bounded acquisition and voltage calibration composition in
+[`startup_battery_sampling.rs`](../src/startup_battery_sampling.rs) to the
 DP32G030 register addresses. The mapping follows `ADC_Start()`,
 `ADC_CheckEndOfConversion()`, and `ADC_GetValue()` in pinned
 [`driver/adc.c`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/driver/adc.c)
@@ -30,13 +30,16 @@ writes. The host test checks the exact mapping and 32-bit alignment; only the
 target-gated backend performs volatile accesses.
 
 The sole target entry point is
-`acquire_battery_samples_mmio(poll_budget)`. Its caller must ensure the DP32G030
-mapping, an enabled SARADC clock, and a configured ADC using channel memory for
-channels 4 and 9 with software triggering. The caller must also have exclusive
-access to START, CH9 STAT, CH4/CH9 DATA, and IF throughout the call. Polling is
-already bounded by the supplied budget; this adapter sets no separate timeout
-or production `EXTTRIG_SEL` policy. It is not connected to `src/lib.rs`, boot,
-or startup configuration.
+`sample_startup_battery_mmio(poll_budget, calibration)`. It reuses the startup
+composition's four ordered acquisitions and calibrated-voltage calculation.
+The caller must ensure the DP32G030 mapping, an enabled SARADC clock, and a
+configured ADC using channel memory for channels 4 and 9 with software
+triggering. The caller must also have exclusive access to START, CH9 STAT,
+CH4/CH9 DATA, and IF throughout the call. The poll budget is applied to each
+acquisition independently. The caller supplies the calibration; zero is
+rejected before register access. This adapter sets no production
+`EXTTRIG_SEL` policy and is not connected to `src/lib.rs`, boot, or startup
+configuration.
 
 ## Focused validation
 
