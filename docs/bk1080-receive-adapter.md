@@ -49,8 +49,8 @@ there is no implicit clock, pin setup, or delay implementation.
 
 Before calling, the caller must ensure DP32G030 GPIOA and PORTCON mappings are
 accessible and the GPIOA clock is enabled. PA10 must be muxed as GPIOA10, and
-PA11 as GPIOA11; both must be initialized as GPIO outputs, with PA11
-input-enable and open-drain disabled. These are the board I2C pin states
+PA11 as GPIOA11; both must be initialized as GPIO outputs, with input-enable
+and open-drain disabled on both pins. These are the board I2C pin states
 documented in [`i2c-bitbang-flow.md`](i2c-bitbang-flow.md). The receiver must
 already be initialized and powered.
 

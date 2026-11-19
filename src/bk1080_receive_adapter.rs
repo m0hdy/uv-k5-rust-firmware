@@ -159,7 +159,8 @@ where
 ///
 /// The caller must provide a DP32G030 with GPIOA and PORTCON mapped and the
 /// GPIOA clock enabled. PA10/PA11 must be muxed to GPIOA10/GPIOA11 and
-/// initialized as GPIO outputs, with PA11 input-enable and open-drain disabled.
+/// initialized as GPIO outputs, with input-enable and open-drain disabled on
+/// both pins.
 /// The receiver must already be initialized and powered. The caller must
 /// exclusively own the I2C bus and keypad pins, and serialize the entire
 /// operation—including the 10 ms delay, transaction cleanup, pin handoff, and
@@ -194,11 +195,11 @@ where
 /// # Safety
 ///
 /// The caller must provide the mapped DP32G030 GPIOA/PORTCON registers and
-/// enabled GPIOA clock; PA10/PA11 must be muxed as GPIO outputs with PA11
-/// input-enable/open-drain disabled. The receiver must already be initialized
-/// and powered. The caller must exclusively own the I2C bus/keypad pins and
-/// serialize the full operation, cleanup, handoff, and drop against every
-/// GPIOA DATA/DIR and PORTA input-enable/open-drain writer, including
+/// enabled GPIOA clock; PA10/PA11 must be muxed as GPIO outputs with
+/// input-enable and open-drain disabled on both pins. The receiver must already
+/// be initialized and powered. The caller must exclusively own the I2C bus and
+/// keypad pins, and serialize the full operation, cleanup, handoff, and drop
+/// against every GPIOA DATA/DIR and PORTA input-enable/open-drain writer, including
 /// interrupts and unrelated-bit writers. The supplied one-microsecond delay
 /// must be accurate, infallible, non-panicking, and must not access those
 /// shared registers.
@@ -220,11 +221,11 @@ where
 /// # Safety
 ///
 /// The caller must provide the mapped DP32G030 GPIOA/PORTCON registers and
-/// enabled GPIOA clock; PA10/PA11 must be muxed as GPIO outputs with PA11
-/// input-enable/open-drain disabled. The receiver must already be initialized
-/// and powered. The caller must exclusively own the I2C bus/keypad pins and
-/// serialize the full operation, cleanup, handoff, and drop against every
-/// GPIOA DATA/DIR and PORTA input-enable/open-drain writer, including
+/// enabled GPIOA clock; PA10/PA11 must be muxed as GPIO outputs with
+/// input-enable and open-drain disabled on both pins. The receiver must already
+/// be initialized and powered. The caller must exclusively own the I2C bus and
+/// keypad pins, and serialize the full operation, cleanup, handoff, and drop
+/// against every GPIOA DATA/DIR and PORTA input-enable/open-drain writer, including
 /// interrupts and unrelated-bit writers. The supplied one-microsecond delay
 /// must be accurate, infallible, non-panicking, and must not access those
 /// shared registers.
