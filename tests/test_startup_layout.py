@@ -43,6 +43,7 @@ def make_elf(
     text_kind=1,
     text_file_offset_delta=VECTOR_SIZE,
     text_offset_in_ram_segment=None,
+    ram_segment_address=RAM_START,
     ram_segment_file_size=None,
     ram_segment_memory_size=None,
     data_load_address=FLASH_FILE_SIZE,
@@ -91,7 +92,7 @@ def make_elf(
             4,
         )
         + ELF32_PROGRAM_HEADER.pack(
-            1, data_load_offset, RAM_START, data_load_address, ram_segment_file_size,
+            1, data_load_offset, ram_segment_address, data_load_address, ram_segment_file_size,
             ram_segment_memory_size, 6, 4,
         )
         + ELF32_PROGRAM_HEADER.pack(
@@ -299,6 +300,21 @@ class StartupLayoutTests(unittest.TestCase):
             "__data_load must be 4-byte aligned",
             symbol_overrides={"__data_load": FLASH_FILE_SIZE + 1},
         )
+
+    def test_ram_initialization_boundaries_must_be_word_aligned(self):
+        cases = (
+            ("__data_start", {
+                "data_address": RAM_START + 1,
+                "ram_segment_address": RAM_START + 1,
+                "bss_address": RAM_START + 8,
+            }),
+            ("__data_end", {"data_size": 5, "bss_address": RAM_START + 8}),
+            ("__bss_start", {"bss_address": RAM_START + 5}),
+            ("__bss_end", {"bss_size": 5}),
+        )
+        for symbol, options in cases:
+            with self.subTest(symbol=symbol):
+                self.check_fails(f"{symbol} must be 4-byte aligned", **options)
 
     def test_entry_must_be_reset_handler(self):
         self.check_fails("entry point is not Reset_Handler", entry=0xC3)
