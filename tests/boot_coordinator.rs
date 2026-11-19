@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::num::NonZeroU32;
 
 use uv_k5_rust_firmware::boot_coordinator::{
     Acknowledgement, BatteryReadRegister, BatteryRegisterIo, BatteryWriteRegister, BoardCall,
@@ -6,6 +7,8 @@ use uv_k5_rust_firmware::boot_coordinator::{
     SettingsBootReadError, StartupIo, coordinate,
 };
 use uv_k5_rust_firmware::settings_boot_composition::{Features as SettingsFeatures, ReadError};
+use uv_k5_rust_firmware::st7565_line_transport::LineError;
+use uv_k5_rust_firmware::st7565_startup_executor::target_spi0::DelayMs;
 
 const CORE_DATA: [u8; 8] = [73, 8, 10, 1, 1, 1, 9, 4];
 const DISPLAY_DATA: [u8; 8] = [0x24, 3, 1, 4, 2, 5, 1, 1];
@@ -18,6 +21,7 @@ enum Event {
     Gpio(bool),
     BacklightInit,
     AdcInit(u16),
+    St7565Init(NonZeroU32),
     BoardPlaceholder(BoardCall),
     EepromStart,
     EepromWrite(u8),
@@ -37,6 +41,7 @@ enum EepromError {
 enum Failure {
     None,
     Systick,
+    Display,
     Eeprom,
     Battery,
 }
@@ -47,6 +52,15 @@ struct MockIo {
     settings_responses: [[u8; 8]; 2],
     settings_reads: usize,
     battery_reads: VecDeque<(BatteryReadRegister, u32)>,
+}
+
+#[derive(Default)]
+struct DelayProbe(Vec<u16>);
+
+impl DelayMs for DelayProbe {
+    fn delay_ms(&mut self, milliseconds: u16) {
+        self.0.push(milliseconds);
+    }
 }
 
 impl MockIo {
@@ -91,7 +105,7 @@ impl StartupIo for MockIo {
     fn systick(&mut self, period_ticks: u32) -> Result<(), BoardStartupError> {
         self.events.push(Event::Systick(period_ticks));
         if self.failure == Failure::Systick {
-            Err(BoardStartupError)
+            Err(BoardStartupError::SysTick)
         } else {
             Ok(())
         }
@@ -111,6 +125,20 @@ impl StartupIo for MockIo {
 
     fn adc_init(&mut self, exttrig_sel: u16) {
         self.events.push(Event::AdcInit(exttrig_sel));
+    }
+
+    fn st7565_init(
+        &mut self,
+        delay: &mut dyn DelayMs,
+        fifo_poll_limit: NonZeroU32,
+    ) -> Result<(), LineError> {
+        self.events.push(Event::St7565Init(fifo_poll_limit));
+        delay.delay_ms(37);
+        if self.failure == Failure::Display {
+            Err(LineError::DrainTimeout)
+        } else {
+            Ok(())
+        }
     }
 
     fn placeholder(&mut self, call: BoardCall) {
@@ -168,6 +196,7 @@ fn config() -> BootConfig {
         },
         enable_swd: false,
         exttrig_sel: 0x5aa5,
+        st7565_fifo_poll_limit: NonZeroU32::new(0x1234).unwrap(),
         settings: SettingsFeatures {
             noaa_enabled: true,
             vox_enabled: true,
@@ -181,7 +210,8 @@ fn config() -> BootConfig {
 #[test]
 fn success_runs_board_then_fallible_settings_then_bounded_battery_sampling() {
     let mut io = MockIo::new(Failure::None);
-    let state = coordinate(&mut io, config()).unwrap();
+    let mut delay = DelayProbe::default();
+    let state = coordinate(&mut io, &mut delay, config()).unwrap();
 
     assert_eq!(state.settings.core.call_channel, 73);
     assert_eq!(state.settings.display.channel_display_mode, 3);
@@ -191,7 +221,7 @@ fn success_runs_board_then_fallible_settings_then_bounded_battery_sampling() {
     let last_board = io
         .events
         .iter()
-        .rposition(|event| matches!(event, Event::BoardPlaceholder(_)))
+        .rposition(|event| matches!(event, Event::St7565Init(_) | Event::BoardPlaceholder(_)))
         .unwrap();
     let first_eeprom = io
         .events
@@ -219,9 +249,17 @@ fn success_runs_board_then_fallible_settings_then_bounded_battery_sampling() {
             Event::Gpio(false),
             Event::BacklightInit,
             Event::AdcInit(0x5aa5),
-            Event::BoardPlaceholder(BoardCall::St7565Init),
+            Event::St7565Init(NonZeroU32::new(0x1234).unwrap()),
         ]
     );
+    assert_eq!(
+        io.events
+            .iter()
+            .filter(|event| matches!(event, Event::St7565Init(_)))
+            .count(),
+        1
+    );
+    assert_eq!(delay.0, [37]);
     assert_eq!(
         io.events
             .iter()
@@ -234,10 +272,11 @@ fn success_runs_board_then_fallible_settings_then_bounded_battery_sampling() {
 #[test]
 fn board_failure_stops_before_eeprom_and_battery_and_returns_no_app_state() {
     let mut io = MockIo::new(Failure::Systick);
+    let mut delay = DelayProbe::default();
 
     assert_eq!(
-        coordinate(&mut io, config()),
-        Err(BootError::Board(BoardStartupError))
+        coordinate(&mut io, &mut delay, config()),
+        Err(BootError::Board(BoardStartupError::SysTick))
     );
     assert_eq!(
         io.events,
@@ -246,11 +285,33 @@ fn board_failure_stops_before_eeprom_and_battery_and_returns_no_app_state() {
 }
 
 #[test]
-fn eeprom_failure_stops_before_battery_and_returns_no_app_state() {
-    let mut io = MockIo::new(Failure::Eeprom);
+fn display_failure_preserves_cause_and_stops_before_settings_and_battery() {
+    let mut io = MockIo::new(Failure::Display);
+    let mut delay = DelayProbe::default();
 
     assert_eq!(
-        coordinate(&mut io, config()),
+        coordinate(&mut io, &mut delay, config()),
+        Err(BootError::Board(BoardStartupError::St7565(
+            LineError::DrainTimeout
+        )))
+    );
+    assert!(matches!(io.events.last(), Some(Event::St7565Init(_))));
+    assert!(!io.events.iter().any(|event| {
+        matches!(
+            event,
+            Event::EepromStart | Event::BatteryRead(_) | Event::BatteryWrite(_, _)
+        )
+    }));
+    assert_eq!(delay.0, [37]);
+}
+
+#[test]
+fn eeprom_failure_stops_before_battery_and_returns_no_app_state() {
+    let mut io = MockIo::new(Failure::Eeprom);
+    let mut delay = DelayProbe::default();
+
+    assert_eq!(
+        coordinate(&mut io, &mut delay, config()),
         Err(BootError::Settings(SettingsBootReadError {
             block: SettingsBootBlock::Core,
             error: ReadError::Transport(EepromError::Transfer),
@@ -266,9 +327,10 @@ fn eeprom_failure_stops_before_battery_and_returns_no_app_state() {
 #[test]
 fn battery_failure_returns_no_app_state_after_complete_settings_reads() {
     let mut io = MockIo::new(Failure::Battery);
+    let mut delay = DelayProbe::default();
 
     assert!(matches!(
-        coordinate(&mut io, config()),
+        coordinate(&mut io, &mut delay, config()),
         Err(BootError::Battery(_))
     ));
     assert_eq!(

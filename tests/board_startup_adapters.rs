@@ -1,8 +1,26 @@
 #[path = "../src/board_startup_adapters.rs"]
 mod board_startup_adapters;
+#[path = "../src/st7565_display.rs"]
+#[allow(dead_code)]
+mod st7565_display;
+#[path = "../src/st7565_line_transport.rs"]
+#[allow(dead_code)]
+mod st7565_line_transport;
+#[path = "../src/st7565_mmio_transport.rs"]
+#[allow(dead_code)]
+mod st7565_mmio_transport;
+#[path = "../src/st7565_startup.rs"]
+#[allow(dead_code)]
+mod st7565_startup;
+#[path = "../src/st7565_startup_executor.rs"]
+#[allow(dead_code)]
+mod st7565_startup_executor;
 
 use board_startup_adapters::backlight_startup_executor::{Register, RegisterIo, apply_with_io};
 use board_startup_adapters::{Call, Defines, StartupError, StartupIo, run};
+use core::num::NonZeroU32;
+use st7565_line_transport::LineError;
+use st7565_startup_executor::target_spi0::DelayMs;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Event {
@@ -12,6 +30,7 @@ enum Event {
     Gpio(bool),
     BacklightInit,
     AdcInit(u16),
+    St7565Init(NonZeroU32),
     BacklightRead(Register),
     BacklightWrite(Register, u32),
     Placeholder(Call),
@@ -20,6 +39,7 @@ enum Event {
 struct FakeIo {
     events: Vec<Event>,
     fail_systick: bool,
+    fail_st7565: bool,
     backlight_registers: [u32; 5],
 }
 
@@ -28,6 +48,7 @@ impl Default for FakeIo {
         Self {
             events: Vec::new(),
             fail_systick: false,
+            fail_st7565: false,
             backlight_registers: [0xa123_4567, 0xdead_beef, 0x89ab_cdef, 0, 0],
         }
     }
@@ -41,7 +62,7 @@ impl StartupIo for FakeIo {
     fn systick(&mut self, period_ticks: u32) -> Result<(), StartupError> {
         self.events.push(Event::Systick(period_ticks));
         if self.fail_systick {
-            Err(StartupError)
+            Err(StartupError::SysTick)
         } else {
             Ok(())
         }
@@ -64,8 +85,31 @@ impl StartupIo for FakeIo {
         self.events.push(Event::AdcInit(exttrig_sel));
     }
 
+    fn st7565_init(
+        &mut self,
+        delay: &mut dyn DelayMs,
+        fifo_poll_limit: NonZeroU32,
+    ) -> Result<(), LineError> {
+        self.events.push(Event::St7565Init(fifo_poll_limit));
+        delay.delay_ms(37);
+        if self.fail_st7565 {
+            Err(LineError::FifoTimeout)
+        } else {
+            Ok(())
+        }
+    }
+
     fn placeholder(&mut self, call: Call) {
         self.events.push(Event::Placeholder(call));
+    }
+}
+
+#[derive(Default)]
+struct DelayProbe(Vec<u16>);
+
+impl DelayMs for DelayProbe {
+    fn delay_ms(&mut self, milliseconds: u16) {
+        self.0.push(milliseconds);
     }
 }
 
@@ -103,8 +147,16 @@ fn defines(enable_fmradio: bool, enable_uart: bool, enabled_aircopy: bool) -> De
 #[test]
 fn sequencer_dispatches_adapters_in_pinned_order_and_keeps_other_calls_typed() {
     let mut io = FakeIo::default();
+    let mut delay = DelayProbe::default();
     assert_eq!(
-        run(defines(true, true, false), true, 0x5aa5, &mut io),
+        run(
+            defines(true, true, false),
+            true,
+            0x5aa5,
+            &mut delay,
+            NonZeroU32::new(0x1234).unwrap(),
+            &mut io
+        ),
         Ok(())
     );
 
@@ -126,11 +178,12 @@ fn sequencer_dispatches_adapters_in_pinned_order_and_keeps_other_calls_typed() {
             Event::BacklightWrite(Register::PwmPlus0Generator, 0x0101_0000),
             Event::BacklightWrite(Register::PwmPlus0Config, 5),
             Event::AdcInit(0x5aa5),
-            Event::Placeholder(Call::St7565Init),
+            Event::St7565Init(NonZeroU32::new(0x1234).unwrap()),
             Event::Placeholder(Call::Bk1080Init0),
             Event::Placeholder(Call::CrcInit),
         ]
     );
+    assert_eq!(delay.0, [37]);
     assert_eq!(io.backlight_registers[0], 0xa12f_4567);
     assert_eq!(io.backlight_registers[2], 0x81ab_cdef);
 }
@@ -140,11 +193,14 @@ fn swd_and_fm_features_are_forwarded_to_their_adapters() {
     for enable_swd in [false, true] {
         for enable_fmradio in [false, true] {
             let mut io = FakeIo::default();
+            let mut delay = DelayProbe::default();
             assert_eq!(
                 run(
                     defines(enable_fmradio, false, false),
                     enable_swd,
                     0x35c7,
+                    &mut delay,
+                    NonZeroU32::new(7).unwrap(),
                     &mut io
                 ),
                 Ok(())
@@ -161,13 +217,49 @@ fn invalid_systick_setup_stops_before_all_later_board_stages() {
         fail_systick: true,
         ..FakeIo::default()
     };
+    let mut delay = DelayProbe::default();
 
     assert_eq!(
-        run(defines(true, true, true), true, 0x35c7, &mut io),
-        Err(StartupError)
+        run(
+            defines(true, true, true),
+            true,
+            0x35c7,
+            &mut delay,
+            NonZeroU32::new(7).unwrap(),
+            &mut io
+        ),
+        Err(StartupError::SysTick)
     );
     assert_eq!(
         io.events,
         [Event::DeviceClockGates, Event::Systick(480_000)]
     );
+}
+
+#[test]
+fn display_error_preserves_line_cause_and_stops_optional_stages() {
+    let mut io = FakeIo {
+        fail_st7565: true,
+        ..FakeIo::default()
+    };
+    let mut delay = DelayProbe::default();
+
+    assert_eq!(
+        run(
+            defines(true, true, true),
+            false,
+            0x5aa5,
+            &mut delay,
+            NonZeroU32::new(19).unwrap(),
+            &mut io
+        ),
+        Err(StartupError::St7565(LineError::FifoTimeout))
+    );
+    assert_eq!(
+        io.events.last(),
+        Some(&Event::St7565Init(NonZeroU32::new(19).unwrap()))
+    );
+    assert_eq!(delay.0, [37]);
+    assert!(!io.events.contains(&Event::Placeholder(Call::Bk1080Init0)));
+    assert!(!io.events.contains(&Event::Placeholder(Call::CrcInit)));
 }

@@ -11,6 +11,7 @@ from check_startup_witness import (  # noqa: E402
     validate_backlight_initializer_path,
     validate_backlight_register_io_path,
     validate_call_path,
+    validate_st7565_executor_path,
     validate_systick_handler,
 )
 
@@ -76,7 +77,7 @@ CONNECTED_DISPATCH = """
  204: e7fe b.n 204 <witness_main+0x4>
 00000300 <run_hardware>:
  300: f000 f800 bl 400 <board_startup_adapters::run::<Hardware>>
- 304: b004 add sp, #16
+ 304: b007 add sp, #28
  306: bd80 pop {r7, pc}
 00000400 <board_startup_adapters::run::<Hardware>>:
  400: f000 f800 bl 500 <board_sequence::run::<Backend>>
@@ -690,9 +691,28 @@ HARDWARE_WRAPPER_POST_CALL_SELF_LOOP = CONNECTED_DISPATCH.replace(
 )
 
 RUN_HARDWARE_POST_CALL_SELF_LOOP = CONNECTED_DISPATCH.replace(
-    " 304: b004 add sp, #16",
-    " 304: e7fe b.n 304\n 306: b004 add sp, #16",
+    " 304: b007 add sp, #28",
+    " 304: e7fe b.n 304\n 306: b007 add sp, #28",
 )
+
+ST7565_EXECUTOR_PATH = """
+00000100 <<HardwareIo as StartupIo>::st7565_init>:
+ 100: b580 push {r7, lr}
+ 102: af00 add r7, sp, #0
+ 104: b082 sub sp, #8
+ 106: f000 f800 bl 200 <target_spi0::startup_mmio>
+ 10a: b002 add sp, #8
+ 10c: bd80 pop {r7, pc}
+00000200 <target_spi0::startup_mmio>:
+ 200: b580 push {r7, lr}
+ 202: af00 add r7, sp, #0
+ 204: b082 sub sp, #8
+ 206: f000 f800 bl 300 <target_spi0::startup_with_io::<Registers, Delay>>
+ 20a: b002 add sp, #8
+ 20c: bd80 pop {r7, pc}
+00000300 <target_spi0::startup_with_io::<Registers, Delay>>:
+ 300: 4770 bx lr
+"""
 
 ADAPTER_RUN_ERROR_SELF_LOOP = CONNECTED_DISPATCH.replace(
     " 41e: e7ff b.n 420",
@@ -1056,6 +1076,26 @@ TRAP_BEFORE_RETURN = """
 
 
 class StartupWitnessCheckerTests(unittest.TestCase):
+    def test_accepts_concrete_st7565_executor_call_chain(self):
+        validate_st7565_executor_path(ST7565_EXECUTOR_PATH)
+
+    def test_rejects_st7565_call_disconnected_after_early_return(self):
+        disconnected = ST7565_EXECUTOR_PATH.replace(
+            " 106: f000 f800 bl 200 <target_spi0::startup_mmio>",
+            " 106: 4770 bx lr\n"
+            " 108: f000 f800 bl 200 <target_spi0::startup_mmio>",
+        )
+        with self.assertRaisesRegex(WitnessError, "target ST7565 init path does not reach"):
+            validate_st7565_executor_path(disconnected)
+
+    def test_rejects_st7565_call_bypassed_to_unrelated_target(self):
+        bypassed = ST7565_EXECUTOR_PATH.replace(
+            " 106: f000 f800 bl 200 <target_spi0::startup_mmio>",
+            " 106: f000 f800 bl 400 <startup_noop>",
+        ) + "\n00000400 <startup_noop>:\n 400: 4770 bx lr\n"
+        with self.assertRaisesRegex(WitnessError, "target ST7565 init path does not reach"):
+            validate_st7565_executor_path(bypassed)
+
     def test_accepts_immediate_systick_return_at_symbol_entry(self):
         validate_systick_handler(SYSTICK_RETURN, 0x100)
 

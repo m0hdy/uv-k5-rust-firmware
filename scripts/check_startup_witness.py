@@ -209,6 +209,20 @@ def validate_required_call_targets(disassembly: str) -> None:
         ),
         ("__aeabi_memcpy4", "__aeabi_memcpy4", False),
     )
+    if "StartupIo>::st7565_init" in disassembly:
+        required_symbols += (
+            (
+                "StartupIo>::st7565_init",
+                "StartupIo>::st7565_init",
+                True,
+            ),
+            ("target_spi0::startup_mmio", "target_spi0::startup_mmio", False),
+            (
+                "target_spi0::startup_with_io::<",
+                "target_spi0::startup_with_io::<",
+                False,
+            ),
+        )
 
     def function_entry(fragment: str, suffix: bool) -> tuple[int, str]:
         matches = []
@@ -250,6 +264,11 @@ def validate_required_call_targets(disassembly: str) -> None:
         ("backlight_startup_executor::RegisterIo>::read", False),
         ("backlight_startup_executor::RegisterIo>::write", False),
     )
+    if "StartupIo>::st7565_init" in disassembly:
+        callers += (
+            ("StartupIo>::st7565_init", True),
+            ("target_spi0::startup_mmio", False),
+        )
     for caller, suffix in callers:
         function = function_block(disassembly, caller, suffix=suffix)
         for instruction in parse_instructions(function):
@@ -857,15 +876,23 @@ def validate_variant_guard(
     prefix: list[tuple[int, int, str, str, str]],
     branch: tuple[int, int, str, str, str],
     instructions: list[tuple[int, int, str, str, str]],
+    highest_variant: int = 5,
+    variant_stack_offset: int = 8,
+    index_stack_offset: int = 0,
+    self_stack_offset: int = 4,
 ) -> bool:
     if len(prefix) < 5:
         return False
     load, extend, save, compare = prefix[-5:-1]
     if not (
-        matches_instruction(load, "ldr", r"\s*r0,\s*\[sp,\s*#8\]\s*")
+        matches_instruction(
+            load, "ldr", rf"\s*r0,\s*\[sp,\s*#{variant_stack_offset}\]\s*"
+        )
         and matches_instruction(extend, "uxtb", r"\s*r0,\s*r0\s*")
-        and matches_instruction(save, "str", r"\s*r0,\s*\[sp,\s*#0\]\s*")
-        and matches_instruction(compare, "cmp", r"\s*r0,\s*#5\s*")
+        and matches_instruction(
+            save, "str", rf"\s*r0,\s*\[sp,\s*#{index_stack_offset}\]\s*"
+        )
+        and matches_instruction(compare, "cmp", rf"\s*r0,\s*#{highest_variant}\s*")
         and branch[2] == "bhi.n"
     ):
         return False
@@ -888,8 +915,12 @@ def validate_variant_guard(
     )
     tail = by_address.get(call[0] + call[1])
     return (
-        matches_instruction(handler[0], "ldr", r"\s*r1,\s*\[sp,\s*#8\]\s*")
-        and matches_instruction(handler[1], "ldr", r"\s*r0,\s*\[sp,\s*#4\]\s*")
+        matches_instruction(
+            handler[0], "ldr", rf"\s*r1,\s*\[sp,\s*#{variant_stack_offset}\]\s*"
+        )
+        and matches_instruction(
+            handler[1], "ldr", rf"\s*r0,\s*\[sp,\s*#{self_stack_offset}\]\s*"
+        )
         and matches_instruction(handler[2], "ldr", r"\s*r0,\s*\[r0,\s*#0\]\s*")
         and any("placeholder" in target for target in direct_call_targets(call[4]))
         and tail is not None
@@ -907,6 +938,13 @@ def require_call_edge(disassembly: str, caller: str, callee: str) -> None:
 
 
 def backend_dispatch_targets(function: str) -> list[int]:
+    display_stage = "StartupIo>::st7565_init" in function
+    target_count = 7 if display_stage else 6
+    highest_variant = target_count - 1
+    stack_size = 24 if display_stage else 16
+    self_stack_offset = 8 if display_stage else 4
+    variant_stack_offset = 12 if display_stage else 8
+    index_stack_offset = 4 if display_stage else 0
     instructions = parse_instructions(function)
     prefix = instructions[:20]
     if len(prefix) != 20 or any(
@@ -920,20 +958,20 @@ def backend_dispatch_targets(function: str) -> list[int]:
     expected = (
         (0, "push", r"\s*\{\s*r7,\s*lr\s*\}\s*"),
         (1, "add", r"\s*r7,\s*sp,\s*#0\s*"),
-        (2, "sub", r"\s*sp,\s*#16\s*"),
-        (3, "str", r"\s*r0,\s*\[sp,\s*#4\]\s*"),
-        (4, "str", r"\s*r1,\s*\[sp,\s*#8\]\s*"),
+        (2, "sub", rf"\s*sp,\s*#{stack_size}\s*"),
+        (3, "str", rf"\s*r0,\s*\[sp,\s*#{self_stack_offset}\]\s*"),
+        (4, "str", rf"\s*r1,\s*\[sp,\s*#{variant_stack_offset}\]\s*"),
         (5, "ldrb", r"\s*r0,\s*\[r0,\s*#8\]\s*"),
         (6, "lsls", r"\s*r0,\s*r0,\s*#31\s*"),
         (7, "cmp", r"\s*r0,\s*#0\s*"),
         (8, "bne.n", r"\s*[0-9a-fA-F]+\b.*"),
         (9, "b.n", r"\s*[0-9a-fA-F]+\b.*"),
-        (10, "ldr", r"\s*r0,\s*\[sp,\s*#8\]\s*"),
+        (10, "ldr", rf"\s*r0,\s*\[sp,\s*#{variant_stack_offset}\]\s*"),
         (11, "uxtb", r"\s*r0,\s*r0\s*"),
-        (12, "str", r"\s*r0,\s*\[sp,\s*#0\]\s*"),
-        (13, "cmp", r"\s*r0,\s*#5\s*"),
+        (12, "str", rf"\s*r0,\s*\[sp,\s*#{index_stack_offset}\]\s*"),
+        (13, "cmp", rf"\s*r0,\s*#{highest_variant}\s*"),
         (14, "bhi.n", r"\s*[0-9a-fA-F]+\b.*"),
-        (15, "ldr", r"\s*r0,\s*\[sp,\s*#0\]\s*"),
+        (15, "ldr", rf"\s*r0,\s*\[sp,\s*#{index_stack_offset}\]\s*"),
         (16, "lsls", r"\s*r1,\s*r0,\s*#2\s*"),
         (18, "ldr", r"\s*r0,\s*\[r0,\s*r1\]\s*"),
         (19, "mov", r"\s*pc,\s*r0\s*"),
@@ -951,7 +989,15 @@ def backend_dispatch_targets(function: str) -> list[int]:
     if (
         not validate_stopped_guard(prefix[:9], stopped_branch, instructions)
         or branch_target(prefix[9]) != prefix[10][0]
-        or not validate_variant_guard(prefix[:15], variant_branch, instructions)
+        or not validate_variant_guard(
+            prefix[:15],
+            variant_branch,
+            instructions,
+            highest_variant,
+            variant_stack_offset,
+            index_stack_offset,
+            self_stack_offset,
+        )
     ):
         raise WitnessError(
             "sequencer backend has no reachable ordered indexed dispatch from its function entry"
@@ -975,16 +1021,80 @@ def backend_dispatch_targets(function: str) -> list[int]:
         if match:
             words[int(match.group(1), 16)] = int(match.group(2), 16)
     try:
-        return [words[table_address + offset] & ~1 for offset in range(0, 24, 4)]
+        return [
+            words[table_address + offset] & ~1
+            for offset in range(0, target_count * 4, 4)
+        ]
     except KeyError as error:
-        raise WitnessError("sequencer backend dispatch table is missing one of its first six targets") from error
+        raise WitnessError(
+            f"sequencer backend dispatch table is missing one of its first {target_count} targets"
+        ) from error
+
+
+def instruction_tail(function: str, address: int) -> str:
+    lines = function.splitlines()
+    start = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if (match := re.match(r"\s*([0-9a-fA-F]+):", line))
+            and int(match.group(1), 16) == address
+        ),
+        None,
+    )
+    return "\n".join(lines[start:]) if start is not None else ""
+
+
+def validate_st7565_executor_path(disassembly: str) -> None:
+    methods = (
+        (
+            "StartupIo>::st7565_init",
+            "target ST7565 init",
+            ("target_spi0::startup_mmio",),
+        ),
+        (
+            "target_spi0::startup_mmio",
+            "target ST7565 MMIO entry",
+            ("target_spi0::startup_with_io::<",),
+        ),
+    )
+    for symbol, description, calls in methods:
+        validate_returning_call_path(
+            function_block(disassembly, symbol, suffix=symbol.startswith("StartupIo")),
+            description,
+            calls,
+            (("add", r"\s*sp,\s*#8\s*"),),
+        )
+
+
+def validate_st7565_stage(disassembly: str, backend: str) -> None:
+    validate_st7565_executor_path(disassembly)
+    targets = backend_dispatch_targets(backend)
+    if len(targets) != 7:
+        raise WitnessError("display variant is missing from sequencer backend dispatch")
+    display_case = instruction_tail(backend, targets[6])
+    reachable = reachable_instruction_prefix(display_case)
+    if not any(
+        "StartupIo>::st7565_init" in target
+        for instruction in reachable
+        for target in direct_call_targets(instruction[4])
+    ):
+        raise WitnessError("display variant has no reachable ST7565 startup call")
 
 
 def validate_backend_dispatch(disassembly: str) -> None:
     backend = function_block(disassembly, ">::call", suffix=True)
     targets = backend_dispatch_targets(backend)
-    if len(set(targets)) != 6:
-        raise WitnessError("sequencer backend first six variants do not have distinct dispatch targets")
+    target_count = 7 if "StartupIo>::st7565_init" in disassembly else 6
+    stack_size = 24 if target_count == 7 else 16
+    self_stack_offset = 8 if target_count == 7 else 4
+    portcon_offset = 4 if target_count == 7 else 6
+    gpio_offset = 5 if target_count == 7 else 7
+    adc_offset = 6 if target_count == 7 else 4
+    if len(set(targets)) != target_count:
+        raise WitnessError(
+            f"sequencer backend first {target_count} variants do not have distinct dispatch targets"
+        )
 
     instructions = parse_instructions(backend)
     by_address = {instruction[0]: instruction for instruction in instructions}
@@ -1039,17 +1149,23 @@ def validate_backend_dispatch(disassembly: str) -> None:
     epilogue_instructions = [by_address.get(epilogue), by_address.get(epilogue + 2)]
     if not (
         all(epilogue_instructions)
-        and matches_instruction(epilogue_instructions[0], "add", r"\s*sp,\s*#16\s*")
+        and matches_instruction(
+            epilogue_instructions[0], "add", rf"\s*sp,\s*#{stack_size}\s*"
+        )
         and matches_instruction(epilogue_instructions[1], "pop", r"\s*\{\s*r7,\s*pc\s*\}\s*")
     ):
         raise WitnessError("sequencer backend shared return epilogue has an unexpected shape")
 
-    clock_end = expect(targets[0], "ldr", r"\s*r0,\s*\[sp,\s*#4\]\s*", 0)
+    clock_end = expect(
+        targets[0], "ldr", rf"\s*r0,\s*\[sp,\s*#{self_stack_offset}\]\s*", 0
+    )
     clock_end = expect(clock_end, "ldr", r"\s*r0,\s*\[r0,\s*#0\]\s*", 0)
     clock_end = expect_call(clock_end, methods[0], 0)
     expect_epilogue_branch(clock_end, 0)
 
-    systick_end = expect(targets[1], "ldr", r"\s*r0,\s*\[sp,\s*#4\]\s*", 1)
+    systick_end = expect(
+        targets[1], "ldr", rf"\s*r0,\s*\[sp,\s*#{self_stack_offset}\]\s*", 1
+    )
     systick_end = expect(systick_end, "ldr", r"\s*r0,\s*\[r0,\s*#0\]\s*", 1)
     systick_end = expect(
         systick_end,
@@ -1059,7 +1175,12 @@ def validate_backend_dispatch(disassembly: str) -> None:
     )
     systick_end = expect_call(systick_end, methods[1], 1)
     systick_end = expect(systick_end, "mov", r"\s*r1,\s*r0\s*", 1)
-    systick_end = expect(systick_end, "add", r"\s*r0,\s*sp,\s*#12\s*", 1)
+    systick_end = expect(
+        systick_end,
+        "add",
+        rf"\s*r0,\s*sp,\s*#{16 if target_count == 7 else 12}\s*",
+        1,
+    )
     systick_end = expect(systick_end, "strb", r"\s*r1,\s*\[r0,\s*#0\]\s*", 1)
     systick_end = expect_call(
         systick_end,
@@ -1076,35 +1197,54 @@ def validate_backend_dispatch(disassembly: str) -> None:
 
     if error_handler is None:
         raise WitnessError("sequencer backend SysTick error branch has no target")
-    error_end = expect(error_handler, "ldr", r"\s*r1,\s*\[sp,\s*#4\]\s*", 1)
+    error_end = expect(
+        error_handler, "ldr", rf"\s*r1,\s*\[sp,\s*#{self_stack_offset}\]\s*", 1
+    )
     error_end = expect(error_end, "movs", r"\s*r0,\s*#1\s*", 1)
     error_end = expect(error_end, "strb", r"\s*r0,\s*\[r1,\s*#8\]\s*", 1)
+    if target_count == 7:
+        error_end = expect(error_end, "movs", r"\s*r0,\s*#255\s*", 1)
+        error_end = expect(error_end, "strb", r"\s*r0,\s*\[r1,\s*#24\]\s*", 1)
     expect_epilogue_branch(error_end, 1)
 
-    portcon_end = expect(targets[2], "ldr", r"\s*r1,\s*\[sp,\s*#4\]\s*", 2)
+    portcon_end = expect(
+        targets[2], "ldr", rf"\s*r1,\s*\[sp,\s*#{self_stack_offset}\]\s*", 2
+    )
     portcon_end = expect(portcon_end, "ldr", r"\s*r0,\s*\[r1,\s*#0\]\s*", 2)
-    portcon_end = expect(portcon_end, "ldrb", r"\s*r1,\s*\[r1,\s*#6\]\s*", 2)
+    portcon_end = expect(
+        portcon_end, "ldrb", rf"\s*r1,\s*\[r1,\s*#{portcon_offset}\]\s*", 2
+    )
     portcon_end = expect_call(portcon_end, methods[2], 2)
     expect_epilogue_branch(portcon_end, 2)
 
-    gpio_end = expect(targets[3], "ldr", r"\s*r1,\s*\[sp,\s*#4\]\s*", 3)
+    gpio_end = expect(
+        targets[3], "ldr", rf"\s*r1,\s*\[sp,\s*#{self_stack_offset}\]\s*", 3
+    )
     gpio_end = expect(gpio_end, "ldr", r"\s*r0,\s*\[r1,\s*#0\]\s*", 3)
-    gpio_end = expect(gpio_end, "ldrb", r"\s*r1,\s*\[r1,\s*#7\]\s*", 3)
+    gpio_end = expect(
+        gpio_end, "ldrb", rf"\s*r1,\s*\[r1,\s*#{gpio_offset}\]\s*", 3
+    )
     gpio_end = expect_call(gpio_end, methods[3], 3)
     expect_epilogue_branch(gpio_end, 3)
 
-    backlight_end = expect(targets[4], "ldr", r"\s*r0,\s*\[sp,\s*#4\]\s*", 4)
+    backlight_end = expect(
+        targets[4], "ldr", rf"\s*r0,\s*\[sp,\s*#{self_stack_offset}\]\s*", 4
+    )
     backlight_end = expect(backlight_end, "ldr", r"\s*r0,\s*\[r0,\s*#0\]\s*", 4)
     backlight_end = expect_call(
         backlight_end, methods[4], 4
     )
     expect_epilogue_branch(backlight_end, 4)
 
-    adc_end = expect(targets[5], "ldr", r"\s*r1,\s*\[sp,\s*#4\]\s*", 5)
+    adc_end = expect(
+        targets[5], "ldr", rf"\s*r1,\s*\[sp,\s*#{self_stack_offset}\]\s*", 5
+    )
     adc_end = expect(adc_end, "ldr", r"\s*r0,\s*\[r1,\s*#0\]\s*", 5)
-    adc_end = expect(adc_end, "ldrh", r"\s*r1,\s*\[r1,\s*#4\]\s*", 5)
+    adc_end = expect(adc_end, "ldrh", rf"\s*r1,\s*\[r1,\s*#{adc_offset}\]\s*", 5)
     adc_end = expect_call(adc_end, methods[5], 5)
     expect_epilogue_branch(adc_end, 5)
+    if target_count == 7:
+        validate_st7565_stage(disassembly, backend)
 
 def validate_backlight_executor_paths(function: str) -> None:
     instructions = reachable_control_flow(function, "backlight executor")
@@ -1881,7 +2021,7 @@ def validate_returning_call_path(
 
     epilogue = instructions.get(continuation)
     if epilogue is None or not matches_instruction(
-        epilogue, "pop", r"\s*\{\s*r7,\s*pc\s*\}\s*"
+        epilogue, "pop", r"\s*\{\s*(?:r[0-7],\s*)*r7,\s*pc\s*\}\s*"
     ):
         raise WitnessError(
             f"linked {symbol_fragment} path has a non-returning call continuation"
@@ -1903,6 +2043,22 @@ def validate_adapter_run_result(function: str) -> None:
 
     start = call[0] + call[1]
     instructions = {instruction[0]: instruction for instruction in parse_instructions(function)}
+    result_path = [instructions.get(start + offset * 2) for offset in range(3)]
+    if result_path and matches_instruction(
+        result_path[0], "ldr", r"\s*r0,\s*\[sp,\s*#44\]\s*"
+    ):
+        if not (
+            all(result_path)
+            and matches_instruction(result_path[1], "add", r"\s*sp,\s*#52\s*")
+            and matches_instruction(
+                result_path[2], "pop", r"\s*\{\s*r4,\s*r5,\s*r6,\s*r7,\s*pc\s*\}\s*"
+            )
+        ):
+            raise WitnessError(
+                "linked board startup adapter result path has an unexpected continuation"
+            )
+        return
+
     expected = (
         ("ldr", r"\s*r0,\s*\[sp,\s*#8\]\s*"),
         ("ldrb", r"\s*r0,\s*\[r0,\s*#8\]\s*"),
@@ -2090,7 +2246,7 @@ def validate_call_path(disassembly: str) -> None:
         function_block(disassembly, "run_hardware"),
         "run_hardware",
         ("board_startup_adapters::run::<",),
-        (("add", r"\s*sp,\s*#16\s*"),),
+        (("add", r"\s*sp,\s*#28\s*"),),
     )
     validate_adapter_run_result(
         function_block(disassembly, "board_startup_adapters::run::<")
@@ -2135,6 +2291,18 @@ def validate_call_path(disassembly: str) -> None:
         if not any(adapter in target for target in reachable_call_targets(method_body)):
             raise WitnessError(
                 f"target {method} has no reachable linked call instruction to {adapter}"
+            )
+
+    if "StartupIo>::st7565_init" in disassembly:
+        method_body = function_block(
+            disassembly, "StartupIo>::st7565_init", suffix=True
+        )
+        if not any(
+            "target_spi0::startup_mmio" in target
+            for target in reachable_call_targets(method_body)
+        ):
+            raise WitnessError(
+                "target st7565_init has no reachable linked call to target_spi0::startup_mmio"
             )
 
     for method, calls, cleanup in (
