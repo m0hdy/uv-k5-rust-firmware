@@ -110,12 +110,11 @@ For the target probe, append
 `cargo build --locked --target thumbv6m-none-eabi --release`. Both commands
 must return nonzero; do not commit either injection.
 
-There is no C reference or parity job in the default workflow. The documented
-`UV_K5_C_REFERENCE` environment variable is not consumed by current checks.
-Any future mixed/parity lane must be separately opt-in, require an immutable
-reference revision, and reject a missing, floating, or modified C checkout;
-it must not fall back to an upstream branch. No image may be published until
-the mandatory size gate from issue
+The default workflow runs host tests that exercise the Rust vector evaluator.
+It does not run the pinned C comparator or require a C checkout or
+`UV_K5_C_REFERENCE`. The standalone reports below can be run locally.
+No image may be published until the
+mandatory size gate from issue
 [m0hdy/uv-k5-rust-firmware#26](https://github.com/m0hdy/uv-k5-rust-firmware/issues/26)
 has passed for that exact ELF and raw payload in every flashable job.
 Upload its linker map and budget report on an always-run path after the gate so
@@ -123,15 +122,37 @@ a gate failure still retains the diagnostics.
 
 ## Reference firmware
 
-The default commands above do not require or inspect a C firmware checkout or
-any reference environment variable. For future parity tooling that explicitly
-uses a reference checkout, select it with:
+The Rust evaluator executes all 39 checked-in vectors against the host Rust
+library and does not use a C checkout:
+
+```sh
+python3 tools/reference-vectors/compare_rust.py
+```
+
+The optional C comparator recaptures those cases from the pinned public C
+revision and compares inputs and outputs with the checked-in fixture. Set
+`UV_K5_C_REFERENCE` to a clean checkout at
+`7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3`:
 
 ```sh
 export UV_K5_C_REFERENCE=/path/to/reference-firmware
+python3 tools/reference-vectors/compare.py
 ```
 
-No current build or test command consumes this variable.
+Both commands produce standalone local reports. The C comparator
+rejects a checkout at another commit or with tracked or untracked changes; it
+never substitutes a moving upstream branch. It reports per-case input or
+result mismatches, including the canonical and captured results.
+
+Regenerating the fixture is a separate, explicit operation. It uses the same
+pinned, clean checkout and overwrites `tests/reference-vectors/golden.json`:
+
+```sh
+UV_K5_C_REFERENCE=/path/to/clean/reference-firmware \
+  python3 tools/reference-vectors/capture.py --write
+```
+
+Review the fixture diff and its provenance before accepting regenerated data.
 
 ## File ownership
 
