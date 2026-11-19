@@ -7,6 +7,7 @@ on:
       - .github/workflows/copilot-setup-steps.yml
       - .github/actions/setup-arm-binutils/action.yml
       - scripts/provision_arm_binutils.py
+      - scripts/verify_arm_binutils_direct_archive.py
       - tests/test_provision_arm_binutils.py
       - rust-toolchain.toml
   pull_request:
@@ -14,6 +15,7 @@ on:
       - .github/workflows/copilot-setup-steps.yml
       - .github/actions/setup-arm-binutils/action.yml
       - scripts/provision_arm_binutils.py
+      - scripts/verify_arm_binutils_direct_archive.py
       - tests/test_provision_arm_binutils.py
       - rust-toolchain.toml
 
@@ -75,6 +77,9 @@ jobs:
       - name: Install GNU ARM binutils
         timeout-minutes: 10
         uses: ./.github/actions/setup-arm-binutils
+      - name: Verify signed direct Ubuntu archive provisioning
+        timeout-minutes: 10
+        run: python3 scripts/verify_arm_binutils_direct_archive.py
       - name: Fetch locked dependencies
         run: cargo fetch --locked
       - name: Check formatting and lint
