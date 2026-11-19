@@ -89,9 +89,10 @@ nor the link-only witness supplies operational handlers. The default
 invoke it or complete application startup.
 
 The link-only witness enables a synthetic CRC feature and uses a delay stand-in
-only to retain and inspect the concrete target call path. It does not model elapsed time, provide production
-timing, or establish a display timing policy; the witness is never executed
-or published. The synthetic feature configuration is not production policy.
+only to retain and inspect the concrete target call path. It does not model
+elapsed time, provide production timing, or establish a display timing policy;
+the witness is never executed or published. The synthetic feature configuration
+is not production policy.
 
 The SARADC adapter may enable NVIC IRQ 4 when preserved SARADC IE bits are
 nonzero. Before running startup with interrupt delivery possible, install a
@@ -109,10 +110,10 @@ vector table and a returning SysTick handler. Its linker places code at
 `0x10000000` and RAM at `0x20010000`, outside the DP32G030 memory map, and
 enforces 16 KiB code/load and 4 KiB RAM limits. The inspection checks vector
 targets, the linked sequencer-to-adapter call path, reachable ADC, ST7565, and
-CRC stages, the concrete `startup_mmio` to `startup_with_io` call chain, reachable
-backlight register accesses and their order, retained adapter symbols, and
-section budgets. The
-ADC path is checked through its existing word adapter to `apply_with_io`; the
+CRC stages, the concrete `startup_mmio` to `startup_with_io` call chain,
+reachable backlight register accesses and their order, retained adapter
+symbols, and section budgets. The ADC path is checked through its existing
+word adapter to `apply_with_io`; the
 register/NVIC transaction behavior remains covered by the focused ADC adapter
 tests. The SysTick vector must match the exact linked handler symbol, whose
 first instruction must be `bx lr`.
@@ -141,9 +142,10 @@ shared return epilogue. The `run_hardware` wrapper and all seven target
 wrappers and CRC wrapper chain are checked through stack cleanup and return.
 The display entry is checked for its call into the existing MMIO startup
 executor, and that entry is checked for its call into `startup_with_io`. The
-`run_hardware` wrapper's `Result` split is checked so both success and error
-edges reach its shared return. Reset and `witness_main` retain their
-intentional terminal loops and are not treated as returning wrappers.
+`run_hardware` wrapper returns the board result without clobbering it; the
+backend's success and error edges reach their shared return. Reset and
+`witness_main` retain their intentional terminal loops and are not treated as
+returning wrappers.
 Unexpected instructions, conditional branches, or changed guard inputs,
 destinations, and continuations are rejected. This is linked structural
 evidence for the emitted paths; it is not a general-purpose Thumb control-flow
