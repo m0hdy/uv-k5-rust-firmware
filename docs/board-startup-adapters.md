@@ -108,8 +108,8 @@ CI separately links `startup-witness/` for Cortex-M0 with a dedicated
 vector table and a returning SysTick handler. Its linker places code at
 `0x10000000` and RAM at `0x20010000`, outside the DP32G030 memory map, and
 enforces 16 KiB code/load and 4 KiB RAM limits. The inspection checks vector
-targets, the linked sequencer-to-adapter call path, reachable ADC and ST7565
-stages, the concrete `startup_mmio` to `startup_with_io` call chain, reachable
+targets, the linked sequencer-to-adapter call path, reachable ADC, ST7565, and
+CRC stages, the concrete `startup_mmio` to `startup_with_io` call chain, reachable
 backlight register accesses and their order, retained adapter symbols, and
 section budgets. The
 ADC path is checked through its existing word adapter to `apply_with_io`; the
@@ -120,10 +120,8 @@ first instruction must be `bx lr`.
 The backend-dispatch check is intentionally pinned to the emitted Cortex-M0
 shape. It requires the function entry to save incoming `r1` (the variant) at
 `sp+12` and the `self` pointer at `sp+8`, load the saved variant, byte-extend
-and save the checked index, compare against 6, and branch with `bhi` to the
-non-table placeholder path. The path must return to the stack teardown before
-the contiguous indexed-table sequence reloads the saved index from `sp+4`,
-scales it, addresses the literal table, and branches through its entry. The
+and save the index, then reload it from `sp+4`, scale it, address the literal
+nine-entry table, and branch through its entry. The
 first six backend cases are checked through their matching hardware call and
 the following continuation to the shared stack teardown; this includes the
 ADC case's forwarded trigger field. The seventh, ST7565 case pins the receiver,
@@ -133,12 +131,14 @@ error path must set the stopped flag and preserve the error payload. The ST7565
 target entry is separately checked for calls into `startup_mmio` and
 `startup_with_io`. The backlight case must reach the real executor and preserve
 the pinned register sequence.
-The SysTick case also checks the `Result::is_err` split: success continues to
+The CRC case must reach the concrete hardware adapter and its two ordered
+word writes; BK1080 retains its placeholder case. The SysTick case also checks
+the `Result::is_err` split: success continues to
 teardown, while the error edge stores the stopped flag before joining that same
 teardown. The sequencer's first seven backend calls are checked for their call
 continuations and the optional FM-radio and CRC paths are checked through their
 shared return epilogue. The `run_hardware` wrapper and all seven target
-wrappers are checked from their linked calls through stack cleanup and return.
+wrappers and CRC wrapper chain are checked through stack cleanup and return.
 The display entry is checked for its call into the existing MMIO startup
 executor, and that entry is checked for its call into `startup_with_io`. The
 `run_hardware` wrapper's `Result` split is checked so both success and error
