@@ -241,6 +241,8 @@ def reachable_control_flow(
         elif mnemonic == "bx":
             if not re.fullmatch(r"\s*lr\s*", operands):
                 raise WitnessError(f"{description} has an unsupported indirect branch")
+        elif mnemonic in ("udf", "bkpt", "svc"):
+            raise WitnessError(f"{description} has an unsupported trap instruction")
         elif (mnemonic == "pop" or mnemonic.startswith("ldm")) and re.search(
             r"\bpc\b", operands
         ):

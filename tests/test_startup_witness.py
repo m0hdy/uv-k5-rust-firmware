@@ -569,6 +569,12 @@ BACKLIGHT_INDIRECT_BRANCH_BYPASSES_SETUP = """
  a12: 4770 bx lr
 """
 
+TRAP_BEFORE_RETURN = """
+00000100 <trap_path>:
+ 100: de00 udf #0
+ 102: 4770 bx lr
+"""
+
 
 class StartupWitnessCheckerTests(unittest.TestCase):
     def test_accepts_immediate_systick_return_at_symbol_entry(self):
@@ -779,6 +785,10 @@ class StartupWitnessCheckerTests(unittest.TestCase):
             reachable_control_flow(
                 BACKLIGHT_INDIRECT_BRANCH_BYPASSES_SETUP, "backlight register mapping"
             )
+
+    def test_rejects_evidence_after_a_trap_instruction(self):
+        with self.assertRaisesRegex(WitnessError, "unsupported trap instruction"):
+            reachable_control_flow(TRAP_BEFORE_RETURN, "backlight register mapping")
 
     def test_rejects_unreachable_backlight_hardware_call(self):
         with self.assertRaisesRegex(WitnessError, "variant 4.*unexpected continuation"):
