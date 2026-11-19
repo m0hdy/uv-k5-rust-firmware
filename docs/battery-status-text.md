@@ -5,8 +5,8 @@ status text formatting and placement from
 [`ui/status.c`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/ui/status.c#L146-L172)
 at pinned revision
 [`7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3`](https://github.com/egzumer/uv-k5-firmware-custom/tree/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3).
-The placement constants follow [`driver/st7565.h`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/driver/st7565.h#L27-L30)
-(`LCD_WIDTH = 128`) and [`bitmaps.h`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/bitmaps.h#L26-L33)
+The placement constants follow [`driver/st7565.h`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/driver/st7565.h#L23)
+(`LCD_WIDTH = 128`) and [`bitmaps.h`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/bitmaps.h#L12-L14)
 (`BITMAP_BatteryLevel1[17]`, `BITMAP_USB_C[9]`). The status code uses
 7 pixels per byte when calculating text width.
 
