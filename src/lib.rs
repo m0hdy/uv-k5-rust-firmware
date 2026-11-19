@@ -14,11 +14,11 @@ pub mod firmware_container_checksum;
 #[allow(unused_attributes)]
 pub mod i2c_bitbang_flow;
 pub mod scan_decisions;
+pub mod scheduler;
 #[allow(unused_attributes)]
 pub mod settings_boot_composition;
 #[allow(unused_attributes)]
 pub mod settings_boot_defaults;
-pub mod scheduler;
 pub mod tuning_signalling;
 
 pub struct ByteQueue<const CAPACITY: usize> {
