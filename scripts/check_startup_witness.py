@@ -1020,22 +1020,6 @@ def backend_dispatch_targets(function: str) -> list[int]:
         ) from error
 
 
-def instruction_tail(function: str, address: int) -> str:
-    lines = function.splitlines()
-    instruction = next(
-        (
-            instruction
-            for instruction in parse_instructions(function)
-            if instruction[0] == address
-        ),
-        None,
-    )
-    if instruction is None:
-        return ""
-    start = lines.index(instruction[4])
-    return "\n".join(lines[start:])
-
-
 def validate_st7565_executor_path(disassembly: str) -> None:
     methods = (
         (
@@ -1067,14 +1051,82 @@ def validate_st7565_stage(disassembly: str, backend: str) -> None:
 
 
 def validate_st7565_backend_case(backend: str, address: int) -> None:
-    display_case = instruction_tail(backend, address)
-    reachable = reachable_instruction_prefix(display_case)
-    if not any(
-        "StartupIo>::st7565_init" in target
-        for instruction in reachable
-        for target in direct_call_targets(instruction[4])
+    instructions = {instruction[0]: instruction for instruction in parse_instructions(backend)}
+
+    def expect(
+        instruction_address: int, mnemonic: str, operands: str
+    ) -> tuple[int, int, str, str, str]:
+        instruction = instructions.get(instruction_address)
+        if instruction is None or not matches_instruction(instruction, mnemonic, operands):
+            raise WitnessError(
+                "display variant has an unexpected argument/result continuation"
+            )
+        return instruction
+
+    def expect_call(instruction_address: int) -> tuple[int, int, str, str, str]:
+        instruction = instructions.get(instruction_address)
+        if (
+            instruction is None
+            or instruction[2] not in ("bl", "blx")
+            or not any(
+                matches_call_symbol("StartupIo>::st7565_init", target)
+                for target in direct_call_targets(instruction[4])
+            )
+        ):
+            raise WitnessError("display variant has no reachable ST7565 startup call")
+        return instruction
+
+    def advance(instruction: tuple[int, int, str, str, str]) -> int:
+        return instruction[0] + instruction[1]
+
+    cursor = address
+    for mnemonic, operands in (
+        ("ldr", r"\s*r3,\s*\[sp,\s*#8\]\s*"),
+        ("ldr", r"\s*r0,\s*\[r3,\s*#0\]\s*"),
+        ("ldr", r"\s*r1,\s*\[r3,\s*#12\]\s*"),
+        ("ldr", r"\s*r2,\s*\[r3,\s*#16\]\s*"),
+        ("ldr", r"\s*r3,\s*\[r3,\s*#20\]\s*"),
     ):
-        raise WitnessError("display variant has no reachable ST7565 startup call")
+        cursor = advance(expect(cursor, mnemonic, operands))
+    cursor = advance(expect_call(cursor))
+    for mnemonic, operands in (
+        ("mov", r"\s*r1,\s*r0\s*"),
+        ("add", r"\s*r0,\s*sp,\s*#20\s*"),
+        ("strb", r"\s*r1,\s*\[r0,\s*#0\]\s*"),
+        ("ldrb", r"\s*r0,\s*\[r0,\s*#0\]\s*"),
+        ("cmp", r"\s*r0,\s*#255\s*"),
+    ):
+        cursor = advance(expect(cursor, mnemonic, operands))
+
+    error_branch = expect(cursor, "bne.n", r"\s*[0-9a-fA-F]+\b.*")
+    error_path = branch_target(error_branch)
+    success_branch = expect(advance(error_branch), "b.n", r"\s*[0-9a-fA-F]+\b.*")
+    epilogue = branch_target(success_branch)
+    if error_path is None or epilogue is None:
+        raise WitnessError("display variant has an unexpected result branch")
+
+    cursor = error_path
+    for mnemonic, operands in (
+        ("ldr", r"\s*r1,\s*\[sp,\s*#8\]\s*"),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#20\]\s*"),
+        ("movs", r"\s*r2,\s*#1\s*"),
+        ("strb", r"\s*r2,\s*\[r1,\s*#8\]\s*"),
+        ("strb", r"\s*r0,\s*\[r1,\s*#24\]\s*"),
+    ):
+        cursor = advance(expect(cursor, mnemonic, operands))
+    error_return = expect(cursor, "b.n", r"\s*[0-9a-fA-F]+\b.*")
+    if branch_target(error_return) != epilogue:
+        raise WitnessError("display variant result paths do not reach the shared return epilogue")
+
+    if not (
+        matches_instruction(
+            instructions.get(epilogue), "add", r"\s*sp,\s*#24\s*"
+        )
+        and matches_instruction(
+            instructions.get(epilogue + 2), "pop", r"\s*\{\s*r7,\s*pc\s*\}\s*"
+        )
+    ):
+        raise WitnessError("display variant has an unexpected shared return epilogue")
 
 
 def validate_backend_dispatch(disassembly: str) -> None:
@@ -2036,62 +2088,19 @@ def validate_adapter_run_result(function: str) -> None:
 
     start = call[0] + call[1]
     instructions = {instruction[0]: instruction for instruction in parse_instructions(function)}
-    result_path = [instructions.get(start + offset * 2) for offset in range(3)]
-    if result_path and matches_instruction(
-        result_path[0], "ldr", r"\s*r0,\s*\[sp,\s*#44\]\s*"
-    ):
-        if not (
-            all(result_path)
-            and matches_instruction(result_path[1], "add", r"\s*sp,\s*#52\s*")
-            and matches_instruction(
-                result_path[2], "pop", r"\s*\{\s*r4,\s*r5,\s*r6,\s*r7,\s*pc\s*\}\s*"
-            )
-        ):
-            raise WitnessError(
-                "linked board startup adapter result path has an unexpected continuation"
-            )
-        return
-
     expected = (
-        ("ldr", r"\s*r0,\s*\[sp,\s*#8\]\s*"),
-        ("ldrb", r"\s*r0,\s*\[r0,\s*#8\]\s*"),
-        ("lsls", r"\s*r0,\s*r0,\s*#31\s*"),
-        ("cmp", r"\s*r0,\s*#0\s*"),
-        ("bne.n", r"\s*[0-9a-fA-F]+\b.*"),
-        ("b.n", r"\s*[0-9a-fA-F]+\b.*"),
-        ("add", r"\s*r1,\s*sp,\s*#20\s*"),
-        ("movs", r"\s*r0,\s*#0\s*"),
-        ("strb", r"\s*r0,\s*\[r1,\s*#0\]\s*"),
-        ("b.n", r"\s*[0-9a-fA-F]+\b.*"),
-        ("add", r"\s*r1,\s*sp,\s*#20\s*"),
-        ("movs", r"\s*r0,\s*#1\s*"),
-        ("strb", r"\s*r0,\s*\[r1,\s*#0\]\s*"),
-        ("b.n", r"\s*[0-9a-fA-F]+\b.*"),
-        ("add", r"\s*r0,\s*sp,\s*#20\s*"),
-        ("ldrb", r"\s*r0,\s*\[r0,\s*#0\]\s*"),
-        ("add", r"\s*sp,\s*#40\s*"),
-        ("pop", r"\s*\{\s*r4,\s*r6,\s*r7,\s*pc\s*\}\s*"),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#44\]\s*"),
+        ("add", r"\s*sp,\s*#52\s*"),
+        ("pop", r"\s*\{\s*r4,\s*r5,\s*r6,\s*r7,\s*pc\s*\}\s*"),
     )
     path = [instructions.get(start + offset * 2) for offset in range(len(expected))]
     if not all(path) or any(
         not matches_instruction(instruction, mnemonic, operands)
         for instruction, (mnemonic, operands) in zip(path, expected)
     ):
-        raise WitnessError("linked board startup adapter result path has an unexpected continuation")
-
-    stopped_branch, skip_success, success_return, error_return = (
-        path[4],
-        path[5],
-        path[9],
-        path[13],
-    )
-    if not (
-        branch_target(stopped_branch) == start + 20
-        and branch_target(skip_success) == start + 12
-        and branch_target(success_return) == start + 28
-        and branch_target(error_return) == start + 28
-    ):
-        raise WitnessError("linked board startup adapter result paths do not reach the shared return")
+        raise WitnessError(
+            "linked board startup adapter result path has an unexpected continuation"
+        )
 
 
 def validate_sequencer_continuation(sequence: str) -> None:

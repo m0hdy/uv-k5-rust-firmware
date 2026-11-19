@@ -108,11 +108,13 @@ the contiguous indexed-table sequence reloads the saved index from `sp+4`,
 scales it, addresses the literal table, and branches through its entry. The
 first six backend cases are checked through their matching hardware call and
 the following continuation to the shared stack teardown; this includes the
-ADC case's forwarded trigger field. The seventh, ST7565 case is checked for a
-reachable `st7565_init` call; this case helper does not pin its complete
-typed-error continuation. The ST7565 target entry is separately checked for
-calls into `startup_mmio` and `startup_with_io`. The backlight case must reach
-the real executor and preserve the pinned register sequence.
+ADC case's forwarded trigger field. The seventh, ST7565 case pins the receiver,
+delay and FIFO-limit arguments, checks the returned error encoding, and checks
+both the success and typed-error paths through the shared stack teardown. The
+error path must set the stopped flag and preserve the error payload. The ST7565
+target entry is separately checked for calls into `startup_mmio` and
+`startup_with_io`. The backlight case must reach the real executor and preserve
+the pinned register sequence.
 The SysTick case also checks the `Result::is_err` split: success continues to
 teardown, while the error edge stores the stopped flag before joining that same
 teardown. The sequencer's first seven backend calls are checked for their call

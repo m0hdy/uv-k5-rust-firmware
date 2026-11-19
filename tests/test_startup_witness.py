@@ -82,24 +82,9 @@ CONNECTED_DISPATCH = """
  306: bd80 pop {r7, pc}
 00000400 <board_startup_adapters::run::<Hardware>>:
  400: f000 f800 bl 500 <board_sequence::run::<Backend>>
- 404: 9801 ldr r0, [sp, #8]
- 406: 7980 ldrb r0, [r0, #8]
- 408: 07c0 lsls r0, r0, #31
- 40a: 2800 cmp r0, #0
- 40c: d104 bne.n 418
- 40e: e7ff b.n 410
- 410: a905 add r1, sp, #20
- 412: 2000 movs r0, #0
- 414: 7008 strb r0, [r1, #0]
- 416: e003 b.n 420
- 418: a905 add r1, sp, #20
- 41a: 2001 movs r0, #1
- 41c: 7008 strb r0, [r1, #0]
- 41e: e7ff b.n 420
- 420: a805 add r0, sp, #20
- 422: 7800 ldrb r0, [r0, #0]
- 424: b00a add sp, #40
- 426: bdd0 pop {r4, r6, r7, pc}
+ 404: 980b ldr r0, [sp, #44]
+ 406: b00d add sp, #52
+ 408: bdf0 pop {r4, r5, r6, r7, pc}
 00000500 <board_sequence::run::<Backend>>:
  500: 2100 movs r1, #0
  502: f000 f800 bl 5f6 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>
@@ -176,7 +161,7 @@ CONNECTED_DISPATCH = """
  62c: 1091 .word 0x1091
  630: 10b1 .word 0x10b1
  634: 10c1 .word 0x10c1
- 638: 1381 .word 0x1381
+ 638: 1379 .word 0x1379
  650: 9903 ldr r1, [sp, #12]
  652: 9802 ldr r0, [sp, #8]
  654: 6800 ldr r0, [r0, #0]
@@ -224,9 +209,25 @@ CONNECTED_DISPATCH = """
  10c4: 88c9 ldrh r1, [r1, #6]
  10c6: f000 f800 bl 1320 <HardwareIo as StartupIo>::adc_init>
  10ca: e6d6 b.n 670 <SequencerBackend as Backend>::call+0x70>
- 1380: 9802 ldr r0, [sp, #8]
+ 1378: 9b02 ldr r3, [sp, #8]
+ 137a: 6818 ldr r0, [r3, #0]
+ 137c: 68d9 ldr r1, [r3, #12]
+ 137e: 691a ldr r2, [r3, #16]
+ 1380: 695b ldr r3, [r3, #20]
  1382: f000 f800 bl 1400 <HardwareIo as StartupIo>::st7565_init>
- 1386: e64b b.n 670 <SequencerBackend as Backend>::call+0x70>
+ 1386: 4601 mov r1, r0
+ 1388: a805 add r0, sp, #20
+ 138a: 7001 strb r1, [r0, #0]
+ 138c: 7800 ldrb r0, [r0, #0]
+ 138e: 28ff cmp r0, #255
+ 1390: d102 bne.n 1398
+ 1392: e66d b.n 670 <SequencerBackend as Backend>::call+0x70>
+ 1398: 9902 ldr r1, [sp, #8]
+ 139a: 9805 ldr r0, [sp, #20]
+ 139c: 2201 movs r2, #1
+ 139e: 720a strb r2, [r1, #8]
+ 13a0: 7608 strb r0, [r1, #24]
+ 13a2: e665 b.n 670 <SequencerBackend as Backend>::call+0x70>
 00000700 <<HardwareIo as StartupIo>::device_clock_gates>:
  700: f000 f800 bl 800 <apply_device_clock_gates>
  704: bd80 pop {r7, pc}
@@ -596,11 +597,27 @@ CONNECTED_DISPATCH = re.sub(
     flags=re.S,
 )
 CONNECTED_WITHOUT_DISPLAY_STAGE = (
-    CONNECTED_DISPATCH.replace(" 638: 1381 .word 0x1381\n", "")
+    CONNECTED_DISPATCH.replace(" 638: 1379 .word 0x1379\n", "")
     .replace(
-        " 1380: 9802 ldr r0, [sp, #8]\n"
+        " 1378: 9b02 ldr r3, [sp, #8]\n"
+        " 137a: 6818 ldr r0, [r3, #0]\n"
+        " 137c: 68d9 ldr r1, [r3, #12]\n"
+        " 137e: 691a ldr r2, [r3, #16]\n"
+        " 1380: 695b ldr r3, [r3, #20]\n"
         " 1382: f000 f800 bl 1400 <HardwareIo as StartupIo>::st7565_init>\n"
-        " 1386: e64b b.n 670 <SequencerBackend as Backend>::call+0x70>\n",
+        " 1386: 4601 mov r1, r0\n"
+        " 1388: a805 add r0, sp, #20\n"
+        " 138a: 7001 strb r1, [r0, #0]\n"
+        " 138c: 7800 ldrb r0, [r0, #0]\n"
+        " 138e: 28ff cmp r0, #255\n"
+        " 1390: d102 bne.n 1398\n"
+        " 1392: e66d b.n 670 <SequencerBackend as Backend>::call+0x70>\n"
+        " 1398: 9902 ldr r1, [sp, #8]\n"
+        " 139a: 9805 ldr r0, [sp, #20]\n"
+        " 139c: 2201 movs r2, #1\n"
+        " 139e: 720a strb r2, [r1, #8]\n"
+        " 13a0: 7608 strb r0, [r1, #24]\n"
+        " 13a2: e665 b.n 670 <SequencerBackend as Backend>::call+0x70>\n",
         "",
     )
     .replace(
@@ -725,6 +742,26 @@ BACKEND_CROSS_CASE_CONTINUATION = CONNECTED_DISPATCH.replace(
     " 1028: e702 b.n 1030 <SequencerBackend as Backend>::call+0x50>",
 )
 
+ST7565_POST_CALL_SELF_LOOP = CONNECTED_DISPATCH.replace(
+    " 1386: 4601 mov r1, r0",
+    " 1386: e7fe b.n 1386",
+)
+
+ST7565_ERROR_PATH_BYPASS = CONNECTED_DISPATCH.replace(
+    " 1390: d102 bne.n 1398",
+    " 1390: d16d bne.n 670",
+)
+
+ST7565_SUCCESS_PATH_SELF_LOOP = CONNECTED_DISPATCH.replace(
+    " 1392: e66d b.n 670 <SequencerBackend as Backend>::call+0x70>",
+    " 1392: e7fe b.n 1392",
+)
+
+ST7565_ERROR_PATH_SELF_LOOP = CONNECTED_DISPATCH.replace(
+    " 13a2: e665 b.n 670 <SequencerBackend as Backend>::call+0x70>",
+    " 13a2: e7fe b.n 13a2",
+)
+
 DISCONNECTED_ADC_DISPATCH = CONNECTED_DISPATCH.replace(
     " 634: 10c1 .word 0x10c1",
     " 634: 0651 .word 0x0651",
@@ -765,19 +802,42 @@ ST7565_EXECUTOR_PATH = """
 """
 
 ST7565_DISPATCH_CASE = """
- 100: 9802 ldr r0, [sp, #8]
- 102: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>
- 106: e000 b.n 108
+ 100: 9b02 ldr r3, [sp, #8]
+ 102: 6818 ldr r0, [r3, #0]
+ 104: 68d9 ldr r1, [r3, #12]
+ 106: 691a ldr r2, [r3, #16]
+ 108: 695b ldr r3, [r3, #20]
+ 10a: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>
+ 10e: 4601 mov r1, r0
+ 110: a805 add r0, sp, #20
+ 112: 7001 strb r1, [r0, #0]
+ 114: 7800 ldrb r0, [r0, #0]
+ 116: 28ff cmp r0, #255
+ 118: d102 bne.n 120
+ 11a: e011 b.n 140
+ 120: 9902 ldr r1, [sp, #8]
+ 122: 9805 ldr r0, [sp, #20]
+ 124: 2201 movs r2, #1
+ 126: 720a strb r2, [r1, #8]
+ 128: 7608 strb r0, [r1, #24]
+ 12a: e009 b.n 140
+ 140: b006 add sp, #24
+ 142: bd80 pop {r7, pc}
 """
 
-ADAPTER_RUN_ERROR_SELF_LOOP = CONNECTED_DISPATCH.replace(
-    " 41e: e7ff b.n 420",
-    " 41e: e7fe b.n 41e",
+ADAPTER_RUN_WRONG_RESULT_LOAD = CONNECTED_DISPATCH.replace(
+    " 404: 980b ldr r0, [sp, #44]",
+    " 404: 980a ldr r0, [sp, #40]",
 )
 
-ADAPTER_RUN_SUCCESS_SELF_LOOP = CONNECTED_DISPATCH.replace(
-    " 416: e003 b.n 420",
-    " 416: e7fe b.n 416",
+ADAPTER_RUN_WRONG_STACK_TEARDOWN = CONNECTED_DISPATCH.replace(
+    " 406: b00d add sp, #52",
+    " 406: b00c add sp, #48",
+)
+
+ADAPTER_RUN_WRONG_RETURN = CONNECTED_DISPATCH.replace(
+    " 408: bdf0 pop {r4, r5, r6, r7, pc}",
+    " 408: bcf0 pop {r4, r5, r6, r7}",
 )
 
 SEQUENCER_FM_POST_CALL_SELF_LOOP = CONNECTED_DISPATCH.replace(
@@ -1137,20 +1197,32 @@ class StartupWitnessCheckerTests(unittest.TestCase):
 
     def test_rejects_st7565_dispatch_call_after_early_return(self):
         disconnected = ST7565_DISPATCH_CASE.replace(
-            " 102: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>",
-            " 102: 4770 bx lr\n"
-            " 104: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>",
+            " 10a: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>",
+            " 10a: 4770 bx lr\n"
+            " 10e: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>",
         )
-        with self.assertRaisesRegex(WitnessError, "display variant has no reachable ST7565 startup call"):
+        with self.assertRaisesRegex(
+            WitnessError, "display variant has no reachable ST7565 startup call"
+        ):
             validate_st7565_backend_case(disconnected, 0x100)
 
     def test_rejects_bypassed_st7565_dispatch_call_with_symbol_retained(self):
         bypassed = ST7565_DISPATCH_CASE.replace(
-            " 102: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>",
-            " 102: f000 f800 bl 300 <startup_noop>",
-        ) + "\n 108: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>\n"
+            " 10a: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>",
+            " 10a: f000 f800 bl 300 <startup_noop>",
+        ) + "\n 14a: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>\n"
         with self.assertRaisesRegex(WitnessError, "display variant has no reachable ST7565 startup call"):
             validate_st7565_backend_case(bypassed, 0x100)
+
+    def test_rejects_st7565_post_call_self_loop(self):
+        self_loop = ST7565_DISPATCH_CASE.replace(
+            " 10e: 4601 mov r1, r0",
+            " 10e: e7fe b.n 10e",
+        )
+        with self.assertRaisesRegex(
+            WitnessError, "display variant has an unexpected argument/result continuation"
+        ):
+            validate_st7565_backend_case(self_loop, 0x100)
 
     def test_rejects_jump_table_word_before_later_st7565_call(self):
         disconnected = (
@@ -1158,7 +1230,7 @@ class StartupWitnessCheckerTests(unittest.TestCase):
             " 104: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>\n"
         )
         with self.assertRaisesRegex(
-            WitnessError, "display variant has no reachable ST7565 startup call"
+            WitnessError, "display variant has an unexpected argument/result continuation"
         ):
             validate_st7565_backend_case(disconnected, 0x100)
 
@@ -1332,17 +1404,47 @@ class StartupWitnessCheckerTests(unittest.TestCase):
         ):
             validate_call_path(RUN_HARDWARE_POST_CALL_SELF_LOOP)
 
-    def test_rejects_adapter_error_result_self_loop(self):
+    def test_rejects_adapter_result_load_mismatch(self):
         with self.assertRaisesRegex(
-            WitnessError, "board startup adapter result paths do not reach"
+            WitnessError, "board startup adapter result path has an unexpected continuation"
         ):
-            validate_call_path(ADAPTER_RUN_ERROR_SELF_LOOP)
+            validate_call_path(ADAPTER_RUN_WRONG_RESULT_LOAD)
 
-    def test_rejects_adapter_success_result_self_loop(self):
+    def test_rejects_adapter_stack_teardown_mismatch(self):
         with self.assertRaisesRegex(
-            WitnessError, "board startup adapter result paths do not reach"
+            WitnessError, "board startup adapter result path has an unexpected continuation"
         ):
-            validate_call_path(ADAPTER_RUN_SUCCESS_SELF_LOOP)
+            validate_call_path(ADAPTER_RUN_WRONG_STACK_TEARDOWN)
+
+    def test_rejects_adapter_return_mismatch(self):
+        with self.assertRaisesRegex(
+            WitnessError, "board startup adapter result path has an unexpected continuation"
+        ):
+            validate_call_path(ADAPTER_RUN_WRONG_RETURN)
+
+    def test_rejects_full_validator_display_post_call_self_loop(self):
+        with self.assertRaisesRegex(
+            WitnessError, "display variant has an unexpected argument/result continuation"
+        ):
+            validate_call_path(ST7565_POST_CALL_SELF_LOOP)
+
+    def test_rejects_full_validator_display_error_path_bypass(self):
+        with self.assertRaisesRegex(
+            WitnessError, "display variant has an unexpected argument/result continuation"
+        ):
+            validate_call_path(ST7565_ERROR_PATH_BYPASS)
+
+    def test_rejects_full_validator_display_success_path_self_loop(self):
+        with self.assertRaisesRegex(
+            WitnessError, "display variant result paths do not reach the shared return epilogue"
+        ):
+            validate_call_path(ST7565_SUCCESS_PATH_SELF_LOOP)
+
+    def test_rejects_full_validator_display_error_path_self_loop(self):
+        with self.assertRaisesRegex(
+            WitnessError, "display variant result paths do not reach the shared return epilogue"
+        ):
+            validate_call_path(ST7565_ERROR_PATH_SELF_LOOP)
 
     def test_rejects_fm_optional_call_self_loop(self):
         with self.assertRaisesRegex(
