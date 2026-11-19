@@ -173,7 +173,8 @@ The updated 39-case fixture has SHA-256
 The repository's standard Rust CI is defined in
 [`.github/workflows/rust-quality.yml`](../.github/workflows/rust-quality.yml):
 it runs formatting, Clippy, host tests, and a Cortex-M0 release build with ELF
-and map artifacts. It does not run these reference vectors. The separate
+and map artifacts. The host tests run the Rust reference-vector evaluator,
+but not the opt-in pinned C comparison. The separate
 default C build evidence is recorded in [issue #11's evidence
 comment](https://github.com/m0hdy/uv-k5-rust-firmware/issues/11#issuecomment-6982758020);
 it is not a CI run of these vectors. Captures with GCC and Clang previously
