@@ -253,13 +253,13 @@ CONNECTED_DISPATCH = """
  856: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>
  85a: 9805 ldr r0, [sp, #20]
  85c: f000 f800 bl 1100 <backlight_startup_executor::BacklightInitPlan>::writes>
- 860: f000 f800 bl 1180 <core::iter::IntoIterator>::into_iter>
+ 860: f000 f800 bl 1180 <core::iter::adapters::copied::Copied<core::slice::iter::Iter<backlight_plan::BacklightWrite>> as core::iter::traits::collect::IntoIterator>::into_iter>
  864: 901e str r0, [sp, #120]
  866: 911f str r1, [sp, #124]
  868: e7ff b.n 86a
  86a: a820 add r0, sp, #128
  86c: a91e add r1, sp, #120
- 86e: f000 f800 bl 1190 <core::iter::Iterator>::next>
+ 86e: f000 f800 bl 1190 <core::iter::adapters::copied::Copied<core::slice::iter::Iter<backlight_plan::BacklightWrite>> as core::iter::traits::iterator::Iterator>::next>
  872: 9820 ldr r0, [sp, #128]
  874: 1c40 adds r0, r0, #1
  876: 2800 cmp r0, #0
@@ -445,16 +445,16 @@ CONNECTED_DISPATCH = """
  1100: b580 push {r7, lr}
  1102: af00 add r7, sp, #0
  1104: 2106 movs r1, #6
- 1106: f000 f800 bl 1118 <backlight_startup_executor::BacklightWrite>::iter>
- 110a: f000 f800 bl 1120 <core::iter::Iterator>::copied>
+ 1106: f000 f800 bl 1118 <backlight_plan::BacklightWrite]>::iter>
+ 110a: f000 f800 bl 1120 <core::slice::iter::Iter<backlight_plan::BacklightWrite> as core::iter::traits::iterator::Iterator>::copied::<backlight_plan::BacklightWrite>>
  110e: bd80 pop {r7, pc}
-00001118 <backlight_startup_executor::BacklightWrite>::iter>:
+00001118 <backlight_plan::BacklightWrite]>::iter>:
  1118: bd80 pop {r7, pc}
-00001120 <core::iter::Iterator>::copied>:
+00001120 <core::slice::iter::Iter<backlight_plan::BacklightWrite> as core::iter::traits::iterator::Iterator>::copied::<backlight_plan::BacklightWrite>>:
  1120: bd80 pop {r7, pc}
-00001180 <core::iter::IntoIterator>::into_iter>:
+00001180 <core::iter::adapters::copied::Copied<core::slice::iter::Iter<backlight_plan::BacklightWrite>> as core::iter::traits::collect::IntoIterator>::into_iter>:
  1180: bd80 pop {r7, pc}
-00001190 <core::iter::Iterator>::next>:
+00001190 <core::iter::adapters::copied::Copied<core::slice::iter::Iter<backlight_plan::BacklightWrite>> as core::iter::traits::iterator::Iterator>::next>:
  1190: bd80 pop {r7, pc}
 00001200 <__aeabi_memcpy4>:
  1200: 4770 bx lr
@@ -1222,6 +1222,23 @@ class StartupWitnessCheckerTests(unittest.TestCase):
                     WitnessError, "required call target.*symbol entry"
                 ):
                     validate_call_path(mutated)
+
+    def test_rejects_call_to_different_entry_with_similar_symbol_name(self):
+        original = (
+            " 840: f000 f800 bl 846 <backlight_startup_executor::apply_with_io>"
+        )
+        replacement = (
+            " 840: f000 f800 bl 3000 <other::backlight_startup_executor::apply_with_io>"
+        )
+        self.assertIn(original, CONNECTED_DISPATCH)
+        mutated = CONNECTED_DISPATCH.replace(original, replacement, 1)
+        mutated += (
+            "\n00003000 <other::backlight_startup_executor::apply_with_io>:\n"
+            " 3000: bd80 pop {r7, pc}\n"
+        )
+        self.assertIn("00003000 <other::backlight_startup_executor::apply_with_io>", mutated)
+        with self.assertRaisesRegex(WitnessError, "required call target.*symbol entry"):
+            validate_call_path(mutated)
 
     def test_rejects_backlight_executor_evidence_after_address_preserving_early_return(self):
         self.assertIn("00000846 <backlight_startup_executor::apply_with_io>", BACKLIGHT_EXECUTOR_EARLY_RETURN)

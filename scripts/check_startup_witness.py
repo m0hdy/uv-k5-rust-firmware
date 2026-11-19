@@ -91,46 +91,99 @@ def direct_call_targets(function: str) -> list[str]:
 
 def validate_required_call_targets(disassembly: str) -> None:
     required_symbols = (
-        "witness_main",
-        "run_hardware",
-        "board_startup_adapters::run::<",
-        "board_sequence::run::<",
-        "Backend>::call",
-        "StartupIo>::device_clock_gates",
-        "StartupIo>::systick",
-        "StartupIo>::portcon",
-        "StartupIo>::gpio",
-        "StartupIo>::backlight_init_hardware",
-        "apply_device_clock_gates",
-        "apply_to_hardware",
-        "apply_portcon_startup_plan",
-        "apply_gpio_startup_plan",
-        "initialize_backlight_hardware",
-        "backlight_startup_executor::apply_with_io",
-        "BacklightInitPlan>::from_snapshot",
-        "BacklightInitPlan>::writes",
-        "BacklightWrite>::iter",
-        "IntoIterator>::into_iter",
-        "Iterator>::next",
-        "Iterator>::copied",
-        "RegisterIo>::read",
-        "RegisterIo>::write",
-        "RegisterAddress>::from_register",
-        "RegisterAddress>::address",
-        "__aeabi_memcpy4",
+        ("witness_main", "witness_main", False),
+        ("run_hardware", "run_hardware", False),
+        ("board_startup_adapters::run::<", "board_startup_adapters::run::<", False),
+        ("board_sequence::run::<", "board_sequence::run::<", False),
+        ("Backend>::call", "board_sequence::Backend>::call", False),
+        ("StartupIo>::device_clock_gates", "StartupIo>::device_clock_gates", True),
+        ("StartupIo>::systick", "StartupIo>::systick", True),
+        ("StartupIo>::portcon", "StartupIo>::portcon", True),
+        ("StartupIo>::gpio", "StartupIo>::gpio", True),
+        (
+            "StartupIo>::backlight_init_hardware",
+            "StartupIo>::backlight_init_hardware",
+            True,
+        ),
+        ("apply_device_clock_gates", "apply_device_clock_gates", False),
+        ("apply_to_hardware", "apply_to_hardware", True),
+        ("apply_portcon_startup_plan", "apply_portcon_startup_plan", False),
+        ("apply_gpio_startup_plan", "apply_gpio_startup_plan", False),
+        (
+            "initialize_backlight_hardware",
+            "initialize_backlight_hardware",
+            False,
+        ),
+        (
+            "backlight_startup_executor::apply_with_io",
+            "backlight_startup_executor::apply_with_io",
+            False,
+        ),
+        (
+            "BacklightInitPlan>::from_snapshot",
+            "BacklightInitPlan>::from_snapshot",
+            False,
+        ),
+        ("BacklightInitPlan>::writes", "BacklightInitPlan>::writes", False),
+        (
+            "BacklightWrite]>::iter",
+            "backlight_plan::BacklightWrite]>::iter",
+            False,
+        ),
+        (
+            "IntoIterator>::into_iter",
+            "backlight_plan::BacklightWrite>> as core::iter::traits::collect::IntoIterator>::into_iter",
+            False,
+        ),
+        (
+            "Iterator>::next",
+            "backlight_plan::BacklightWrite>> as core::iter::traits::iterator::Iterator>::next",
+            False,
+        ),
+        (
+            "Iterator>::copied",
+            "backlight_plan::BacklightWrite> as core::iter::traits::iterator::Iterator>::copied",
+            False,
+        ),
+        (
+            "RegisterIo>::read",
+            "backlight_startup_executor::RegisterIo>::read",
+            False,
+        ),
+        (
+            "RegisterIo>::write",
+            "backlight_startup_executor::RegisterIo>::write",
+            False,
+        ),
+        (
+            "RegisterAddress>::from_register",
+            "backlight_startup_executor::RegisterAddress>::from_register",
+            False,
+        ),
+        (
+            "RegisterAddress>::address",
+            "backlight_startup_executor::RegisterAddress>::address",
+            False,
+        ),
+        ("__aeabi_memcpy4", "__aeabi_memcpy4", False),
     )
-    entries = [
-        (int(match.group(1), 16), match.group(2))
-        for line in disassembly.splitlines()
-        if (match := re.match(r"\s*([0-9a-fA-F]+)\s+<(.+)>:\s*$", line))
-    ]
 
-    def has_symbol_suffix(symbol: str, name: str) -> bool:
+    def function_entry(fragment: str, suffix: bool) -> tuple[int, str]:
+        for line in disassembly.splitlines():
+            match = re.match(r"\s*([0-9a-fA-F]+)\s+<(.+)>:\s*$", line)
+            if match is None:
+                continue
+            name = match.group(2)
+            if name.endswith(fragment) if suffix else fragment in name:
+                return int(match.group(1), 16), name
+        raise WitnessError(f"disassembly is missing {fragment}")
+
+    def matches_symbol(symbol: str, target: str) -> bool:
         if symbol.endswith("::<"):
-            return symbol in name
+            return symbol in target
         return (
             re.search(
-                rf"{re.escape(symbol)}(?:\+0x[0-9a-fA-F]+)?(?:>|$)", name
+                rf"{re.escape(symbol)}(?:\+0x[0-9a-fA-F]+)?(?:>|$)", target
             )
             is not None
         )
@@ -165,31 +218,14 @@ def validate_required_call_targets(disassembly: str) -> None:
             if edge is None:
                 continue
             address, target = int(edge.group(1), 16), edge.group(2)
-            matching_symbols = [
-                symbol
-                for symbol in required_symbols
-                if (
-                    symbol in target
-                    if symbol.endswith("::<")
-                    else re.search(
-                        rf"{re.escape(symbol)}(?:\+0x[0-9a-fA-F]+)?(?:>|$)",
-                        target,
-                    )
-                    is not None
-                )
-            ]
-            if not matching_symbols:
+            matching_entries = {
+                function_entry(selector, suffix)
+                for symbol, selector, suffix in required_symbols
+                if matches_symbol(symbol, target)
+            }
+            if not matching_entries:
                 continue
 
-            matching_entries = {
-                entry
-                for entry in entries
-                if (entry[1] == target or entry[1].endswith(target))
-                and any(
-                    has_symbol_suffix(symbol, entry[1])
-                    for symbol in matching_symbols
-                )
-            }
             entry = next(iter(matching_entries), None)
             if (
                 re.search(r"\+0x[0-9a-fA-F]+$", target)
