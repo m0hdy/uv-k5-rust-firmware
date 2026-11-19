@@ -108,7 +108,7 @@ fn master_mode_toggle_sets_or_clears_only_msr_ssn() {
     let control = 0xa5a5_ffff;
 
     assert_eq!(
-        toggle_master_mode(control, true),
+        toggle_master_mode(control & !(1 << 12), true),
         LogicalWrite {
             register: Register::Control,
             value: control | (1 << 12),
