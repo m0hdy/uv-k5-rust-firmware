@@ -5,33 +5,15 @@ An adapter owns register access or other device I/O; a composition owns the
 order in which components are called. A component should be testable with host
 inputs or a mock backend without starting firmware.
 
-## Existing connections
+## Target boundaries
 
-The arrows below show calls or data flow exercised offline, not a radio
-execution trace. Where a composition accepts a trait, the connection ends at
-that interface unless an adapter is shown explicitly.
-
-```mermaid
-flowchart TD
-  BoardSequence["Board startup composition"] --> PortGPIO["PortCon and GPIO plans"]
-  Tick["Abstract tick"] --> Scheduler["Scheduler composition"]
-  Scheduler --> Flags["Sticky periodic flags"]
-  Scheduler --> Dispatch["Timeslice dispatcher"]
-  Dispatch --> Hooks["Application effect hooks"]
-  Matrix["Keypad matrix poll"] --> KeyFlow["Keypad poll flow"]
-  KeyFlow --> Decisions["Debounce and repeat"]
-  Settings["Settings boot composition"] --> Transport["EEPROM read executor"]
-  Transport --> Plans["EEPROM read plans"]
-  Settings --> Decode["Core and display decoders"]
-  MMIO["ST7565 register adapter"] --> Line["Bounded line transport"]
-  Line --> Geometry["Display geometry and commands"]
-  Battery["Battery status composition"] --> Indicator["Indicator and text"]
-```
-
-The [development image](offline-image-evidence.md) boots only the reset
-bootstrap. The [mixed fallback](abi-contract.md) and other standalone
-link-inspection targets are evidence, not part of that image. Neither the
-diagram nor a successful Cortex-M0 link establishes on-device behavior.
+See the [README diagram](../README.md#target-component-architecture) for the
+intended runtime connections. Startup composes the board adapters, loads
+settings, and selects the startup display before entering the application
+loop. The scheduler translates ticks into application work; it does not
+decode keys, make tuning decisions, or draw to the LCD. Application flows
+consume typed inputs and request effects through peripheral interfaces.
+EEPROM and LCD adapters handle their respective bus and register operations.
 
 ## Behavior and validation
 
@@ -58,6 +40,6 @@ changes rather than moving all subsystems at once.
 
 For each component, document its inputs and outputs, owned state or side
 effects, ordering and failure behavior, reference provenance, focused test
-commands, and what the tests do not establish. Update the integration diagram
-when wiring changes. Do not mark mock-backed, link-only, or planned wiring as
-part of the running image.
+commands, and what the tests do not establish. Update the README diagram when
+the target design changes; keep implementation and validation status in the
+component docs and roadmap.

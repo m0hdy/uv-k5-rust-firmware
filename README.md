@@ -6,26 +6,31 @@ reset/vector path and linker layout, but remains an unqualified bootstrap, not
 a flashable firmware image. It makes no assumptions about the radio's boot ROM,
 bootloader handoff, clock state, or physical hardware revision.
 
-## Component architecture
+## Target component architecture
 
-The firmware keeps state and decisions separate from effect ordering and
-hardware access. The [component guide](docs/components.md) links to the
-behavior, interfaces, and focused checks for each subsystem.
+The diagram shows how the completed Rust firmware is intended to fit
+together. The [component guide](docs/components.md) describes the boundaries
+and links to each subsystem's behavior and focused checks.
 
 ```mermaid
 flowchart LR
-  Reset["Reset and vectors"] --> Bootstrap["Development firmware: spin loop"]
-  Bootstrap -. future wiring .-> Board["Board bring-up"]
-  Bootstrap -. future wiring .-> Loop["Application scheduler"]
-  Board -. future wiring .-> Storage["Settings and EEPROM"]
-  Board -. future wiring .-> Display["LCD and SPI0"]
-  Loop -. future wiring .-> Keys["Keypad and numeric entry"]
-  Loop -. future wiring .-> Scan["Scan continuation"]
-  Loop -. future wiring .-> Status["Battery status"]
+  Reset["Reset and runtime init"] --> Board["Board bring-up"]
+  Board --> Settings["Load settings"]
+  Settings --> Welcome["Startup display"]
+  Welcome --> Loop["Application scheduler"]
+  Board --> Tick["SysTick source"]
+  Tick --> Loop
+  Loop --> Input["Keypad and debounce"]
+  Input --> Control["Channel, tuning, and scan flows"]
+  Loop --> Control
+  Loop --> Battery["Battery sampling and status"]
+  Settings --> Storage["EEPROM transport"]
+  Control --> Storage
+  Control --> Radio["Radio drivers"]
+  Welcome --> Display["LCD rendering and SPI transport"]
+  Control --> Display
+  Battery --> Display
 ```
-
-The solid arrow is the current default firmware path. Dotted arrows show
-intended connections; they do not imply those components run at boot.
 
 ## Requirements and checks
 
