@@ -26,11 +26,17 @@ hardware call and the following unconditional branch to the shared stack
 teardown. The SysTick case also checks the `Result::is_err` split: success
 continues to teardown, while the error edge stores the stopped flag before
 joining that same teardown. The sequencer's first seven backend calls are
-checked for their call continuations and the stopped-state continuation to
-variant seven. The stopped-state guard input and target are checked as well.
+checked for their call continuations and the optional FM-radio and CRC paths
+are checked through their shared return epilogue. The `run_hardware` wrapper
+and all four target wrappers are checked from their linked calls through stack
+cleanup and return. The adapter's `Result` split is checked so both success
+and error edges reach its shared return. Reset and `witness_main` retain their
+intentional terminal loops and are not treated as returning wrappers.
 Unexpected instructions, conditional branches, or changed guard inputs,
-destinations, and continuations are rejected; this is a structural witness
-check, not a general-purpose Thumb control-flow analyzer.
+destinations, and continuations are rejected. This is linked structural
+evidence for the emitted paths; it is not a general-purpose Thumb control-flow
+analyzer and does not establish that arbitrary callees or MMIO operations
+complete.
 
 Run the host test and link-only witness from the repository root:
 

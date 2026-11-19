@@ -66,12 +66,34 @@ DISCONNECTED_ENTRY = """
 CONNECTED_DISPATCH = """
 00000100 <Reset_Handler>:
  100: f000 f800 bl 200 <witness_main>
+ 104: e7fe b.n 104 <Reset_Handler+0x4>
 00000200 <witness_main>:
  200: f000 f800 bl 300 <run_hardware>
+ 204: e7fe b.n 204 <witness_main+0x4>
 00000300 <run_hardware>:
  300: f000 f800 bl 400 <board_startup_adapters::run::<Hardware>>
+ 304: b004 add sp, #16
+ 306: bd80 pop {r7, pc}
 00000400 <board_startup_adapters::run::<Hardware>>:
  400: f000 f800 bl 500 <board_sequence::run::<Backend>>
+ 404: 9801 ldr r0, [sp, #4]
+ 406: 7980 ldrb r0, [r0, #6]
+ 408: 07c0 lsls r0, r0, #31
+ 40a: 2800 cmp r0, #0
+ 40c: d104 bne.n 418
+ 40e: e7ff b.n 410
+ 410: a904 add r1, sp, #16
+ 412: 2000 movs r0, #0
+ 414: 7008 strb r0, [r1, #0]
+ 416: e003 b.n 420
+ 418: a904 add r1, sp, #16
+ 41a: 2001 movs r0, #1
+ 41c: 7008 strb r0, [r1, #0]
+ 41e: e7ff b.n 420
+ 420: a804 add r0, sp, #16
+ 422: 7800 ldrb r0, [r0, #0]
+ 424: b008 add sp, #32
+ 426: bd80 pop {r7, pc}
 00000500 <board_sequence::run::<Backend>>:
  500: 2100 movs r1, #0
  502: f000 f800 bl 600 <<Backend>::call>
@@ -103,10 +125,24 @@ CONNECTED_DISPATCH = """
  552: 2107 movs r1, #7
  554: f000 f800 bl 600 <<Backend>::call>
  558: e002 b.n 560 <board_sequence::run+0x60>
- 560: 9800 ldr r0, [sp, #0]
- 562: e005 b.n 570 <board_sequence::run+0x70>
- 570: b004 add sp, #16
- 572: bd80 pop {r7, pc}
+ 560: a802 add r0, sp, #8
+ 562: 7840 ldrb r0, [r0, #1]
+ 564: 07c0 lsls r0, r0, #31
+ 566: 2800 cmp r0, #0
+ 568: d809 bne.n 57e
+ 56a: e7ff b.n 56c
+ 56c: a802 add r0, sp, #8
+ 56e: 7880 ldrb r0, [r0, #2]
+ 570: 07c0 lsls r0, r0, #31
+ 572: 2800 cmp r0, #0
+ 574: d008 beq.n 588
+ 576: e002 b.n 57e
+ 57e: 9800 ldr r0, [sp, #0]
+ 580: 2108 movs r1, #8
+ 582: f000 f800 bl 600 <<Backend>::call>
+ 586: e000 b.n 588
+ 588: b004 add sp, #16
+ 58a: bd80 pop {r7, pc}
 000005f6 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>:
  5f6: b580 push {r7, lr}
  5f8: af00 add r7, sp, #0
@@ -170,12 +206,18 @@ CONNECTED_DISPATCH = """
  109a: e6e9 b.n 670 <SequencerBackend as Backend>::call+0x70>
 00000700 <<HardwareIo as StartupIo>::device_clock_gates>:
  700: f000 f800 bl 800 <apply_device_clock_gates>
+ 704: bd80 pop {r7, pc}
 00000710 <<HardwareIo as StartupIo>::systick>:
  710: f000 f800 bl 810 <apply_to_hardware>
+ 714: f000 f800 bl 811 <Result<(), startup_adapter_witness::board_startup_adapters::systick_startup_adapter::InvalidReload>>::map_err>
+ 718: bd80 pop {r7, pc}
 00000720 <<HardwareIo as StartupIo>::portcon>:
  720: f000 f800 bl 820 <apply_portcon_startup_plan>
+ 724: bd80 pop {r7, pc}
 00000730 <<HardwareIo as StartupIo>::gpio>:
  730: f000 f800 bl 830 <apply_gpio_startup_plan>
+ 734: b00e add sp, #56
+ 736: bd80 pop {r7, pc}
 """
 
 ENTRY_SELF_LOOP = CONNECTED_DISPATCH.replace(
@@ -277,6 +319,41 @@ BACKEND_POST_CALL_SELF_LOOP = CONNECTED_DISPATCH.replace(
 BACKEND_CROSS_CASE_CONTINUATION = CONNECTED_DISPATCH.replace(
     " 1028: e722 b.n 670 <SequencerBackend as Backend>::call+0x70>",
     " 1028: e702 b.n 1030 <SequencerBackend as Backend>::call+0x50>",
+)
+
+HARDWARE_WRAPPER_POST_CALL_SELF_LOOP = CONNECTED_DISPATCH.replace(
+    " 704: bd80 pop {r7, pc}",
+    " 704: e7fe b.n 704\n 706: bd80 pop {r7, pc}",
+)
+
+RUN_HARDWARE_POST_CALL_SELF_LOOP = CONNECTED_DISPATCH.replace(
+    " 304: b004 add sp, #16",
+    " 304: e7fe b.n 304\n 306: b004 add sp, #16",
+)
+
+ADAPTER_RUN_ERROR_SELF_LOOP = CONNECTED_DISPATCH.replace(
+    " 41e: e7ff b.n 420",
+    " 41e: e7fe b.n 41e",
+)
+
+ADAPTER_RUN_SUCCESS_SELF_LOOP = CONNECTED_DISPATCH.replace(
+    " 416: e003 b.n 420",
+    " 416: e7fe b.n 416",
+)
+
+SEQUENCER_FM_POST_CALL_SELF_LOOP = CONNECTED_DISPATCH.replace(
+    " 558: e002 b.n 560 <board_sequence::run+0x60>",
+    " 558: e7fe b.n 558\n 55a: e002 b.n 560 <board_sequence::run+0x60>",
+)
+
+SEQUENCER_CRC_POST_CALL_SELF_LOOP = CONNECTED_DISPATCH.replace(
+    " 586: e000 b.n 588",
+    " 586: e7fe b.n 586",
+)
+
+SEQUENCER_CRC_SKIP_SELF_LOOP = CONNECTED_DISPATCH.replace(
+    " 574: d008 beq.n 588",
+    " 574: e7fe b.n 574",
 )
 
 
@@ -406,6 +483,48 @@ class StartupWitnessCheckerTests(unittest.TestCase):
             WitnessError, "variant 0.*shared return epilogue"
         ):
             validate_call_path(BACKEND_CROSS_CASE_CONTINUATION)
+
+    def test_rejects_hardware_wrapper_self_loop_after_adapter_call(self):
+        with self.assertRaisesRegex(
+            WitnessError, "target device_clock_gates.*non-returning call continuation"
+        ):
+            validate_call_path(HARDWARE_WRAPPER_POST_CALL_SELF_LOOP)
+
+    def test_rejects_run_hardware_self_loop_after_adapter_call(self):
+        with self.assertRaisesRegex(
+            WitnessError, "run_hardware.*non-returning call continuation"
+        ):
+            validate_call_path(RUN_HARDWARE_POST_CALL_SELF_LOOP)
+
+    def test_rejects_adapter_error_result_self_loop(self):
+        with self.assertRaisesRegex(
+            WitnessError, "board startup adapter result paths do not reach"
+        ):
+            validate_call_path(ADAPTER_RUN_ERROR_SELF_LOOP)
+
+    def test_rejects_adapter_success_result_self_loop(self):
+        with self.assertRaisesRegex(
+            WitnessError, "board startup adapter result paths do not reach"
+        ):
+            validate_call_path(ADAPTER_RUN_SUCCESS_SELF_LOOP)
+
+    def test_rejects_fm_optional_call_self_loop(self):
+        with self.assertRaisesRegex(
+            WitnessError, "variant-seven call does not return to the next stage"
+        ):
+            validate_call_path(SEQUENCER_FM_POST_CALL_SELF_LOOP)
+
+    def test_rejects_crc_optional_call_self_loop(self):
+        with self.assertRaisesRegex(
+            WitnessError, "optional CRC paths do not reach"
+        ):
+            validate_call_path(SEQUENCER_CRC_POST_CALL_SELF_LOOP)
+
+    def test_rejects_crc_optional_skip_self_loop(self):
+        with self.assertRaisesRegex(
+            WitnessError, "optional CRC path has an unexpected continuation"
+        ):
+            validate_call_path(SEQUENCER_CRC_SKIP_SELF_LOOP)
 
     def test_accepts_linked_backend_dispatch_to_matching_hardware_methods(self):
         validate_call_path(CONNECTED_DISPATCH)

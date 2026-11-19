@@ -439,6 +439,107 @@ def validate_backend_dispatch(disassembly: str) -> None:
     expect_epilogue_branch(gpio_end, 3)
 
 
+def validate_returning_call_path(
+    function: str,
+    symbol_fragment: str,
+    calls: tuple[str, ...],
+    cleanup: tuple[tuple[str, str], ...] = (),
+) -> None:
+    reachable = reachable_instruction_prefix(function)
+    call_indices = []
+    search_from = 0
+    for symbol in calls:
+        found = next(
+            (
+                index
+                for index in range(search_from, len(reachable))
+                if any(symbol in target for target in direct_call_targets(reachable[index][4]))
+            ),
+            None,
+        )
+        if found is None:
+            raise WitnessError(
+                f"linked {symbol_fragment} path does not reach {symbol}"
+            )
+        call_indices.append(found)
+        search_from = found + 1
+
+    continuation = reachable[call_indices[-1]][0] + reachable[call_indices[-1]][1]
+    instructions = {instruction[0]: instruction for instruction in parse_instructions(function)}
+    for mnemonic, operands in cleanup:
+        instruction = instructions.get(continuation)
+        if instruction is None or not matches_instruction(instruction, mnemonic, operands):
+            raise WitnessError(
+                f"linked {symbol_fragment} path has a non-returning call continuation"
+            )
+        continuation += instruction[1]
+
+    epilogue = instructions.get(continuation)
+    if epilogue is None or not matches_instruction(
+        epilogue, "pop", r"\s*\{\s*r7,\s*pc\s*\}\s*"
+    ):
+        raise WitnessError(
+            f"linked {symbol_fragment} path has a non-returning call continuation"
+        )
+
+
+def validate_adapter_run_result(function: str) -> None:
+    reachable = reachable_instruction_prefix(function)
+    call = next(
+        (
+            instruction
+            for instruction in reachable
+            if any("board_sequence::run::<" in target for target in direct_call_targets(instruction[4]))
+        ),
+        None,
+    )
+    if call is None:
+        raise WitnessError("linked board startup adapter result path does not reach the sequencer")
+
+    start = call[0] + call[1]
+    instructions = {instruction[0]: instruction for instruction in parse_instructions(function)}
+    expected = (
+        ("ldr", r"\s*r0,\s*\[sp,\s*#4\]\s*"),
+        ("ldrb", r"\s*r0,\s*\[r0,\s*#6\]\s*"),
+        ("lsls", r"\s*r0,\s*r0,\s*#31\s*"),
+        ("cmp", r"\s*r0,\s*#0\s*"),
+        ("bne.n", r"\s*[0-9a-fA-F]+\b.*"),
+        ("b.n", r"\s*[0-9a-fA-F]+\b.*"),
+        ("add", r"\s*r1,\s*sp,\s*#16\s*"),
+        ("movs", r"\s*r0,\s*#0\s*"),
+        ("strb", r"\s*r0,\s*\[r1,\s*#0\]\s*"),
+        ("b.n", r"\s*[0-9a-fA-F]+\b.*"),
+        ("add", r"\s*r1,\s*sp,\s*#16\s*"),
+        ("movs", r"\s*r0,\s*#1\s*"),
+        ("strb", r"\s*r0,\s*\[r1,\s*#0\]\s*"),
+        ("b.n", r"\s*[0-9a-fA-F]+\b.*"),
+        ("add", r"\s*r0,\s*sp,\s*#16\s*"),
+        ("ldrb", r"\s*r0,\s*\[r0,\s*#0\]\s*"),
+        ("add", r"\s*sp,\s*#32\s*"),
+        ("pop", r"\s*\{\s*r7,\s*pc\s*\}\s*"),
+    )
+    path = [instructions.get(start + offset * 2) for offset in range(len(expected))]
+    if not all(path) or any(
+        not matches_instruction(instruction, mnemonic, operands)
+        for instruction, (mnemonic, operands) in zip(path, expected)
+    ):
+        raise WitnessError("linked board startup adapter result path has an unexpected continuation")
+
+    stopped_branch, skip_success, success_return, error_return = (
+        path[4],
+        path[5],
+        path[9],
+        path[13],
+    )
+    if not (
+        branch_target(stopped_branch) == start + 20
+        and branch_target(skip_success) == start + 12
+        and branch_target(success_return) == start + 28
+        and branch_target(error_return) == start + 28
+    ):
+        raise WitnessError("linked board startup adapter result paths do not reach the shared return")
+
+
 def validate_sequencer_continuation(sequence: str) -> None:
     instructions = parse_instructions(sequence)
     by_address = {instruction[0]: instruction for instruction in instructions}
@@ -507,9 +608,66 @@ def validate_sequencer_continuation(sequence: str) -> None:
     ):
         raise WitnessError("linked sequencer variant-seven call does not return to the next stage")
 
-    if len(instructions) < 2 or not (
-        matches_instruction(instructions[-2], "add", r"\s*sp,\s*#16\s*")
-        and matches_instruction(instructions[-1], "pop", r"\s*\{\s*r7,\s*pc\s*\}\s*")
+    if next_stage is None:
+        raise WitnessError("linked sequencer optional calls have no continuation")
+
+    def expect_optional(
+        address: int, mnemonic: str, operands: str, name: str
+    ) -> tuple[int, int, str, str, str]:
+        instruction = by_address.get(address)
+        if instruction is None or not matches_instruction(instruction, mnemonic, operands):
+            raise WitnessError(f"linked sequencer optional {name} path has an unexpected continuation")
+        return instruction
+
+    expect_optional(next_stage, "add", r"\s*r0,\s*sp,\s*#8\s*", "CRC")
+    expect_optional(next_stage + 2, "ldrb", r"\s*r0,\s*\[r0,\s*#1\]\s*", "CRC")
+    expect_optional(next_stage + 4, "lsls", r"\s*r0,\s*r0,\s*#31\s*", "CRC")
+    expect_optional(next_stage + 6, "cmp", r"\s*r0,\s*#0\s*", "CRC")
+    crc_enabled_branch = expect_optional(
+        next_stage + 8, "bne.n", r"\s*[0-9a-fA-F]+\b.*", "CRC"
+    )
+    skip_second_flag = expect_optional(
+        next_stage + 10, "b.n", r"\s*[0-9a-fA-F]+\b.*", "CRC"
+    )
+    second_flag = branch_target(skip_second_flag)
+    if second_flag is None or branch_target(crc_enabled_branch) is None:
+        raise WitnessError("linked sequencer optional FM/CRC branches have no target")
+
+    expect_optional(second_flag, "add", r"\s*r0,\s*sp,\s*#8\s*", "CRC")
+    expect_optional(second_flag + 2, "ldrb", r"\s*r0,\s*\[r0,\s*#2\]\s*", "CRC")
+    expect_optional(second_flag + 4, "lsls", r"\s*r0,\s*r0,\s*#31\s*", "CRC")
+    expect_optional(second_flag + 6, "cmp", r"\s*r0,\s*#0\s*", "CRC")
+    skip_crc = expect_optional(
+        second_flag + 8, "beq.n", r"\s*[0-9a-fA-F]+\b.*", "CRC"
+    )
+    branch_to_crc = expect_optional(
+        second_flag + 10, "b.n", r"\s*[0-9a-fA-F]+\b.*", "CRC"
+    )
+    crc_call = branch_target(crc_enabled_branch)
+    if not (
+        branch_target(skip_second_flag) == second_flag
+        and branch_target(skip_crc) is not None
+        and branch_target(branch_to_crc) == crc_call
+        and crc_call is not None
+    ):
+        raise WitnessError("linked sequencer optional branches do not reach their next stage")
+
+    expect_optional(crc_call, "ldr", r"\s*r0,\s*\[sp,\s*#0\]\s*", "CRC")
+    expect_optional(crc_call + 2, "movs", r"\s*r1,\s*#8\s*", "CRC")
+    expect_optional(
+        crc_call + 4, "bl", r"\s*[0-9a-fA-F]+\s+<.*Backend>::call>.*", "CRC"
+    )
+    epilogue = branch_target(
+        expect_optional(crc_call + 8, "b.n", r"\s*[0-9a-fA-F]+\b.*", "CRC")
+    )
+    if epilogue is None or branch_target(skip_crc) != epilogue:
+        raise WitnessError("linked sequencer optional CRC paths do not reach the shared return epilogue")
+
+    epilogue_instructions = [by_address.get(epilogue), by_address.get(epilogue + 2)]
+    if not (
+        all(epilogue_instructions)
+        and matches_instruction(epilogue_instructions[0], "add", r"\s*sp,\s*#16\s*")
+        and matches_instruction(epilogue_instructions[1], "pop", r"\s*\{\s*r7,\s*pc\s*\}\s*")
     ):
         raise WitnessError("linked sequencer has an unexpected shared return epilogue")
 
@@ -522,6 +680,16 @@ def validate_call_path(disassembly: str) -> None:
         ("board_startup_adapters::run::<", "board_sequence::run::<"),
     ):
         require_call_edge(disassembly, caller, callee)
+
+    validate_returning_call_path(
+        function_block(disassembly, "run_hardware"),
+        "run_hardware",
+        ("board_startup_adapters::run::<",),
+        (("add", r"\s*sp,\s*#16\s*"),),
+    )
+    validate_adapter_run_result(
+        function_block(disassembly, "board_startup_adapters::run::<")
+    )
 
     sequence = function_block(disassembly, "board_sequence::run")
     validate_sequencer_continuation(sequence)
@@ -558,6 +726,38 @@ def validate_call_path(disassembly: str) -> None:
             raise WitnessError(
                 f"target {method} has no reachable linked call instruction to {adapter}"
             )
+
+    for method, calls, cleanup in (
+        (
+            "device_clock_gates",
+            ("apply_device_clock_gates",),
+            (),
+        ),
+        (
+            "systick",
+            (
+                "apply_to_hardware",
+                "systick_startup_adapter::InvalidReload>>::map_err",
+            ),
+            (),
+        ),
+        (
+            "portcon",
+            ("apply_portcon_startup_plan",),
+            (),
+        ),
+        (
+            "gpio",
+            ("apply_gpio_startup_plan",),
+            (("add", r"\s*sp,\s*#56(?:\s+[@;].*)?\s*"),),
+        ),
+    ):
+        validate_returning_call_path(
+            function_block(disassembly, f"StartupIo>::{method}", suffix=True),
+            f"target {method}",
+            calls,
+            cleanup,
+        )
 
     validate_backend_dispatch(disassembly)
 
