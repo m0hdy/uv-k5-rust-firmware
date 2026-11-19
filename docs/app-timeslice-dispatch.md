@@ -25,18 +25,15 @@ dispatcher neither clears flags nor defines elapsed-time policy.
 
 ## Focused validation
 
-From any working directory, with the repository's pinned Rust toolchain:
+From the repository root, with the pinned Rust toolchain:
 
 ```sh
-cd /home/runner/work/uv-k5-rust-firmware/uv-k5-rust-firmware
 cargo test --locked --test app_timeslice_dispatch
 cargo clippy --locked --test app_timeslice_dispatch -- -D warnings
 rustfmt --check --edition 2024 \
-  /home/runner/work/uv-k5-rust-firmware/uv-k5-rust-firmware/src/app_timeslice_dispatch.rs \
-  /home/runner/work/uv-k5-rust-firmware/uv-k5-rust-firmware/tests/app_timeslice_dispatch.rs
+  src/app_timeslice_dispatch.rs tests/app_timeslice_dispatch.rs
 rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
-  -D warnings \
-  /home/runner/work/uv-k5-rust-firmware/uv-k5-rust-firmware/src/app_timeslice_dispatch.rs \
+  -D warnings src/app_timeslice_dispatch.rs \
   -o /tmp/app_timeslice_dispatch.rlib
 ```
 
