@@ -3,7 +3,7 @@
 This software-only witness compares an independently authored C fallback and
 Rust implementation of the narrow predicate “channel number is at most 199.”
 That bound is supported by the public pinned reference's `RADIO_CheckValidChannel`
-and `CHANNEL_LAST` definitions; the provenance decision is recorded in
+and `MR_CHANNEL_LAST = 199u` definitions; the provenance decision is recorded in
 [`docs/reference-provenance.md`](../docs/reference-provenance.md). The C file
 contains no copied upstream implementation.
 
