@@ -35,7 +35,7 @@ cargo test --locked --test systick_startup_adapter
 rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
   -D warnings --emit=llvm-ir src/systick_startup_adapter.rs \
   -o /tmp/systick_startup_adapter.ll
-grep -n 'load volatile i32\\|store volatile i32' \
+grep -En '(load|store) volatile i32' \
   /tmp/systick_startup_adapter.ll
 ```
 
