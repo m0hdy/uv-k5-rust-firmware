@@ -5,7 +5,9 @@ use app_keypad_memory_flow::{
     Digit, FlowEffect, Key, KeyEvent, KeypadMemoryEffects, KeypadMemoryFlow, MatrixIo,
     MemoryChannelContext,
 };
+use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::rc::Rc;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Op {
@@ -19,35 +21,37 @@ enum Op {
 
 struct MockMatrix {
     readings: VecDeque<u32>,
-    trace: Vec<Op>,
+    trace: Rc<RefCell<Vec<Op>>>,
 }
 
 impl MatrixIo for MockMatrix {
     fn update_gpioa(&mut self, and_mask: u32, or_mask: u32) {
-        self.trace.push(Op::Update(and_mask, or_mask));
+        self.trace.borrow_mut().push(Op::Update(and_mask, or_mask));
     }
 
     fn read_gpioa(&mut self) -> u32 {
-        self.trace.push(Op::Read);
+        self.trace.borrow_mut().push(Op::Read);
         self.readings.pop_front().expect("unexpected matrix read")
     }
 
     fn delay_1us(&mut self) {
-        self.trace.push(Op::Delay);
+        self.trace.borrow_mut().push(Op::Delay);
     }
 
     fn i2c_stop(&mut self) {
-        self.trace.push(Op::Stop);
+        self.trace.borrow_mut().push(Op::Stop);
     }
 }
 
-impl KeypadMemoryEffects for Vec<Op> {
+struct Effects(Rc<RefCell<Vec<Op>>>);
+
+impl KeypadMemoryEffects for Effects {
     fn cancel_boot_counter(&mut self) {
-        self.push(Op::CancelBoot);
+        self.0.borrow_mut().push(Op::CancelBoot);
     }
 
     fn memory_effect(&mut self, effect: FlowEffect) {
-        self.push(Op::Memory(effect));
+        self.0.borrow_mut().push(Op::Memory(effect));
     }
 }
 
@@ -93,16 +97,16 @@ fn poll(
     context: MemoryChannelContext,
     valid: impl FnMut(u16) -> bool,
 ) -> (Option<KeyEvent>, Vec<Op>) {
+    let trace = Rc::new(RefCell::new(Vec::new()));
     let mut io = MockMatrix {
         readings: rows(key).into(),
-        trace: Vec::new(),
+        trace: Rc::clone(&trace),
     };
-    let mut downstream = Vec::new();
-    let event = flow.poll(&mut io, context, &mut downstream, valid);
+    let event = flow.poll(&mut io, context, &mut Effects(Rc::clone(&trace)), valid);
     assert!(io.readings.is_empty(), "scan returned too soon");
 
-    io.trace.extend(downstream);
-    (event, io.trace)
+    let trace = trace.borrow().clone();
+    (event, trace)
 }
 
 fn cancel_and_press() -> [Op; 4] {
