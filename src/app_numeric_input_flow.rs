@@ -1,13 +1,15 @@
 #![cfg_attr(not(test), no_std)]
 
-#[allow(dead_code)]
-#[path = "keyboard_decisions.rs"]
-mod keyboard_decisions;
+#[allow(dead_code, unused_attributes)]
+#[path = "keyboard_poll_flow.rs"]
+mod keyboard_poll_flow;
 #[allow(dead_code, unused_attributes)]
 #[path = "numeric_input_box.rs"]
 mod numeric_input_box;
 
-pub use keyboard_decisions::{Key, KeyEvent};
+pub use keyboard_poll_flow::{Key, KeyEvent};
+#[allow(unused_imports)]
+pub use keyboard_poll_flow::{KeyboardPollFlow, KeypadEffects, MatrixIo};
 pub use numeric_input_box::{Digit, NumericInputBox};
 
 const MAX_EFFECTS: usize = 9;

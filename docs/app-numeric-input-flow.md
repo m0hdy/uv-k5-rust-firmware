@@ -4,10 +4,11 @@
 [`app/main.c:263–322`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/app/main.c#L263-L322)
 at pinned revision
 `egzumer/uv-k5-firmware-custom@7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3`.
-It composes the existing typed `KeyEvent` and `NumericInputBox` directly and
-returns ordered `FlowEffect` values describing the processed trace; the
-function mutates the input box and runs the injected channel-validity query
-before returning those effects. The query models the pinned
+It re-exports `Key` and `KeyEvent` from `keyboard_poll_flow` and composes those
+shared types with `NumericInputBox`. It returns ordered `FlowEffect` values
+describing the processed trace; the function mutates the input box and runs
+the injected channel-validity query before returning those effects. The query
+models the pinned
 [`RADIO_CheckValidChannel` guard in `radio.c`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/radio.c#L59-L80),
 which rejects values outside the memory-channel range (0–199). The separate
 `u8` conversion guard rejects a positive query result that still cannot fit in
