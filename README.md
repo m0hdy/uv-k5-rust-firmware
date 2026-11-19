@@ -34,8 +34,11 @@ flowchart LR
 
 The callable [welcome startup boundary](docs/startup-version-display.md#callable-welcome-execution)
 initializes SPI0 and the display before an optional M0HDY version-row transfer.
-The diagram above is an intended architecture: actual startup-mode acquisition
-and firmware boot wiring for that boundary remain to be implemented.
+The [EEPROM-selected welcome boundary](docs/startup-version-display.md#eeprom-selected-welcome-execution)
+also provides startup-mode acquisition and the initialized-display continuation.
+The diagram above is an intended architecture, not current firmware boot flow:
+wiring these callable boundaries into the firmware/application entry remains
+outstanding.
 
 The separate [board startup adapter path](docs/board-startup-adapters.md)
 executes clock-gate, SysTick, PortCon, GPIO, backlight, and SARADC adapters in
