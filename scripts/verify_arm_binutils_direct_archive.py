@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Verify ARM GNU binutils can be provisioned from the signed Ubuntu archive."""
 
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 
 from provision_arm_binutils import (
@@ -20,7 +22,19 @@ def main() -> int:
         cache_dir.mkdir()
         sources = root / "ubuntu.sources.list"
         write_direct_archive_sources(sources, system_codename())
-        install_from_apt(cache_dir, DEFAULT_PACKAGE_VERSION, sources)
+        try:
+            install_from_apt(cache_dir, DEFAULT_PACKAGE_VERSION, sources)
+        finally:
+            subprocess.run(
+                [
+                    "sudo",
+                    "chown",
+                    "-R",
+                    f"{os.getuid()}:{os.getgid()}",
+                    str(cache_dir),
+                ],
+                check=True,
+            )
 
     if not toolchain_available():
         raise RuntimeError("direct Ubuntu archive provisioning did not produce the supported toolchain")
