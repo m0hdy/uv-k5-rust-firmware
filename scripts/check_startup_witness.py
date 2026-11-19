@@ -1038,10 +1038,37 @@ def validate_st7565_executor_path(disassembly: str) -> None:
             disassembly, symbol, suffix=symbol.startswith("StartupIo")
         )
         reachable, _, _ = reachable_control_flow_analysis(function, description)
-        if not matches_instruction(
-            reachable[0], "push", r"\s*\{\s*r7,\s*lr\s*\}\s*"
+        entry = reachable_instruction_prefix(function)
+        if not matches_instruction_sequence(
+            entry[:3],
+            [
+                ("push", r"\s*\{\s*r7,\s*lr\s*\}\s*", None),
+                ("add", r"\s*r7,\s*sp,\s*#0\s*", None),
+                ("sub", r"\s*sp,\s*#8\s*", None),
+            ],
         ):
-            raise WitnessError(f"{description} has an unexpected save/restore entry")
+            raise WitnessError(f"{description} has an unexpected frame setup")
+        call_index = next(
+            (
+                index
+                for index, instruction in enumerate(entry)
+                if any(
+                    matches_call_symbol(call, target)
+                    for call in calls
+                    for target in direct_call_targets(instruction[4])
+                )
+            ),
+            None,
+        )
+        if call_index is not None and any(
+            instruction[2] in ("push", "pop")
+            or (
+                instruction[2] in ("add", "sub")
+                and re.match(r"\s*sp\s*,", instruction[3])
+            )
+            for instruction in entry[3:call_index]
+        ):
+            raise WitnessError(f"{description} has an unexpected frame setup")
         validate_returning_call_path(
             function,
             description,

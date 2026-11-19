@@ -1264,6 +1264,42 @@ class StartupWitnessCheckerTests(unittest.TestCase):
                 ):
                     validate_st7565_executor_path(unbalanced)
 
+    def test_rejects_unbalanced_st7565_executor_wrapper_entries(self):
+        for original in (
+            (" 100: b580 push {r7, lr}", " 100: b581 push {r0, r7, lr}"),
+            (" 200: b580 push {r7, lr}", " 200: b581 push {r0, r7, lr}"),
+            (" 104: b082 sub sp, #8", " 104: b083 sub sp, #12"),
+            (" 204: b082 sub sp, #8", " 204: b083 sub sp, #12"),
+        ):
+            with self.subTest(entry=original):
+                unbalanced = ST7565_EXECUTOR_PATH.replace(*original)
+                with self.assertRaisesRegex(WitnessError, "unexpected frame setup"):
+                    validate_st7565_executor_path(unbalanced)
+
+    def test_rejects_extra_st7565_executor_wrapper_stack_allocation(self):
+        cases = (
+            (
+                (" 106: f000 f800 bl 200 <target_spi0::startup_mmio>",
+                 " 106: b081 sub sp, #4\n 108: f000 f800 bl 200 <target_spi0::startup_mmio>"),
+                (" 10a: b002 add sp, #8", " 10c: b002 add sp, #8"),
+                (" 10c: bd80 pop {r7, pc}", " 10e: bd80 pop {r7, pc}"),
+            ),
+            (
+                (" 206: f000 f800 bl 300 <target_spi0::startup_with_io::<Registers, Delay>>",
+                 " 206: b081 sub sp, #4\n"
+                 " 208: f000 f800 bl 300 <target_spi0::startup_with_io::<Registers, Delay>>"),
+                (" 20a: b002 add sp, #8", " 20c: b002 add sp, #8"),
+                (" 20c: bd80 pop {r7, pc}", " 20e: bd80 pop {r7, pc}"),
+            ),
+        )
+        for replacements in cases:
+            with self.subTest(call=replacements[0][0]):
+                unbalanced = ST7565_EXECUTOR_PATH
+                for original, replacement in replacements:
+                    unbalanced = unbalanced.replace(original, replacement)
+                with self.assertRaisesRegex(WitnessError, "unexpected frame setup"):
+                    validate_st7565_executor_path(unbalanced)
+
     def test_rejects_st7565_call_disconnected_after_early_return(self):
         disconnected = ST7565_EXECUTOR_PATH.replace(
             " 106: f000 f800 bl 200 <target_spi0::startup_mmio>",
@@ -1527,6 +1563,42 @@ class StartupWitnessCheckerTests(unittest.TestCase):
                 with self.assertRaisesRegex(
                     WitnessError, "non-returning call continuation"
                 ):
+                    validate_call_path(unbalanced)
+
+    def test_full_validator_rejects_unbalanced_st7565_executor_entries(self):
+        for original in (
+            (" 1400: b580 push {r7, lr}", " 1400: b581 push {r0, r7, lr}"),
+            (" 1410: b580 push {r7, lr}", " 1410: b581 push {r0, r7, lr}"),
+            (" 1404: b082 sub sp, #8", " 1404: b083 sub sp, #12"),
+            (" 1414: b082 sub sp, #8", " 1414: b083 sub sp, #12"),
+        ):
+            with self.subTest(entry=original):
+                unbalanced = CONNECTED_DISPATCH.replace(*original)
+                with self.assertRaisesRegex(WitnessError, "unexpected frame setup"):
+                    validate_call_path(unbalanced)
+
+    def test_full_validator_rejects_extra_st7565_executor_stack_allocation(self):
+        cases = (
+            (
+                (" 1406: f000 f800 bl 1410 <target_spi0::startup_mmio>",
+                 " 1406: b081 sub sp, #4\n 1408: f000 f800 bl 1410 <target_spi0::startup_mmio>"),
+                (" 140a: b002 add sp, #8", " 140c: b002 add sp, #8"),
+                (" 140c: bd80 pop {r7, pc}", " 140e: bd80 pop {r7, pc}"),
+            ),
+            (
+                (" 1416: f000 f800 bl 1420 <target_spi0::startup_with_io::<Registers, Delay>>",
+                 " 1416: b081 sub sp, #4\n"
+                 " 1418: f000 f800 bl 1420 <target_spi0::startup_with_io::<Registers, Delay>>"),
+                (" 141a: b002 add sp, #8", " 141c: b002 add sp, #8"),
+                (" 141c: bd80 pop {r7, pc}", " 141e: bd80 pop {r7, pc}"),
+            ),
+        )
+        for replacements in cases:
+            with self.subTest(call=replacements[0][0]):
+                unbalanced = CONNECTED_DISPATCH
+                for original, replacement in replacements:
+                    unbalanced = unbalanced.replace(original, replacement)
+                with self.assertRaisesRegex(WitnessError, "unexpected frame setup"):
                     validate_call_path(unbalanced)
 
     def test_rejects_required_calls_that_do_not_target_the_symbol_entry(self):
