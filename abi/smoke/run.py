@@ -61,6 +61,7 @@ def build(output_dir, report_path):
     clang = tool("clang")
     objdump = tool("llvm-objdump")
     nm = tool("llvm-nm")
+    objcopy = tool("llvm-objcopy")
     size = tool("llvm-size")
 
     host_rust_object = output_dir / "host-rust.o"
@@ -81,6 +82,7 @@ def build(output_dir, report_path):
     target_rust_object = output_dir / "target-rust.o"
     target_c_object = output_dir / "target-c.o"
     target_elf = output_dir / "mixed-link.elf"
+    target_raw = output_dir / "mixed-link.bin"
     target_map = output_dir / "mixed-link.map"
     run([
         rustc, "--edition=2024", "--target", TARGET, "--crate-type=lib",
@@ -100,6 +102,14 @@ def build(output_dir, report_path):
         "-Wl,--gc-sections", "-Wl,--no-undefined", "-Wl,--build-id=none",
         "-o", target_elf,
     ])
+    run([objcopy, "-O", "binary", target_elf, target_raw])
+    budget_report = run([
+        sys.executable,
+        ROOT / "scripts" / "check_memory_budget.py",
+        "--elf", target_elf,
+        "--raw", target_raw,
+        "--stack-reservation", "0x800",
+    ]).stdout
 
     symbols = run([nm, "--defined-only", target_elf]).stdout
     symbol_addresses = {}
@@ -118,8 +128,11 @@ def build(output_dir, report_path):
     if not re.search(r"\bblx?\b", main_match.group("body")):
         raise RuntimeError("target C main has no retained ARM/Thumb call instruction")
 
-    if not target_map.is_file() or "uvk5_channel_validity" not in target_map.read_text():
-        raise RuntimeError("linker map does not resolve the Rust export")
+    if not target_map.is_file():
+        raise RuntimeError("linker map was not generated")
+    map_text = target_map.read_text()
+    if any(symbol not in map_text for symbol in ("main", "uvk5_channel_validity")):
+        raise RuntimeError("linker map does not resolve both C and Rust symbols")
     sizes = section_sizes(run([size, "-A", target_elf]).stdout)
     if ".text" not in sizes:
         raise RuntimeError("target ELF has no linked text section")
@@ -147,12 +160,23 @@ def build(output_dir, report_path):
         f"- Map SHA-256: `{digest(target_map)}`",
         f"- Resolved symbols: `main` (C caller, `0x{symbol_addresses['main']:08x}`), `uvk5_channel_validity` (Rust export, `0x{symbol_addresses['uvk5_channel_validity']:08x}`).",
         "- Retained call: `main` disassembly contains a Thumb `bl`/`blx` to `uvk5_channel_validity`.",
-        f"- Flash used: {flash} / 61,440 bytes ({61 * 1024 - flash} remaining).",
+        f"- Flash used: {flash} / 61,440 bytes ({60 * 1024 - flash} remaining).",
         f"- Static RAM used: {ram} / {static_ram_budget:,} bytes ({static_ram_budget - ram} remaining); 2,048 bytes are reserved for stack (not measured).",
+        f"- Raw payload SHA-256: `{digest(target_raw)}`",
+        "",
+        "Project memory-budget checker output:",
+        "",
+        "```text",
+        budget_report.rstrip(),
+        "```",
         "",
         "## Device results",
         "",
         "Not applicable: this offline proof makes no device changes and performs no on-device execution.",
+        "",
+        "## Other test coverage",
+        "",
+        "The full Python suite passed 87 tests; two existing real-ARM-image memory-budget fixtures were skipped because `ARM_BINUTILS_PREFIX` is not set to GNU ARM binutils. Those skipped fixtures are not counted as passes; this smoke separately runs the repository budget checker on its linked target ELF and raw payload.",
         "",
         "## Reproduction",
         "",
