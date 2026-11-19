@@ -160,6 +160,91 @@ def reachable_call_targets(function: str) -> list[str]:
     ]
 
 
+def branch_target(instruction: tuple[int, int, str, str, str]) -> int | None:
+    target = re.match(r"\s*([0-9a-fA-F]+)\b", instruction[3])
+    return int(target.group(1), 16) if target else None
+
+
+def matches_instruction(
+    instruction: tuple[int, int, str, str, str], mnemonic: str, operands: str
+) -> bool:
+    return instruction[2] == mnemonic and re.fullmatch(operands, instruction[3]) is not None
+
+
+def validate_stopped_guard(
+    prefix: list[tuple[int, int, str, str, str]],
+    branch: tuple[int, int, str, str, str],
+    instructions: list[tuple[int, int, str, str, str]],
+) -> bool:
+    if len(prefix) < 4:
+        return False
+    load, shift, compare = prefix[-4:-1]
+    if not (
+        matches_instruction(load, "ldrb", r"\s*r0,\s*\[r0,\s*#6\]\s*")
+        and matches_instruction(shift, "lsls", r"\s*r0,\s*r0,\s*#31\s*")
+        and matches_instruction(compare, "cmp", r"\s*r0,\s*#0\s*")
+        and branch[2] == "bne.n"
+    ):
+        return False
+
+    target = branch_target(branch)
+    if target is None:
+        return False
+    by_address = {instruction[0]: instruction for instruction in instructions}
+    teardown = [by_address.get(target), by_address.get(target + 2)]
+    return (
+        all(teardown)
+        and matches_instruction(teardown[0], "add", r"\s*sp,\s*#\d+\s*")
+        and teardown[1][2] == "pop"
+        and re.search(r"\bpc\b", teardown[1][3]) is not None
+    )
+
+
+def validate_variant_guard(
+    prefix: list[tuple[int, int, str, str, str]],
+    branch: tuple[int, int, str, str, str],
+    instructions: list[tuple[int, int, str, str, str]],
+) -> bool:
+    if len(prefix) < 5:
+        return False
+    load, extend, save, compare = prefix[-5:-1]
+    if not (
+        matches_instruction(load, "ldr", r"\s*r0,\s*\[sp,\s*#8\]\s*")
+        and matches_instruction(extend, "uxtb", r"\s*r0,\s*r0\s*")
+        and matches_instruction(save, "str", r"\s*r0,\s*\[sp,\s*#0\]\s*")
+        and matches_instruction(compare, "cmp", r"\s*r0,\s*#3\s*")
+        and branch[2] == "bhi.n"
+    ):
+        return False
+
+    target = branch_target(branch)
+    if target is None:
+        return False
+    by_address = {instruction[0]: instruction for instruction in instructions}
+    handler = [by_address.get(target + offset) for offset in (0, 2, 4, 6)]
+    if not all(handler):
+        return False
+    call = handler[3]
+    return_target = next(
+        (
+            branch_target(instruction)
+            for instruction in prefix
+            if instruction[2] == "bne.n"
+        ),
+        None,
+    )
+    tail = by_address.get(call[0] + call[1])
+    return (
+        matches_instruction(handler[0], "ldr", r"\s*r1,\s*\[sp,\s*#8\]\s*")
+        and matches_instruction(handler[1], "ldr", r"\s*r0,\s*\[sp,\s*#4\]\s*")
+        and matches_instruction(handler[2], "ldr", r"\s*r0,\s*\[r0,\s*#0\]\s*")
+        and any("placeholder" in target for target in direct_call_targets(call[4]))
+        and tail is not None
+        and tail[2] in ("b.n", "b.w")
+        and branch_target(tail) == return_target
+    )
+
+
 def require_call_edge(disassembly: str, caller: str, callee: str) -> None:
     targets = reachable_call_targets(function_block(disassembly, caller))
     if not any(callee in target for target in targets):
@@ -173,6 +258,8 @@ def backend_dispatch_targets(function: str) -> list[int]:
     prefix = []
     next_address = instructions[0][0] if instructions else None
     dispatch_target = None
+    stopped_guard_seen = False
+    variant_guard_seen = False
     for instruction in instructions:
         address, size, mnemonic, operands, line = instruction
         if address != next_address:
@@ -184,50 +271,24 @@ def backend_dispatch_targets(function: str) -> list[int]:
             mnemonic,
         )
         if conditional:
-            comparison = prefix[-2] if len(prefix) > 1 else None
-            always_equal = False
-            if comparison and comparison[2] == "cmp":
-                operands_match = re.fullmatch(
-                    r"\s*(r\d+),\s*(r\d+)\s*", comparison[3]
-                )
-                always_equal = (
-                    operands_match is not None
-                    and operands_match.group(1) == operands_match.group(2)
-                )
-                if not always_equal and len(prefix) > 2:
-                    prior = prefix[-3]
-                    move = re.search(
-                        r"\bmovs?\s+(r\d+),\s*#(\d+)\b", prior[4]
-                    )
-                    compared = re.fullmatch(
-                        r"\s*(r\d+),\s*#(\d+)\s*", comparison[3]
-                    )
-                    always_equal = (
-                        move is not None
-                        and compared is not None
-                        and move.group(1) == compared.group(1)
-                        and move.group(2) == compared.group(2)
-                    )
-            if always_equal and conditional.group(1) in {
-                "eq",
-                "cs",
-                "hs",
-                "pl",
-                "vc",
-                "ls",
-                "ge",
-                "le",
-            }:
-                raise WitnessError(
-                    "sequencer backend dispatch has an always-taken conditional branch"
-                )
-            target = re.match(r"\s*([0-9a-fA-F]+)\b", operands)
-            if target is None or int(target.group(1), 16) <= address:
-                raise WitnessError("sequencer backend dispatch has an unsupported conditional branch")
-            continue
+            if (
+                not stopped_guard_seen
+                and validate_stopped_guard(prefix, instruction, instructions)
+            ):
+                stopped_guard_seen = True
+                continue
+            if (
+                stopped_guard_seen
+                and not variant_guard_seen
+                and validate_variant_guard(prefix, instruction, instructions)
+            ):
+                variant_guard_seen = True
+                continue
+            raise WitnessError(
+                "sequencer backend dispatch has an unsupported conditional branch"
+            )
         if mnemonic in ("b", "b.n", "b.w"):
-            target = re.match(r"\s*([0-9a-fA-F]+)\b", operands)
-            if target is None or int(target.group(1), 16) != next_address:
+            if branch_target(instruction) != next_address:
                 raise WitnessError("sequencer backend dispatch has an unsupported unconditional branch")
             continue
         if re.search(r"\bmov\s+pc,\s*r0\b", line):
@@ -253,6 +314,8 @@ def backend_dispatch_targets(function: str) -> list[int]:
     branch_index, _ = position(r"\bmov\s+pc,\s*r0\b")
     if (
         dispatch_target is None
+        or not stopped_guard_seen
+        or not variant_guard_seen
         or scale_index >= table_index
         or table_index >= load_index
         or load_index >= branch_index

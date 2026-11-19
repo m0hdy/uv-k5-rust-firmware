@@ -14,6 +14,15 @@ enforces 16 KiB code/load and 4 KiB RAM limits. The inspection checks vector
 targets, the linked sequencer-to-adapter call path, retained adapter symbols,
 and section budgets.
 
+The backend-dispatch check is intentionally pinned to the emitted Cortex-M0
+shape. It requires the stopped-state guard to load the flag at offset 6, test
+bit 31, compare with zero, and branch on `bne` to the stack teardown. It then
+requires the saved variant load and byte extension, compare against 3, and
+`bhi` to the non-table placeholder path. That path must return to the teardown
+before the ordered four-entry indexed table dispatch. Any other conditional
+branch or a changed guard input or destination is rejected; this is a
+structural witness check, not a general-purpose Thumb control-flow analyzer.
+
 Run the host test and link-only witness from the repository root:
 
 ```sh

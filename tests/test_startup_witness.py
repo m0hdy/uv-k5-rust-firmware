@@ -66,14 +66,32 @@ CONNECTED_DISPATCH = """
  524: 2106 movs r1, #6
  526: f000 f800 bl 600 <<Backend>::call>
 00000600 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>:
- 600: 0081 lsls r1, r0, #2
- 602: a001 add r0, pc, #4 @ (adr r0, 610 <SequencerBackend as Backend>::call+0x10)
- 604: 5840 ldr r0, [r0, r1]
- 606: 4687 mov pc, r0
- 610: 1021 .word 0x1021
- 614: 1031 .word 0x1031
- 618: 1041 .word 0x1041
- 61c: 1051 .word 0x1051
+ 600: 7980 ldrb r0, [r0, #6]
+ 602: 07c0 lsls r0, r0, #31
+ 604: 2800 cmp r0, #0
+ 606: d112 bne.n 670 <SequencerBackend as Backend>::call+0x70
+ 608: e7ff b.n 60a <SequencerBackend as Backend>::call+0xa
+ 60a: 9802 ldr r0, [sp, #8]
+ 60c: b2c0 uxtb r0, r0
+ 60e: 9000 str r0, [sp, #0]
+ 610: 2803 cmp r0, #3
+ 612: d81d bhi.n 650 <SequencerBackend as Backend>::call+0x50
+ 614: 9800 ldr r0, [sp, #0]
+ 616: 0081 lsls r1, r0, #2
+ 618: a001 add r0, pc, #4 @ (adr r0, 620 <SequencerBackend as Backend>::call+0x20)
+ 61a: 5840 ldr r0, [r0, r1]
+ 61c: 4687 mov pc, r0
+ 620: 1021 .word 0x1021
+ 624: 1031 .word 0x1031
+ 628: 1041 .word 0x1041
+ 62c: 1051 .word 0x1051
+ 650: 9902 ldr r1, [sp, #8]
+ 652: 9801 ldr r0, [sp, #4]
+ 654: 6800 ldr r0, [r0, #0]
+ 656: f000 f8f3 bl 800 <Hardware as StartupIo>::placeholder>
+ 65a: e709 b.n 670 <SequencerBackend as Backend>::call+0x70
+ 670: b004 add sp, #16
+ 672: bd80 pop {r7, pc}
  1020: f000 f800 bl 700 <HardwareIo as StartupIo>::device_clock_gates>
  1030: f000 f800 bl 710 <HardwareIo as StartupIo>::systick>
  1040: f000 f800 bl 720 <HardwareIo as StartupIo>::portcon>
@@ -112,56 +130,49 @@ SKIPPED_SEQUENCER_DISPATCH = CONNECTED_DISPATCH.replace(
 )
 
 DISCONNECTED_DISPATCH = CONNECTED_DISPATCH.replace(
-    """ 600: 0081 lsls r1, r0, #2
- 602: a001 add r0, pc, #4 @ (adr r0, 610 <SequencerBackend as Backend>::call+0x10)
- 604: 5840 ldr r0, [r0, r1]
- 606: 4687 mov pc, r0
- 610: 1021 .word 0x1021
- 614: 1031 .word 0x1031
- 618: 1041 .word 0x1041
- 61c: 1051 .word 0x1051""",
-    " 600: 4770 bx lr",
+    " 614: 9800 ldr r0, [sp, #0]",
+    " 614: 4770 bx lr",
 )
 
 DISCONNECTED_BACKEND_PREFIX = CONNECTED_DISPATCH.replace(
-    """ 600: 0081 lsls r1, r0, #2
- 602: a001 add r0, pc, #4 @ (adr r0, 610 <SequencerBackend as Backend>::call+0x10)
- 604: 5840 ldr r0, [r0, r1]
- 606: 4687 mov pc, r0
- 610: 1021 .word 0x1021
- 614: 1031 .word 0x1031
- 618: 1041 .word 0x1041
- 61c: 1051 .word 0x1051""",
-    """ 600: 4770 bx lr
- 602: 0081 lsls r1, r0, #2
- 604: a001 add r0, pc, #4 @ (adr r0, 610 <SequencerBackend as Backend>::call+0x10)
- 606: 5840 ldr r0, [r0, r1]
- 608: 4687 mov pc, r0
- 610: 1021 .word 0x1021
- 614: 1031 .word 0x1031
- 618: 1041 .word 0x1041
- 61c: 1051 .word 0x1051""",
+    " 600: 7980 ldrb r0, [r0, #6]",
+    " 600: 4770 bx lr\n"
+    " 602: 7980 ldrb r0, [r0, #6]",
 )
 
 ALWAYS_TAKEN_BACKEND_BRANCH = CONNECTED_DISPATCH.replace(
-    """ 600: 0081 lsls r1, r0, #2
- 602: a001 add r0, pc, #4 @ (adr r0, 610 <SequencerBackend as Backend>::call+0x10)
- 604: 5840 ldr r0, [r0, r1]
- 606: 4687 mov pc, r0
- 610: 1021 .word 0x1021""",
-    """ 600: 2000 movs r0, #0
- 602: 4280 cmp r0, r0
- 604: d000 beq.n 630 <SequencerBackend as Backend>::call+0x30
- 606: 0081 lsls r1, r0, #2
- 608: a001 add r0, pc, #4 @ (adr r0, 610 <SequencerBackend as Backend>::call+0x10)
- 60a: 5840 ldr r0, [r0, r1]
- 60c: 4687 mov pc, r0
- 610: 1021 .word 0x1021""",
-).replace(" 61c: 1051 .word 0x1051", " 61c: 1051 .word 0x1051\n 630: 4770 bx lr")
+    " 610: 2803 cmp r0, #3\n 612: d81d bhi.n 650",
+    " 610: 4280 cmp r0, r0\n 612: d01d beq.n 650",
+)
+
+UNSUPPORTED_BACKEND_CONDITIONAL = CONNECTED_DISPATCH.replace(
+    " 610: 2803 cmp r0, #3\n 612: d81d bhi.n 650",
+    " 610: 4288 cmp r0, r1\n 612: d02b beq.n 650",
+)
+
+WRONG_STOPPED_GUARD_INPUT = CONNECTED_DISPATCH.replace(
+    " 600: 7980 ldrb r0, [r0, #6]",
+    " 600: 7900 ldrb r0, [r0, #4]",
+)
+
+WRONG_STOPPED_GUARD_TARGET = CONNECTED_DISPATCH.replace(
+    " 606: d112 bne.n 670",
+    " 606: d123 bne.n 650",
+)
+
+WRONG_VARIANT_GUARD_INPUT = CONNECTED_DISPATCH.replace(
+    " 60a: 9802 ldr r0, [sp, #8]",
+    " 60a: 9801 ldr r0, [sp, #4]",
+)
+
+WRONG_VARIANT_GUARD_TARGET = CONNECTED_DISPATCH.replace(
+    " 612: d81d bhi.n 650",
+    " 612: d82d bhi.n 670",
+)
 
 SWAPPED_DISPATCH = CONNECTED_DISPATCH.replace(
-    " 610: 1021 .word 0x1021\n 614: 1031 .word 0x1031",
-    " 610: 1031 .word 0x1031\n 614: 1021 .word 0x1021",
+    " 620: 1021 .word 0x1021\n 624: 1031 .word 0x1031",
+    " 620: 1031 .word 0x1031\n 624: 1021 .word 0x1021",
 )
 
 UNREACHABLE_DISPATCH = CONNECTED_DISPATCH.replace(
@@ -217,19 +228,42 @@ class StartupWitnessCheckerTests(unittest.TestCase):
 
     def test_rejects_dispatch_prefix_disconnected_at_function_entry(self):
         self.assertIn("600: 4770 bx lr", DISCONNECTED_BACKEND_PREFIX)
-        self.assertIn("608: 4687 mov pc, r0", DISCONNECTED_BACKEND_PREFIX)
+        self.assertIn("61c: 4687 mov pc, r0", DISCONNECTED_BACKEND_PREFIX)
         self.assertIn("StartupIo>::gpio", DISCONNECTED_BACKEND_PREFIX)
 
         with self.assertRaisesRegex(WitnessError, "sequencer backend dispatch"):
             validate_call_path(DISCONNECTED_BACKEND_PREFIX)
 
     def test_rejects_dispatch_after_always_taken_conditional_branch(self):
-        self.assertIn("beq.n 630", ALWAYS_TAKEN_BACKEND_BRANCH)
-        self.assertIn("600: 2000 movs r0, #0", ALWAYS_TAKEN_BACKEND_BRANCH)
+        self.assertIn("beq.n 650", ALWAYS_TAKEN_BACKEND_BRANCH)
+        self.assertIn("610: 4280 cmp r0, r0", ALWAYS_TAKEN_BACKEND_BRANCH)
         self.assertIn("StartupIo>::gpio", ALWAYS_TAKEN_BACKEND_BRANCH)
 
-        with self.assertRaisesRegex(WitnessError, "always-taken conditional"):
+        with self.assertRaisesRegex(WitnessError, "unsupported conditional"):
             validate_call_path(ALWAYS_TAKEN_BACKEND_BRANCH)
+
+    def test_rejects_unsupported_forward_conditional_before_dispatch(self):
+        self.assertIn("cmp r0, r1", UNSUPPORTED_BACKEND_CONDITIONAL)
+        self.assertIn("beq.n 650", UNSUPPORTED_BACKEND_CONDITIONAL)
+
+        with self.assertRaisesRegex(WitnessError, "unsupported conditional"):
+            validate_call_path(UNSUPPORTED_BACKEND_CONDITIONAL)
+
+    def test_rejects_mismatched_stopped_guard_input(self):
+        with self.assertRaisesRegex(WitnessError, "unsupported conditional"):
+            validate_call_path(WRONG_STOPPED_GUARD_INPUT)
+
+    def test_rejects_misdirected_stopped_guard(self):
+        with self.assertRaisesRegex(WitnessError, "unsupported conditional"):
+            validate_call_path(WRONG_STOPPED_GUARD_TARGET)
+
+    def test_rejects_mismatched_variant_guard_input(self):
+        with self.assertRaisesRegex(WitnessError, "unsupported conditional"):
+            validate_call_path(WRONG_VARIANT_GUARD_INPUT)
+
+    def test_rejects_misdirected_variant_guard(self):
+        with self.assertRaisesRegex(WitnessError, "unsupported conditional"):
+            validate_call_path(WRONG_VARIANT_GUARD_TARGET)
 
     def test_rejects_swapped_backend_dispatch_targets(self):
         with self.assertRaisesRegex(WitnessError, "variant 0.*device_clock_gates"):
