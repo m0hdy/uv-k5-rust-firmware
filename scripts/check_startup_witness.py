@@ -920,6 +920,27 @@ def validate_backlight_executor_paths(function: str) -> None:
         and setup[0] >= dispatch_setup
     ):
         raise WitnessError("backlight executor has no reachable indexed write-case dispatch")
+
+    cursor = dispatch_setup
+    for mnemonic, operands in (
+        ("ldr", r"\s*r0,\s*\[sp,\s*#140\]\s*"),
+        ("str", r"\s*r0,\s*\[sp,\s*#156\]\s*"),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#136\]\s*"),
+        ("str", r"\s*r0,\s*\[sp,\s*#152\]\s*"),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#132\]\s*"),
+        ("str", r"\s*r0,\s*\[sp,\s*#148\]\s*"),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#128\]\s*"),
+        ("str", r"\s*r0,\s*\[sp,\s*#144\]\s*"),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#144\]\s*"),
+        ("str", r"\s*r0,\s*\[sp,\s*#12\]\s*"),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#12\]\s*"),
+        ("lsls", r"\s*r1,\s*r0,\s*#2\s*"),
+    ):
+        instruction = expect(cursor, mnemonic, operands, "iterator dispatch input")
+        cursor = instruction[0] + instruction[1]
+    if cursor != setup[0]:
+        raise WitnessError("backlight executor has an unexpected iterator dispatch continuation")
+
     table_address = int(table_match.group(1), 16)
     try:
         case_targets = [

@@ -1234,6 +1234,30 @@ class StartupWitnessCheckerTests(unittest.TestCase):
         with self.assertRaisesRegex(WitnessError, "backlight plan operands"):
             validate_call_path(BACKLIGHT_WRONG_PLAN_OPERAND)
 
+    def test_rejects_wrong_backlight_iterator_dispatch_inputs(self):
+        mutations = (
+            ("892: 0081 lsls r1, r0, #2", "892: 2100 movs r1, #0"),
+            ("87c: 9823 ldr r0, [sp, #140]", "87c: 9822 ldr r0, [sp, #136]"),
+            ("87e: 9027 str r0, [sp, #156]", "87e: 9026 str r0, [sp, #152]"),
+            ("880: 9822 ldr r0, [sp, #136]", "880: 9823 ldr r0, [sp, #140]"),
+            ("882: 9026 str r0, [sp, #152]", "882: 9027 str r0, [sp, #156]"),
+            ("884: 9821 ldr r0, [sp, #132]", "884: 9822 ldr r0, [sp, #136]"),
+            ("886: 9025 str r0, [sp, #148]", "886: 9024 str r0, [sp, #144]"),
+            ("888: 9820 ldr r0, [sp, #128]", "888: 9821 ldr r0, [sp, #132]"),
+            ("88a: 9024 str r0, [sp, #144]", "88a: 9025 str r0, [sp, #148]"),
+            ("88c: 9824 ldr r0, [sp, #144]", "88c: 9825 ldr r0, [sp, #148]"),
+            ("88e: 9003 str r0, [sp, #12]", "88e: 9002 str r0, [sp, #8]"),
+            ("890: 9803 ldr r0, [sp, #12]", "890: 9802 ldr r0, [sp, #8]"),
+            ("892: 0081 lsls r1, r0, #2", "892: 0041 lsls r1, r0, #1"),
+        )
+        for original, replacement in mutations:
+            with self.subTest(replacement=replacement):
+                self.assertIn(original, CONNECTED_DISPATCH)
+                disassembly = CONNECTED_DISPATCH.replace(original, replacement)
+                self.assertIn(replacement, disassembly)
+                with self.assertRaisesRegex(WitnessError, "backlight executor.*dispatch"):
+                    validate_call_path(disassembly)
+
     def test_rejects_missing_backlight_fresh_read(self):
         with self.assertRaisesRegex(
             WitnessError, "write case 0 has an unexpected register continuation"
