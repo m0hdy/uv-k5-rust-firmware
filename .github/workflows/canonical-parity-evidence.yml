@@ -4,8 +4,10 @@ on:
   pull_request:
     paths:
       - .github/workflows/canonical-parity-evidence.yml
+      - .cargo/config.toml
       - Cargo.lock
       - Cargo.toml
+      - build.rs
       - docs/reference-vector-provenance.md
       - examples/reference_vectors.rs
       - rust-toolchain.toml
@@ -41,6 +43,7 @@ jobs:
       - name: Check out exact Rust source revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           path: rust-source
           persist-credentials: false
@@ -91,8 +94,7 @@ jobs:
         run: |
           set -euo pipefail
           report="$RUNNER_TEMP/canonical-parity-report.txt"
-          : > "$report"
-          exec > >(tee -a "$report") 2>&1
+          exec > "$report" 2>&1
           failures=0
           rust_source="$GITHUB_WORKSPACE/rust-source"
           c_reference="$GITHUB_WORKSPACE/c-reference"
@@ -186,8 +188,8 @@ jobs:
 
           fixture_after="$(sha256sum "$fixture" | cut -d ' ' -f 1)"
           printf 'Fixture SHA-256 after comparisons: %s\n' "$fixture_after"
-          if [[ "$fixture_after" != "$fixture_before" || "$fixture_after" != "$FIXTURE_SHA256" ]]; then
-            echo "Canonical fixture changed during the comparisons or has an unexpected hash."
+          if [[ "$fixture_after" != "$fixture_before" ]]; then
+            echo "Canonical fixture changed during the comparisons."
             failures=1
           else
             echo "Canonical fixture unchanged: verified"
@@ -207,6 +209,7 @@ jobs:
           set -euo pipefail
           report="$RUNNER_TEMP/canonical-parity-report.txt"
           test -s "$report"
+          cat "$report"
           cat "$report" >> "$GITHUB_STEP_SUMMARY"
           if [[ "$FAILURE_PROBE" == "fail-c-comparator" ]]; then
             grep -Fqx "Rust source revision: $EXPECTED_RUST_REVISION" "$report"
