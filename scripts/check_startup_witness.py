@@ -614,10 +614,92 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
                 entries[int(match.group(1), 16)] = int(match.group(2), 16)
         return entries
 
+    def indexed_cases(function: str, description: str):
+        instructions, dominators, _ = reachable_control_flow_analysis(
+            function, description
+        )
+        by_address = {instruction[0]: instruction for instruction in instructions}
+        words = word_entries(function)
+        dispatch = None
+        table_address = None
+        for index in range(len(instructions) - 2):
+            setup, lookup, transfer = instructions[index : index + 3]
+            table = re.search(
+                r"\badd\s+r0,\s*pc,\s*#[0-9]+\b.*?\badr\s+r0,\s*([0-9a-fA-F]+)\b",
+                setup[4],
+            )
+            if (
+                table is not None
+                and setup[2] == "add"
+                and lookup[0] == setup[0] + setup[1]
+                and matches_instruction(
+                    lookup, "ldr", r"\s*r0,\s*\[r0,\s*r1\]\s*"
+                )
+                and transfer[0] == lookup[0] + lookup[1]
+                and matches_instruction(transfer, "mov", r"\s*pc,\s*r0\s*")
+            ):
+                dispatch = transfer
+                table_address = int(table.group(1), 16)
+                break
+
+        if dispatch is None or table_address is None:
+            raise WitnessError(f"{description} has no reachable indexed dispatch")
+        try:
+            targets = [
+                words[table_address + offset] & ~1
+                for offset in range(0, 20, 4)
+            ]
+        except KeyError as error:
+            raise WitnessError(f"{description} indexed dispatch is incomplete") from error
+        if any(
+            target not in by_address
+            or dispatch[0] not in dominators[target]
+            for target in targets
+        ):
+            raise WitnessError(f"{description} indexed dispatch does not reach every case")
+        return instructions, dominators, by_address, words, targets
+
+    def shared_epilogue(
+        instructions, by_address, targets, continuations, description: str
+    ) -> None:
+        if not continuations or len(set(continuations)) != 1:
+            raise WitnessError(
+                f"{description} cases do not return through one shared return epilogue"
+            )
+        epilogue = continuations[0]
+        epilogue_body = [
+            by_address.get(epilogue),
+            by_address.get(epilogue + 2),
+            by_address.get(epilogue + 4),
+        ]
+        if not (
+            all(epilogue_body)
+            and matches_instruction(
+                epilogue_body[0], "ldr", r"\s*r0,\s*\[sp,\s*#4\]\s*"
+            )
+            and matches_instruction(
+                epilogue_body[1], "add", r"\s*sp,\s*#8\s*"
+            )
+            and matches_instruction(
+                epilogue_body[2], "pop", r"\s*\{\s*r7,\s*pc\s*\}\s*"
+            )
+        ):
+            raise WitnessError(f"{description} shared return epilogue is unexpected")
+        branch_sources = {
+            instruction[0]
+            for instruction in instructions
+            if instruction[2] in ("b", "b.n", "b.w")
+            and branch_target(instruction) == epilogue
+        }
+        if branch_sources != set(targets):
+            raise WitnessError(
+                f"{description} cases do not return through their shared return epilogue"
+            )
+
     address_body = function_block(
         disassembly, "backlight_startup_executor::RegisterAddress>::address"
     )
-    words = word_entries(address_body)
+    address_words = word_entries(address_body)
 
     address_literals = [
         int(match.group(1), 16)
@@ -635,40 +717,49 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
     if len(address_literals) != 5 or set(address_literals) != expected_addresses:
         raise WitnessError("backlight register address evidence is missing or incorrect")
 
-    address_instructions = reachable_control_flow(
+    (
+        address_instructions,
+        _,
+        address_by_address,
+        address_words,
+        targets,
+    ) = indexed_cases(
         address_body, "backlight register address mapping"
     )
-    address_reachable_text = "\n".join(
-        instruction[4] for instruction in address_instructions
-    )
-    table_match = re.search(
-        r"\badd\s+r0,\s*pc,\s*#[0-9]+\b.*?\badr\s+r0,\s*([0-9a-fA-F]+)\b",
-        address_reachable_text,
-    )
-    if table_match is None:
-        raise WitnessError("backlight register address mapping is missing")
-    try:
-        targets = [
-            words[int(table_match.group(1), 16) + offset] & ~1
-            for offset in range(0, 20, 4)
-        ]
-    except KeyError as error:
-        raise WitnessError("backlight register address mapping is incomplete") from error
-    by_address = {
-        instruction[0]: instruction for instruction in address_instructions
-    }
     mapped_addresses = []
+    address_continuations = []
     for target in targets:
-        load = by_address.get(target)
+        load = address_by_address.get(target)
         literal = (
-            re.search(r"@\s*\(([0-9a-fA-F]+)\b", load[4])
+            re.search(r"[@;]\s*\(?([0-9a-fA-F]+)\b", load[4])
             if load is not None
             and matches_instruction(load, "ldr", r"\s*r0,\s*\[pc,\s*#[0-9]+\].*")
             else None
         )
-        if literal is None or int(literal.group(1), 16) not in words:
+        if literal is None or int(literal.group(1), 16) not in address_words:
             raise WitnessError("backlight register address mapping is incomplete")
-        mapped_addresses.append(words[int(literal.group(1), 16)])
+        mapped_addresses.append(address_words[int(literal.group(1), 16)])
+        continuation = address_by_address.get(target + 2)
+        if continuation is not None and matches_instruction(
+            continuation, "pop", r"\s*\{\s*r7,\s*pc\s*\}\s*"
+        ):
+            address_continuations.append(None)
+            continue
+        branch = address_by_address.get(target + 4)
+        if not (
+            continuation is not None
+            and matches_instruction(
+                continuation, "str", r"\s*r0,\s*\[sp,\s*#4\]\s*"
+            )
+            and branch is not None
+            and branch[2] in ("b.n", "b.w")
+            and branch_target(branch) is not None
+        ):
+            raise WitnessError(
+                "backlight register address case does not return its mapped register"
+            )
+        address_continuations.append(branch_target(branch))
+
     if mapped_addresses != [
         0x400B4008,
         0x400B401C,
@@ -677,46 +768,58 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
         0x400B4000,
     ]:
         raise WitnessError("backlight register addresses do not match their register variants")
+    if all(continuation is None for continuation in address_continuations):
+        pass
+    elif any(continuation is None for continuation in address_continuations):
+        raise WitnessError("backlight register address cases have mixed return continuations")
+    else:
+        shared_epilogue(
+            address_instructions,
+            address_by_address,
+            [target + 4 for target in targets],
+            address_continuations,
+            "backlight register address mapping",
+        )
 
     conversion = function_block(
         disassembly, "backlight_startup_executor::RegisterAddress>::from_register"
     )
-    conversion_instructions_list = reachable_control_flow(
+    (
+        conversion_instructions_list,
+        _,
+        conversion_instructions,
+        _,
+        conversion_targets,
+    ) = indexed_cases(
         conversion, "backlight register conversion"
     )
-    conversion_reachable_text = "\n".join(
-        instruction[4] for instruction in conversion_instructions_list
-    )
-    conversion_table = re.search(
-        r"\badd\s+r0,\s*pc,\s*#[0-9]+\b.*?\badr\s+r0,\s*([0-9a-fA-F]+)\b",
-        conversion_reachable_text,
-    )
-    if conversion_table is None:
-        raise WitnessError("backlight register conversion is missing")
-    conversion_words = word_entries(conversion)
-    try:
-        conversion_targets = [
-            conversion_words[int(conversion_table.group(1), 16) + offset] & ~1
-            for offset in range(0, 20, 4)
-        ]
-    except KeyError as error:
-        raise WitnessError("backlight register conversion is incomplete") from error
-    conversion_instructions = {
-        instruction[0]: instruction for instruction in conversion_instructions_list
-    }
+    conversion_continuations = []
     for register, target in enumerate(conversion_targets):
         body = [
             conversion_instructions.get(target),
             conversion_instructions.get(target + 2),
             conversion_instructions.get(target + 4),
+            conversion_instructions.get(target + 6),
         ]
         if not (
             all(body)
             and matches_instruction(body[0], "add", r"\s*r1,\s*sp,\s*#4\s*")
             and matches_instruction(body[1], "movs", rf"\s*r0,\s*#{register}\s*")
             and matches_instruction(body[2], "strb", r"\s*r0,\s*\[r1,\s*#0\]\s*")
+            and body[3][2] in ("b.n", "b.w")
+            and branch_target(body[3]) is not None
         ):
-            raise WitnessError("backlight register conversion does not preserve register variants")
+            raise WitnessError(
+                "backlight register conversion case has an unexpected return continuation"
+            )
+        conversion_continuations.append(branch_target(body[3]))
+    shared_epilogue(
+        conversion_instructions_list,
+        conversion_instructions,
+        [target + 6 for target in conversion_targets],
+        conversion_continuations,
+        "backlight register conversion",
+    )
 
     initialize = function_block(disassembly, "initialize_backlight_hardware")
     if not any(

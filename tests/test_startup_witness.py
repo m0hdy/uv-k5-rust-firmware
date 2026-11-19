@@ -285,18 +285,26 @@ CONNECTED_DISPATCH = """
  950: a901 add r1, sp, #4
  952: 2000 movs r0, #0
  954: 7008 strb r0, [r1, #0]
+ 956: e00f b.n 978 <RegisterAddress>::from_register+0x48>
  958: a901 add r1, sp, #4
  95a: 2001 movs r0, #1
  95c: 7008 strb r0, [r1, #0]
+ 95e: e00b b.n 978 <RegisterAddress>::from_register+0x48>
  960: a901 add r1, sp, #4
  962: 2002 movs r0, #2
  964: 7008 strb r0, [r1, #0]
+ 966: e007 b.n 978 <RegisterAddress>::from_register+0x48>
  968: a901 add r1, sp, #4
  96a: 2003 movs r0, #3
  96c: 7008 strb r0, [r1, #0]
+ 96e: e003 b.n 978 <RegisterAddress>::from_register+0x48>
  970: a901 add r1, sp, #4
  972: 2004 movs r0, #4
  974: 7008 strb r0, [r1, #0]
+ 976: e7ff b.n 978 <RegisterAddress>::from_register+0x48>
+ 978: 9801 ldr r0, [sp, #4]
+ 97a: b002 add sp, #8
+ 97c: bd80 pop {r7, pc}
 00000a00 <backlight_startup_executor::RegisterAddress>::address>:
  a00: a001 add r0, pc, #4 @ (adr r0, a08)
  a02: 5840 ldr r0, [r0, r1]
@@ -511,6 +519,16 @@ BACKLIGHT_WRONG_RMW_ORDER = CONNECTED_DISPATCH.replace(
     " 85a: 438a bics r2, r1",
 )
 
+BACKLIGHT_EXECUTOR_RETURN_AT_854 = CONNECTED_DISPATCH.replace(
+    " 854: 9901 ldr r1, [sp, #8]",
+    " 854: 4770 bx lr",
+)
+
+BACKLIGHT_EXECUTOR_SELF_LOOP_AT_854 = CONNECTED_DISPATCH.replace(
+    " 854: 9901 ldr r1, [sp, #8]",
+    " 854: e7fe b.n 854 <backlight_startup_executor::apply_with_io+0xe>",
+)
+
 BACKLIGHT_EXECUTOR_EARLY_RETURN = CONNECTED_DISPATCH
 _apply_header = "00000846 <backlight_startup_executor::apply_with_io>:\n"
 _apply_start = BACKLIGHT_EXECUTOR_EARLY_RETURN.index(_apply_header) + len(_apply_header)
@@ -519,7 +537,7 @@ _apply_end = BACKLIGHT_EXECUTOR_EARLY_RETURN.index(
 )
 
 
-def _shift_apply_instructions(disassembly, first_address):
+def _shift_apply_instructions(disassembly, first_address, amount=2):
     start = disassembly.index(_apply_header) + len(_apply_header)
     end = disassembly.index(
         "00000900 <<backlight_startup_executor::VolatileRegisterIo as"
@@ -532,7 +550,7 @@ def _shift_apply_instructions(disassembly, first_address):
             return match.group(0)
         return (
             f"{match.group(1)}"
-            f"{address + 2:0{len(match.group(2))}x}:"
+            f"{address + amount:0{len(match.group(2))}x}:"
         )
 
     return disassembly[:start] + re.sub(r"(?m)^(\s*)([0-9a-fA-F]+):", shift, body) + disassembly[end:]
@@ -580,6 +598,15 @@ BACKLIGHT_EXECUTOR_RETURN_BYPASSES_PLAN = _shift_apply_instructions(
     " 848: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
 )
 
+BACKLIGHT_EXECUTOR_ALWAYS_TAKEN_PLAN_BYPASS = _shift_apply_instructions(
+    CONNECTED_DISPATCH, 0x846, 4
+).replace(
+    " 84a: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
+    " 846: 4280 cmp r0, r0\n"
+    " 848: d001 beq.n 84e <backlight_startup_executor::apply_with_io+0x8>\n"
+    " 84a: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
+)
+
 BACKLIGHT_EXECUTOR_UNSUPPORTED_BRANCH = CONNECTED_DISPATCH.replace(
     " 846: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
     " 846: 4687 mov pc, r0",
@@ -601,6 +628,36 @@ BACKLIGHT_PLAN_EARLY_RETURN = CONNECTED_DISPATCH.replace(
 BACKLIGHT_REGISTER_READ_EARLY_RETURN = CONNECTED_DISPATCH.replace(
     " 900: 4608 mov r0, r1",
     " 900: 4770 bx lr",
+)
+
+BACKLIGHT_ADDRESS_DISPATCH_BYPASS = CONNECTED_DISPATCH.replace(
+    " a04: 4687 mov pc, r0",
+    " a04: 4770 bx lr",
+)
+
+BACKLIGHT_ADDRESS_CASE_SELF_LOOP = CONNECTED_DISPATCH.replace(
+    " a22: bd80 pop {r7, pc}",
+    " a22: e7fe b.n a22 <case_self_loop>",
+)
+
+BACKLIGHT_ADDRESS_CASE_WRONG_REGISTER = CONNECTED_DISPATCH.replace(
+    " a22: bd80 pop {r7, pc}",
+    " a22: e000 b.n a28 <other_register_case>",
+)
+
+BACKLIGHT_CONVERSION_DISPATCH_BYPASS = CONNECTED_DISPATCH.replace(
+    " 934: 4687 mov pc, r0",
+    " 934: 4770 bx lr",
+)
+
+BACKLIGHT_CONVERSION_CASE_SELF_LOOP = CONNECTED_DISPATCH.replace(
+    " 956: e00f b.n 978 <RegisterAddress>::from_register+0x48>",
+    " 956: e7fe b.n 956 <conversion_case_self_loop>",
+)
+
+BACKLIGHT_CONVERSION_CASE_WRONG_REGISTER = CONNECTED_DISPATCH.replace(
+    " 956: e00f b.n 978 <RegisterAddress>::from_register+0x48>",
+    " 956: e7ff b.n 958 <other_register_case>",
 )
 
 BACKLIGHT_INDIRECT_BRANCH_BYPASSES_SETUP = """
@@ -802,6 +859,18 @@ class StartupWitnessCheckerTests(unittest.TestCase):
         with self.assertRaisesRegex(WitnessError, "backlight executor.*initialization plan"):
             validate_call_path(BACKLIGHT_EXECUTOR_EARLY_RETURN)
 
+    def test_rejects_backlight_executor_return_at_first_rmw_continuation(self):
+        with self.assertRaisesRegex(
+            WitnessError, "ordered fresh RMW register evidence"
+        ):
+            validate_call_path(BACKLIGHT_EXECUTOR_RETURN_AT_854)
+
+    def test_rejects_backlight_executor_self_loop_at_first_rmw_continuation(self):
+        with self.assertRaisesRegex(
+            WitnessError, "ordered fresh RMW register evidence"
+        ):
+            validate_call_path(BACKLIGHT_EXECUTOR_SELF_LOOP_AT_854)
+
     def test_rejects_backlight_executor_branch_that_skips_plan_creation(self):
         with self.assertRaisesRegex(WitnessError, "backlight executor.*initialization plan"):
             validate_call_path(BACKLIGHT_EXECUTOR_BRANCH_SKIPS_PLAN)
@@ -817,6 +886,18 @@ class StartupWitnessCheckerTests(unittest.TestCase):
     def test_rejects_backlight_executor_branch_that_returns_before_plan(self):
         with self.assertRaisesRegex(WitnessError, "backlight executor.*initialization plan"):
             validate_call_path(BACKLIGHT_EXECUTOR_RETURN_BYPASSES_PLAN)
+
+    def test_rejects_always_taken_branch_over_retained_plan_creation(self):
+        self.assertIn(" 846: 4280 cmp r0, r0", BACKLIGHT_EXECUTOR_ALWAYS_TAKEN_PLAN_BYPASS)
+        self.assertIn(" 848: d001 beq.n 84e", BACKLIGHT_EXECUTOR_ALWAYS_TAKEN_PLAN_BYPASS)
+        self.assertIn(
+            " 84a: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
+            BACKLIGHT_EXECUTOR_ALWAYS_TAKEN_PLAN_BYPASS,
+        )
+        with self.assertRaisesRegex(
+            WitnessError, "backlight executor.*initialization plan"
+        ):
+            validate_call_path(BACKLIGHT_EXECUTOR_ALWAYS_TAKEN_PLAN_BYPASS)
 
     def test_rejects_backlight_rmw_branch_that_bypasses_read_and_rejoins(self):
         with self.assertRaisesRegex(WitnessError, "ordered fresh RMW register evidence"):
@@ -835,6 +916,42 @@ class StartupWitnessCheckerTests(unittest.TestCase):
             WitnessError, "backlight register read does not preserve its mapped register"
         ):
             validate_call_path(BACKLIGHT_REGISTER_READ_EARLY_RETURN)
+
+    def test_rejects_bypassed_address_mapping_dispatch(self):
+        with self.assertRaisesRegex(
+            WitnessError, "backlight register address mapping.*indexed dispatch"
+        ):
+            validate_call_path(BACKLIGHT_ADDRESS_DISPATCH_BYPASS)
+
+    def test_rejects_address_case_self_loop(self):
+        with self.assertRaisesRegex(
+            WitnessError, "backlight register address case does not return"
+        ):
+            validate_call_path(BACKLIGHT_ADDRESS_CASE_SELF_LOOP)
+
+    def test_rejects_address_case_returning_another_register(self):
+        with self.assertRaisesRegex(
+            WitnessError, "backlight register address case does not return"
+        ):
+            validate_call_path(BACKLIGHT_ADDRESS_CASE_WRONG_REGISTER)
+
+    def test_rejects_bypassed_register_conversion_dispatch(self):
+        with self.assertRaisesRegex(
+            WitnessError, "backlight register conversion.*indexed dispatch"
+        ):
+            validate_call_path(BACKLIGHT_CONVERSION_DISPATCH_BYPASS)
+
+    def test_rejects_register_conversion_case_self_loop(self):
+        with self.assertRaisesRegex(
+            WitnessError, "backlight register conversion.*shared return epilogue"
+        ):
+            validate_call_path(BACKLIGHT_CONVERSION_CASE_SELF_LOOP)
+
+    def test_rejects_register_conversion_case_returning_another_register(self):
+        with self.assertRaisesRegex(
+            WitnessError, "backlight register conversion.*shared return epilogue"
+        ):
+            validate_call_path(BACKLIGHT_CONVERSION_CASE_WRONG_REGISTER)
 
     def test_rejects_indirect_branch_that_bypasses_its_table_setup(self):
         with self.assertRaisesRegex(
