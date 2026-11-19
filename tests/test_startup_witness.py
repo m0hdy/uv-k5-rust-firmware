@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from check_startup_witness import (  # noqa: E402
     WitnessError,
+    reachable_control_flow,
     validate_call_path,
     validate_systick_handler,
 )
@@ -556,6 +557,18 @@ BACKLIGHT_REGISTER_READ_EARLY_RETURN = CONNECTED_DISPATCH.replace(
     " 900: 4770 bx lr",
 )
 
+BACKLIGHT_INDIRECT_BRANCH_BYPASSES_SETUP = """
+00000a00 <register_mapping>:
+ a00: d001 beq.n a06 <register_mapping+0x6>
+ a02: a001 add r0, pc, #4 @ (adr r0, a08)
+ a04: 5840 ldr r0, [r0, r1]
+ a06: 4687 mov pc, r0
+ a08: 0a11 .word 0x00000a11
+ a0c: 0a13 .word 0x00000a13
+ a10: 2000 movs r0, #0
+ a12: 4770 bx lr
+"""
+
 
 class StartupWitnessCheckerTests(unittest.TestCase):
     def test_accepts_immediate_systick_return_at_symbol_entry(self):
@@ -758,6 +771,14 @@ class StartupWitnessCheckerTests(unittest.TestCase):
             WitnessError, "backlight register read does not preserve its mapped register"
         ):
             validate_call_path(BACKLIGHT_REGISTER_READ_EARLY_RETURN)
+
+    def test_rejects_indirect_branch_that_bypasses_its_table_setup(self):
+        with self.assertRaisesRegex(
+            WitnessError, "indirect branch that bypasses its table setup"
+        ):
+            reachable_control_flow(
+                BACKLIGHT_INDIRECT_BRANCH_BYPASSES_SETUP, "backlight register mapping"
+            )
 
     def test_rejects_unreachable_backlight_hardware_call(self):
         with self.assertRaisesRegex(WitnessError, "variant 4.*unexpected continuation"):

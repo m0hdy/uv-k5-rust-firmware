@@ -207,6 +207,8 @@ def reachable_control_flow(
 
     pending = [instructions[0][0]]
     reachable = set()
+    predecessors: dict[int, set[int]] = {}
+    indirect_dispatches = {}
     while pending:
         address = pending.pop()
         if address in reachable:
@@ -247,6 +249,9 @@ def reachable_control_flow(
             targets = indirect_targets(index_by_address[address])
             if not targets:
                 raise WitnessError(f"{description} has an unsupported indirect branch")
+            lookup = instructions[index_by_address[address] - 1]
+            setup = instructions[index_by_address[address] - 2]
+            indirect_dispatches[address] = (setup[0], lookup[0])
             successors.extend(targets)
         elif is_control_transfer(mnemonic, operands, line):
             raise WitnessError(f"{description} has an unsupported control-flow instruction")
@@ -255,9 +260,19 @@ def reachable_control_flow(
 
         for successor in successors:
             if successor in by_address:
+                predecessors.setdefault(successor, set()).add(address)
                 pending.append(successor)
             elif successor != fallthrough:
                 raise WitnessError(f"{description} has an unsupported control-flow target")
+
+    for dispatch, (setup, lookup) in indirect_dispatches.items():
+        if (
+            predecessors.get(lookup) != {setup}
+            or predecessors.get(dispatch) != {lookup}
+        ):
+            raise WitnessError(
+                f"{description} has an indirect branch that bypasses its table setup"
+            )
 
     return [instruction for instruction in instructions if instruction[0] in reachable]
 
