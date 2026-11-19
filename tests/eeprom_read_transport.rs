@@ -1,7 +1,6 @@
-#[path = "../src/eeprom_read_transport.rs"]
-mod eeprom_read_transport;
-
-use eeprom_read_transport::{Acknowledgement, I2cTransport, ReadError, execute_read, plan_read};
+use uv_k5_rust_firmware::eeprom_read_transport::{
+    Acknowledgement, I2cTransport, ReadError, execute_read, plan_read,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Event {

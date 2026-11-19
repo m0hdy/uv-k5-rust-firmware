@@ -33,10 +33,9 @@ From the repository root:
 ```sh
 cargo test --locked --test settings_boot_composition
 cargo clippy --locked --test settings_boot_composition -- -D warnings
-rustfmt --check --edition 2024 src/settings_boot_composition.rs tests/settings_boot_composition.rs
-rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
-  -D warnings src/settings_boot_composition.rs -o /tmp/settings_boot_composition.rlib
+cargo fmt --all -- --check
+RUSTFLAGS="-D warnings" cargo check --locked --lib --target thumbv6m-none-eabi
 ```
 
-The direct Rust compile checks the isolated `no_std` composition for Cortex-M0;
-it does not link the module into firmware startup or validate hardware behavior.
+The Cortex-M0 library check checks the `no_std` composition; it does not link
+the module into firmware startup or validate hardware behavior.

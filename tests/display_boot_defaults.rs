@@ -1,7 +1,4 @@
-#[path = "../src/display_boot_defaults.rs"]
-mod display_boot_defaults;
-
-use display_boot_defaults::{
+use uv_k5_rust_firmware::display_boot_defaults::{
     BACKLIGHT_SUBMENU_LEN, BacklightMinStatus, DisplayBootDefaults, EEPROM_LEN, EEPROM_OFFSET,
     FeaturePresence, decode_display_boot_defaults,
 };

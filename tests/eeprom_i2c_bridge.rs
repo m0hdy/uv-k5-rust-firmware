@@ -1,13 +1,9 @@
-#[path = "../src/eeprom_i2c_bridge.rs"]
-mod eeprom_i2c_bridge;
-
-use eeprom_i2c_bridge::{
+use std::collections::VecDeque;
+use uv_k5_rust_firmware::eeprom_i2c_bridge::Level::{High, Low};
+use uv_k5_rust_firmware::eeprom_i2c_bridge::{
     Acknowledgement, Direction, Features, I2cBitbangTransport, I2cIo, I2cTransport, Level,
     ReadError, SettingsBootBlock, SettingsBootReadError, read_settings_boot,
 };
-use std::collections::VecDeque;
-
-use Level::{High, Low};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Op {

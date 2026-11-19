@@ -2,8 +2,8 @@
 
 [`src/eeprom_read_transport.rs`](../src/eeprom_read_transport.rs) executes the
 existing [`ReadPlan`](../src/eeprom_transaction.rs) against a mockable
-`I2cTransport`, borrowing the caller's output slice. It is standalone `no_std`,
-allocation-free, and unexported from the firmware library. It reuses and
+`I2cTransport`, borrowing the caller's output slice. It is a `no_std`,
+allocation-free module exported by the firmware library. It reuses and
 re-exports `ReadPlan` and `plan_read` from the existing planner; it does not
 reconstruct device or address bytes.
 
@@ -69,10 +69,10 @@ and store even when `Size` is zero. That store is not reproduced in Rust.
 ## Scope and validation
 
 This is the software-only read-execution boundary following the planner and
-settings boot composition. The latter remains unchanged and is not wired to
-this fallible executor. Tests exercise its startup addresses `0x0e70` and
-`0x0e78` as separate eight-byte requests with distinct payloads. There are no
-EEPROM data writes, bit-banged bus implementation, MMIO, startup changes,
+settings boot composition. The separate EEPROM/I2C bridge composes this
+executor with startup decoding and the bit-banged pin flow. Tests exercise its
+startup addresses `0x0e70` and `0x0e78` as separate eight-byte requests with
+distinct payloads. There are no EEPROM data writes, MMIO, startup changes,
 hardware access, or release artifacts. Parent
 [#43](https://github.com/m0hdy/uv-k5-rust-firmware/issues/43) remains open.
 
@@ -81,18 +81,15 @@ From the repository root:
 ```sh
 cargo test --locked --test eeprom_read_transport
 cargo clippy --locked --test eeprom_read_transport -- -D warnings
-rustfmt --check --edition 2024 \
-  src/eeprom_read_transport.rs tests/eeprom_read_transport.rs
-rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
-  -D warnings \
-  src/eeprom_read_transport.rs \
-  -o /tmp/eeprom_read_transport.rlib
+cargo fmt --all -- --check
+RUSTFLAGS="-D warnings" cargo check --locked --lib --target thumbv6m-none-eabi
 ```
 
-Host tests assert literal ordered startup traces and payload routing,
-preflight rejection without I/O, transport failure at every operation,
+Host tests import the library module and assert literal ordered startup traces
+and payload routing, preflight rejection without I/O, transport failure at
+every operation,
 NACK at every byte write, successful and failed cleanup, partial-read output,
 complete output after a failed final STOP, erased responses, zero-length
 execution, and a maximum-length borrowed subslice with untouched edge bytes.
-The isolated warnings-denied Cortex-M0 compile checks `no_std` compatibility;
-it does not validate bus timing or hardware.
+The Cortex-M0 library check checks `no_std` compatibility; it does not validate
+bus timing or hardware.

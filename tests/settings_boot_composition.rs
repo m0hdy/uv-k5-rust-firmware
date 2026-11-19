@@ -1,8 +1,5 @@
-#[path = "../src/settings_boot_composition.rs"]
-mod settings_boot_composition;
-
-use settings_boot_composition::CoreSettings;
-use settings_boot_composition::{
+use uv_k5_rust_firmware::settings_boot_composition::CoreSettings;
+use uv_k5_rust_firmware::settings_boot_composition::{
     Acknowledgement, BacklightMinStatus, Command, DisplayBootDefaults, Features, I2cTransport,
     ReadBackend, ReadError, ReadPlan, SettingsBoot, SettingsBootBlock, SettingsBootReadError,
     compose, compose_with_transport, plan_read,

@@ -1,7 +1,4 @@
-#[path = "../src/settings_boot_defaults.rs"]
-mod settings_boot_defaults;
-
-use settings_boot_defaults::{
+use uv_k5_rust_firmware::settings_boot_defaults::{
     CoreSettings, EEPROM_LEN, EEPROM_OFFSET, FeaturePresence, decode_core_settings,
 };
 

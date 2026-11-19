@@ -1,7 +1,4 @@
-#[path = "../src/eeprom_transaction.rs"]
-mod eeprom_transaction;
-
-use eeprom_transaction::{
+use uv_k5_rust_firmware::eeprom_transaction::{
     Command, EEPROM_ADDRESS_LIMIT, EEPROM_WRITE_DELAY_MS, EEPROM_WRITE_SIZE, plan_read, plan_write,
 };
 
