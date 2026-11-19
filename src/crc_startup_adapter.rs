@@ -4,7 +4,8 @@
 //!
 //! The sequence follows `driver/crc.c` and `bsp/dp32g030/crc.h` at
 //! [`7607f0a`](https://github.com/egzumer/uv-k5-firmware-custom/tree/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3).
-//! It is not connected to firmware startup.
+//! The integrated board startup dispatcher uses this adapter conditionally;
+//! the firmware entry point does not invoke that dispatcher.
 
 pub trait WordIo {
     fn write_word(&mut self, address: usize, value: u32);

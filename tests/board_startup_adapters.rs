@@ -17,6 +17,7 @@ mod st7565_startup;
 mod st7565_startup_executor;
 
 use board_startup_adapters::backlight_startup_executor::{Register, RegisterIo, apply_with_io};
+use board_startup_adapters::crc_startup_adapter::{WordIo, apply_with_io as apply_crc};
 use board_startup_adapters::{Call, Defines, StartupError, StartupIo, run};
 use core::num::NonZeroU32;
 use st7565_line_transport::LineError;
@@ -31,6 +32,8 @@ enum Event {
     BacklightInit,
     AdcInit(u16),
     St7565Init(NonZeroU32),
+    CrcInit,
+    CrcWrite(usize, u32),
     BacklightRead(Register),
     BacklightWrite(Register, u32),
     Placeholder(Call),
@@ -101,6 +104,17 @@ impl StartupIo for FakeIo {
 
     fn placeholder(&mut self, call: Call) {
         self.events.push(Event::Placeholder(call));
+    }
+
+    fn crc_init(&mut self) {
+        self.events.push(Event::CrcInit);
+        apply_crc(self);
+    }
+}
+
+impl WordIo for FakeIo {
+    fn write_word(&mut self, address: usize, value: u32) {
+        self.events.push(Event::CrcWrite(address, value));
     }
 }
 
@@ -180,7 +194,9 @@ fn sequencer_dispatches_adapters_in_pinned_order_and_keeps_other_calls_typed() {
             Event::AdcInit(0x5aa5),
             Event::St7565Init(NonZeroU32::new(0x1234).unwrap()),
             Event::Placeholder(Call::Bk1080Init0),
-            Event::Placeholder(Call::CrcInit),
+            Event::CrcInit,
+            Event::CrcWrite(0x4000_3000, 0x100),
+            Event::CrcWrite(0x4000_3004, 0),
         ]
     );
     assert_eq!(delay.0, [37]);
@@ -261,5 +277,45 @@ fn display_error_preserves_line_cause_and_stops_optional_stages() {
     );
     assert_eq!(delay.0, [37]);
     assert!(!io.events.contains(&Event::Placeholder(Call::Bk1080Init0)));
-    assert!(!io.events.contains(&Event::Placeholder(Call::CrcInit)));
+    assert!(!io.events.contains(&Event::CrcInit));
+}
+
+#[test]
+fn crc_runs_once_only_when_uart_or_aircopy_is_enabled() {
+    for fm in [false, true] {
+        for uart in [false, true] {
+            for aircopy in [false, true] {
+                let mut io = FakeIo::default();
+                let mut delay = DelayProbe::default();
+                assert_eq!(
+                    run(
+                        defines(fm, uart, aircopy),
+                        false,
+                        9,
+                        &mut delay,
+                        NonZeroU32::MIN,
+                        &mut io
+                    ),
+                    Ok(())
+                );
+                let tail = io
+                    .events
+                    .iter()
+                    .position(|event| matches!(event, Event::St7565Init(_)))
+                    .unwrap();
+                let mut expected = Vec::new();
+                if fm {
+                    expected.push(Event::Placeholder(Call::Bk1080Init0));
+                }
+                if uart || aircopy {
+                    expected.extend([
+                        Event::CrcInit,
+                        Event::CrcWrite(0x4000_3000, 0x100),
+                        Event::CrcWrite(0x4000_3004, 0),
+                    ]);
+                }
+                assert_eq!(&io.events[tail + 1..], expected);
+            }
+        }
+    }
 }

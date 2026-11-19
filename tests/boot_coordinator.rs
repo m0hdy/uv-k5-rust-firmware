@@ -1,6 +1,9 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::num::NonZeroU32;
 
+#[path = "../src/crc_startup_adapter.rs"]
+mod crc_startup_adapter;
+
 use uv_k5_rust_firmware::boot_coordinator::{
     Acknowledgement, BatteryReadRegister, BatteryRegisterIo, BatteryWriteRegister, BoardCall,
     BoardDefines, BoardStartupError, BootConfig, BootError, I2cTransport, SettingsBootBlock,
@@ -35,6 +38,7 @@ enum Event {
     BacklightInit,
     AdcInit(u16),
     St7565Init(NonZeroU32),
+    CrcWrite(usize, u32),
     BoardPlaceholder(BoardCall),
     EepromStart,
     EepromWrite(u8),
@@ -171,6 +175,16 @@ impl StartupIo for MockIo {
 
     fn placeholder(&mut self, call: BoardCall) {
         self.events.push(Event::BoardPlaceholder(call));
+    }
+
+    fn crc_init(&mut self) {
+        crc_startup_adapter::apply_with_io(self);
+    }
+}
+
+impl crc_startup_adapter::WordIo for MockIo {
+    fn write_word(&mut self, address: usize, value: u32) {
+        self.events.push(Event::CrcWrite(address, value));
     }
 }
 
@@ -333,9 +347,11 @@ fn success_runs_board_then_fallible_settings_then_bounded_battery_sampling() {
 fn board_failure_stops_before_eeprom_and_battery_and_returns_no_app_state() {
     let mut io = MockIo::new(Failure::Systick);
     let mut delay = DelayProbe::default();
+    let mut config = config();
+    config.board.enabled_aircopy = true;
 
     assert_eq!(
-        coordinate(&mut io, &mut delay, config()),
+        coordinate(&mut io, &mut delay, config),
         Err(BootError::Board(BoardStartupError::SysTick))
     );
     assert_eq!(
@@ -349,8 +365,11 @@ fn display_failure_preserves_cause_and_stops_before_settings_and_battery() {
     let mut io = MockIo::new(Failure::Display);
     let mut delay = DelayProbe::default();
 
+    let mut config = config();
+    config.board.enable_uart = true;
+    config.board.enable_fmradio = true;
     assert_eq!(
-        coordinate(&mut io, &mut delay, config()),
+        coordinate(&mut io, &mut delay, config),
         Err(BootError::Board(BoardStartupError::St7565(
             LineError::FifoTimeout
         )))
@@ -363,6 +382,39 @@ fn display_failure_preserves_cause_and_stops_before_settings_and_battery() {
         )
     }));
     assert_eq!(delay.0, [1, 20, 120]);
+}
+
+#[test]
+fn crc_truth_table_precedes_settings_and_battery() {
+    for uart in [false, true] {
+        for aircopy in [false, true] {
+            let mut io = MockIo::new(Failure::None);
+            let mut delay = DelayProbe::default();
+            let mut config = config();
+            config.board.enable_fmradio = true;
+            config.board.enable_uart = uart;
+            config.board.enabled_aircopy = aircopy;
+            coordinate(&mut io, &mut delay, config).unwrap();
+            let display = io
+                .events
+                .iter()
+                .position(|event| matches!(event, Event::St7565Init(_)))
+                .unwrap();
+            let settings = io
+                .events
+                .iter()
+                .position(|event| *event == Event::EepromStart)
+                .unwrap();
+            let mut expected = vec![Event::BoardPlaceholder(BoardCall::Bk1080Init0)];
+            if uart || aircopy {
+                expected.extend([
+                    Event::CrcWrite(0x4000_3000, 0x100),
+                    Event::CrcWrite(0x4000_3004, 0),
+                ]);
+            }
+            assert_eq!(&io.events[display + 1..settings], expected);
+        }
+    }
 }
 
 #[test]

@@ -11,7 +11,10 @@ reuses `adc_startup_adapter::apply_to_hardware` after backlight. The next
 the ADC's `exttrig_sel` and a nonzero ST7565 FIFO poll budget; the caller
 supplies the millisecond `DelayMs` implementation. The pinned
 `BOARD_ADC_Init()` leaves `EXTTRIG_SEL` uninitialised, so no production value
-is selected here. BK1080 and CRC remain typed placeholders. SysTick or
+is selected here. After the optional BK1080 placeholder, `Call::CrcInit`
+uses `crc_startup_adapter::apply_to_hardware` exactly once if `ENABLE_UART` or
+`ENABLED_AIRCOPY` is present. Otherwise no CRC register is accessed. BK1080
+remains a typed placeholder. SysTick or
 ST7565 failure stops all later board calls; an ST7565 failure retains its
 `LineError` cause.
 
@@ -23,7 +26,13 @@ flowchart LR
   Pins --> Light["Backlight adapter"]
   Light --> ADC["SARADC adapter\ncaller-supplied EXTTRIG_SEL"]
   ADC --> Display["ST7565 SPI0/reset/startup and zero-fill page selection"]
-  Display --> Optional["Optional BK1080 and CRC placeholders"]
+  Display --> FM{"ENABLE_FMRADIO?"}
+  FM -->|yes| BK["BK1080 placeholder"]
+  FM -->|no| CRC{"ENABLE_UART or ENABLED_AIRCOPY?"}
+  BK --> CRC
+  CRC -->|yes| Init["CRC adapter"]
+  CRC -->|no| Done["Board complete"]
+  Init --> Done
   Display -->|ST7565 error| Stop["Stop with display error"]
 ```
 
@@ -31,12 +40,21 @@ The host tests check the composed call order, exact ADC trigger and display
 poll-budget forwarding, caller delay use, backlight register sequence, fresh
 read-modify-write behavior, preservation of unrelated clock and PORTB bits,
 and error short-circuiting. The boot integration test runs the existing
-`target_spi0::startup_with_io` executor and checks its command/delay trace.
+`target_spi0::startup_with_io` and CRC word executors and checks their traces.
 Target execution requires the DP32G030 PWM_PLUS0 and PORTB register mappings,
 the PWM_PLUS0 clock gate enabled by the earlier clock-gate stage, B6 reserved
 for the backlight and selected for PWMP0_CH0 by the backlight mux update, and
 exclusive access to PWM_PLUS0 CLKSRC, PERIOD, GEN, CFG and PORTB SEL0 for the
 complete sequence.
+
+The earlier device-clock assignment already enables CRC bit 27; no new
+clock policy is introduced. For an enabled CRC stage, the caller must ensure
+the CRC clock remains enabled and the aligned 32-bit registers at `0x40003000`
+and `0x40003004` are mapped and writable with appropriate privilege. Own
+both whole CR and IV registers and serialize the complete call against all
+other CRC users, including interrupt handlers. The adapter assigns `0x100`
+and then `0` to these registers; it does not calculate CRCs or implement UART
+or AirCopy.
 
 The ST7565 target stage calls the existing `target_spi0::startup_mmio`; it
 does not create a second startup plan or delay provider. Before entering it,
@@ -70,10 +88,10 @@ nor the link-only witness supplies operational handlers. The default
 `firmware_main` path remains unchanged; this board-stage wiring does not
 invoke it or complete application startup.
 
-The link-only witness delay stand-in exists only to retain and inspect the
-concrete target call path. It does not model elapsed time, provide production
+The link-only witness enables a synthetic CRC feature and uses a delay stand-in
+only to retain and inspect the concrete target call path. It does not model elapsed time, provide production
 timing, or establish a display timing policy; the witness is never executed
-or published.
+or published. The synthetic feature configuration is not production policy.
 
 The SARADC adapter may enable NVIC IRQ 4 when preserved SARADC IE bits are
 nonzero. Before running startup with interrupt delivery possible, install a

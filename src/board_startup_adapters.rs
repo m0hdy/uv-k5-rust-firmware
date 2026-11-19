@@ -9,6 +9,9 @@ pub(crate) mod backlight_startup_executor;
 #[path = "board_sequence.rs"]
 #[allow(unused_attributes)]
 mod board_sequence;
+#[path = "crc_startup_adapter.rs"]
+#[allow(dead_code, unused_attributes)]
+pub(crate) mod crc_startup_adapter;
 #[path = "device_clock_gate_startup.rs"]
 #[allow(dead_code, unused_attributes)]
 mod device_clock_gate_startup;
@@ -56,6 +59,7 @@ pub trait StartupIo {
         delay: &mut dyn DelayMs,
         fifo_poll_limit: NonZeroU32,
     ) -> Result<(), LineError>;
+    fn crc_init(&mut self);
     fn placeholder(&mut self, call: Call);
 }
 
@@ -95,6 +99,7 @@ impl<IO: StartupIo> board_sequence::Backend for SequencerBackend<'_, IO> {
                     self.result = Err(StartupError::St7565(error));
                 }
             }
+            Call::CrcInit => self.io.crc_init(),
             other => self.io.placeholder(other),
         }
     }
@@ -176,6 +181,12 @@ impl StartupIo for HardwareIo {
         unsafe { target_spi0::startup_mmio(delay, fifo_poll_limit) }
     }
 
+    fn crc_init(&mut self) {
+        // SAFETY: The caller must uphold the CRC mapping, whole-register ownership,
+        // and serialization requirements, including interrupt handlers.
+        unsafe { crc_startup_adapter::apply_to_hardware() }
+    }
+
     fn placeholder(&mut self, _call: Call) {}
 }
 
@@ -189,7 +200,11 @@ impl StartupIo for HardwareIo {
 /// install valid SysTick and SARADC vectors and handlers before this enables
 /// their interrupts. Serialize the complete SARADC operation against every
 /// writer to its touched SYSCON/SARADC registers and IRQ line. The caller must
-/// explicitly select `exttrig_sel`, provide an accurate millisecond delay,
+/// ensure the CRC clock and register mapping are valid, own its complete CR
+/// and IV registers, and serialize CRC initialization against all users,
+/// including interrupt handlers, whenever CRC is enabled. The board clock
+/// assignment already enables CRC bit 27. The caller must explicitly select
+/// `exttrig_sel`, provide an accurate millisecond delay,
 /// and provide a nonzero ST7565 FIFO poll budget; no values are inferred here.
 /// The link-only witness is deliberately not configured for hardware execution.
 pub(super) unsafe fn run_hardware(
