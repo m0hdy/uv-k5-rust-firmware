@@ -17,6 +17,10 @@ on:
 permissions:
   contents: read
 
+env:
+  DEVELOPMENT_IMAGE_AUTHOR: M0HDY
+  DEVELOPMENT_IMAGE_VERSION: dev
+
 jobs:
   host:
     name: Host checks
@@ -138,14 +142,14 @@ jobs:
           report="$output/image-budget-report.txt"
           arm-none-eabi-objcopy -O binary "$elf" "$raw"
           python3 scripts/firmware_container.py pack "$raw" "$packed" \
-            --author UV-K5 --version dev
+            --author "$DEVELOPMENT_IMAGE_AUTHOR" --version "$DEVELOPMENT_IMAGE_VERSION"
           python3 scripts/check_firmware_image.py \
             --elf "$elf" \
             --map "$elf.map" \
             --raw "$raw" \
             --packed "$packed" \
-            --author UV-K5 \
-            --version dev 2>&1 | tee "$report"
+            --author "$DEVELOPMENT_IMAGE_AUTHOR" \
+            --version "$DEVELOPMENT_IMAGE_VERSION" 2>&1 | tee "$report"
       - name: Record development image publication evidence
         if: steps.image-gate.outcome == 'success'
         run: |
@@ -252,7 +256,7 @@ jobs:
           python3 scripts/firmware_container.py pack \
             "$output/uv-k5-rust-firmware.raw" \
             "$output/uv-k5-rust-firmware.packed" \
-            --author UV-K5 --version dev
+            --author "$DEVELOPMENT_IMAGE_AUTHOR" --version "$DEVELOPMENT_IMAGE_VERSION"
           python3 -c \
             "from pathlib import Path; p = Path('$output/uv-k5-rust-firmware.raw'); p.write_bytes(p.read_bytes() + b'\\x00')"
       - name: Gate deliberately oversized raw image
@@ -266,8 +270,8 @@ jobs:
             --map "$output/uv-k5-rust-firmware.map" \
             --raw "$output/uv-k5-rust-firmware.raw" \
             --packed "$output/uv-k5-rust-firmware.packed" \
-            --author UV-K5 \
-            --version dev 2>&1 | tee "$output/negative-image-gate-report.txt"
+            --author "$DEVELOPMENT_IMAGE_AUTHOR" \
+            --version "$DEVELOPMENT_IMAGE_VERSION" 2>&1 | tee "$output/negative-image-gate-report.txt"
       - name: Require clear rejection of invalid raw payload
         if: always() && steps.target-build.outcome == 'success'
         run: |

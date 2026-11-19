@@ -1,6 +1,7 @@
 # uv-k5-rust-firmware
 
-Standalone Rust migration target for the UV-K5(8). It has a minimal Cortex-M0
+M0HDY's standalone Rust port for the UV-K5(8), based on the
+[egzumer C firmware](docs/reference-baseline.md). It has a minimal Cortex-M0
 reset/vector path and linker layout, but remains an unqualified bootstrap, not
 a flashable firmware image. It makes no assumptions about the radio's boot ROM,
 bootloader handoff, clock state, or physical hardware revision.
@@ -43,7 +44,8 @@ tracked lockfile. Host checks exercise startup-layout and ELF/raw-payload
 memory-budget fixtures with positive and negative cases. The target job checks
 the built ELF and linker map, records their SHA-256 hashes in the workflow
 summary, and always attaches those diagnostics after a successful link. The
-separate development-image artifact is uploaded only after the startup-layout,
+separate development-image artifact carries the packed version label `*M0HDY dev`
+and is uploaded only after the startup-layout,
 memory-budget, and packed-container checks pass. The raw and packed files are
 unvalidated development outputs: the bootstrap is not hardware-validated and
 must not be treated as flashable or release-ready. The isolated negative job
