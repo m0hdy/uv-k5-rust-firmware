@@ -410,6 +410,25 @@ class StartupWitnessCheckerTests(unittest.TestCase):
     def test_accepts_linked_backend_dispatch_to_matching_hardware_methods(self):
         validate_call_path(CONNECTED_DISPATCH)
 
+    def test_literal_load_accepts_gnu_annotation_styles(self):
+        for marker in ("@", ";"):
+            with self.subTest(marker=marker):
+                disassembly = CONNECTED_DISPATCH.replace(
+                    " 1034: 490d ldr r1, [pc, #52]",
+                    f" 1034:\t490d      \tldr\tr1, [pc, #52]\t{marker} (106c <literal>)",
+                )
+                validate_call_path(disassembly)
+
+    def test_literal_load_rejects_wrong_operand_with_annotation(self):
+        for marker in ("@", ";"):
+            with self.subTest(marker=marker):
+                disassembly = CONNECTED_DISPATCH.replace(
+                    " 1034: 490d ldr r1, [pc, #52]",
+                    f" 1034:\t490d      \tldr\tr2, [pc, #52]\t{marker} (106c <literal>)",
+                )
+                with self.assertRaisesRegex(WitnessError, "variant 1.*continuation"):
+                    validate_call_path(disassembly)
+
 
 if __name__ == "__main__":
     unittest.main()

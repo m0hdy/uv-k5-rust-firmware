@@ -399,7 +399,7 @@ def validate_backend_dispatch(disassembly: str) -> None:
     systick_end = expect(
         systick_end,
         "ldr",
-        r"\s*r1,\s*\[pc,\s*#\d+\](?:\s+@.*)?\s*",
+        r"\s*r1,\s*\[pc,\s*#\d+\](?:\s+[@;].*)?\s*",
         1,
     )
     systick_end = expect_call(systick_end, methods[1], 1)
