@@ -1,5 +1,3 @@
-#![cfg_attr(not(test), no_std)]
-
 //! GPIOA/PortCon implementation of the I2C bit-flow operations.
 
 use super::{Direction, I2cIo, Level};
@@ -164,10 +162,13 @@ impl<D: Delay1us> GpioI2cIo<TargetRegisters, D> {
     /// clock, selected GPIOA10/11 in PORTA_SEL1, and set both pins to output
     /// with input-enable and open-drain disabled, as in the pinned
     /// `BOARD_PORTCON_Init` and `BOARD_GPIO_Init`. The caller must exclusively
-    /// own PA10/PA11 until this value is handed back or dropped: keypad scans,
-    /// interrupts, and other bus users must not access the pins in that period.
-    /// The caller must complete the transaction with STOP before handoff or
-    /// drop; dropping restores pin configuration but does not stop the bus.
+    /// own PA10/PA11 until this value is handed back or dropped. In addition,
+    /// the caller must serialize this backend's operations, handoff, and drop
+    /// against every writer to GPIOA DATA/DIR and PORTA input-enable/open-drain,
+    /// including interrupts or other users that only modify unrelated pins;
+    /// each operation uses a full-register read-modify-write. The caller must
+    /// complete the transaction with STOP before handoff or drop; dropping
+    /// restores pin configuration but does not stop the bus.
     /// The supplied delay provider is responsible for implementing each
     /// requested one-microsecond delay; this constructor makes no timing claim.
     pub unsafe fn new_target(delay: D) -> Self {

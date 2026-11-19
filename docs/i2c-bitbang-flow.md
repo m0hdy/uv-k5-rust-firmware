@@ -44,12 +44,16 @@ before normal I2C use.
 
 PA10/PA11 are shared with the keypad. Creating the target backend is unsafe:
 the caller must suspend keypad scans and prevent every other interrupt,
-thread, or bus user from accessing either pin while the backend exists.
-Complete the transaction, including STOP, before calling
-`handoff_to_keypad` or dropping the backend. Handoff drives SDA high and
-restores PA11 output mode with input-enable and open-drain disabled, matching
-the board setup. This backend does not arbitrate ownership or restore keypad
-scan state.
+thread, or bus user from accessing either pin while the backend exists. The
+caller must also serialize the backend's operations, `handoff_to_keypad`, and
+`Drop` against every writer to GPIOA DATA/DIR and PORTA input-enable/open-drain.
+This includes writers that only modify unrelated pins: each backend operation
+uses a full-register read-modify-write, so a concurrent write to another bit
+could otherwise be lost. Complete the transaction, including STOP, before
+calling `handoff_to_keypad` or dropping the backend. Handoff drives SDA high
+and restores PA11 output mode with input-enable and open-drain disabled,
+matching the board setup. This backend does not arbitrate ownership or restore
+keypad scan state.
 
 The backend requires an explicit `Delay1us` provider and forwards every delay
 request from the bit-flow. It has no built-in delay implementation or calibrated

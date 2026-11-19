@@ -2,6 +2,7 @@
 
 //! Offline model of the pinned I2C bit and bus-edge sequence.
 
+#[path = "i2c_bitbang_flow/target_gpio.rs"]
 pub mod target_gpio;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
