@@ -45,9 +45,9 @@ configuration; `BATTERY_GetReadings(false)` and its display/charging policy;
 AM-fix setup; boot-mode and key-release handling; welcome UI; and application
 loop setup. No battery calibration value, battery poll budget, display delay,
 or ST7565 FIFO poll budget is supplied by default. The board path does not
-call initialize-and-show welcome or invoke `firmware_main`; welcome APIs
-remain callable continuations and application entry wiring remains outside
-this coordinator.
+call initialize-and-show welcome, the separate already-initialized-display
+welcome continuation, or `firmware_main`; those callable welcome entries and
+application entry wiring remain outside this coordinator.
 
 Production use requires concrete implementations of all three I/O boundaries.
 The board boundary must execute every required hardware stage, including the

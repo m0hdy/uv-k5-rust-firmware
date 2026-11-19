@@ -56,8 +56,10 @@ clock gate. These whole-register/interrupt serialization requirements cover
 the complete multi-register startup, not only individual volatile accesses.
 `FillScreen(0)` preserves the pinned behavior: it selects pages 0 through 7
 but writes no pixel bytes. Board wiring does not call the initialize-and-show
-welcome API, which remains a separate callable continuation for an already
-initialized display.
+welcome APIs. The already-initialized-display continuation is the distinct
+`eeprom_welcome_startup::welcome_on_initialized_display_with_io` entry (or
+its explicit-version counterpart); it acquires the welcome mode and continues
+without reinitializing the controller.
 
 The existing interrupt obligations remain: install a valid SysTick handler
 before enabling SysTick, and if preserved SARADC IE bits can enable NVIC IRQ 4,
@@ -98,17 +100,19 @@ tests. The SysTick vector must match the exact linked handler symbol, whose
 first instruction must be `bx lr`.
 
 The backend-dispatch check is intentionally pinned to the emitted Cortex-M0
-shape. It requires the function entry to save incoming `r1` at `sp+8`, load
-that saved variant, byte-extend and save the checked index, compare against 6,
-and branch with `bhi` to the non-table placeholder path. The path must return
-to the stack teardown before the contiguous indexed-table sequence reloads the
-saved index from `sp+4`, scales it, addresses the literal table, and branches
-through its entry. Each of the first seven cases is checked through its
-matching hardware call and the following continuation to the shared stack
-teardown. This includes the ADC case's forwarded trigger field and the
-reachable ST7565 dispatch case. The latter must call the concrete target entry.
-The backlight case must reach the real executor and preserve the pinned
-register sequence.
+shape. It requires the function entry to save incoming `r1` (the variant) at
+`sp+12` and the `self` pointer at `sp+8`, load the saved variant, byte-extend
+and save the checked index, compare against 6, and branch with `bhi` to the
+non-table placeholder path. The path must return to the stack teardown before
+the contiguous indexed-table sequence reloads the saved index from `sp+4`,
+scales it, addresses the literal table, and branches through its entry. The
+first six backend cases are checked through their matching hardware call and
+the following continuation to the shared stack teardown; this includes the
+ADC case's forwarded trigger field. The seventh, ST7565 case is checked for a
+reachable `st7565_init` call; this case helper does not pin its complete
+typed-error continuation. The ST7565 target entry is separately checked for
+calls into `startup_mmio` and `startup_with_io`. The backlight case must reach
+the real executor and preserve the pinned register sequence.
 The SysTick case also checks the `Result::is_err` split: success continues to
 teardown, while the error edge stores the stopped flag before joining that same
 teardown. The sequencer's first seven backend calls are checked for their call
@@ -117,9 +121,9 @@ shared return epilogue. The `run_hardware` wrapper and all seven target
 wrappers are checked from their linked calls through stack cleanup and return.
 The display entry is checked for its call into the existing MMIO startup
 executor, and that entry is checked for its call into `startup_with_io`. The
-adapter's `Result` split is checked so both success and error edges reach its
-shared return. Reset and `witness_main` retain their intentional terminal
-loops and are not treated as returning wrappers.
+`run_hardware` wrapper's `Result` split is checked so both success and error
+edges reach its shared return. Reset and `witness_main` retain their
+intentional terminal loops and are not treated as returning wrappers.
 Unexpected instructions, conditional branches, or changed guard inputs,
 destinations, and continuations are rejected. This is linked structural
 evidence for the emitted paths; it is not a general-purpose Thumb control-flow

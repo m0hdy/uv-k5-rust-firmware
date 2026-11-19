@@ -41,11 +41,13 @@ wiring these callable boundaries into the firmware/application entry remains
 outstanding.
 
 The separate [board startup adapter path](docs/board-startup-adapters.md)
-executes clock-gate, SysTick, PortCon, GPIO, backlight, and SARADC adapters in
-the pinned order. SARADC requires a caller-supplied `EXTTRIG_SEL`; ST7565,
-BK1080, and CRC remain placeholders. This library path is not wired into the
-default firmware entry point, and its link-only witness does not provide an
-operational ADC IRQ handler or hardware-validation evidence.
+executes clock-gate, SysTick, PortCon, GPIO, backlight, SARADC, and the
+concrete ST7565 SPI0/reset startup executor in the pinned order. SARADC
+requires a caller-supplied `EXTTRIG_SEL`, and ST7565 requires a caller-provided
+millisecond delay and nonzero FIFO poll budget. BK1080 and CRC remain typed
+placeholders. This library path is not wired into the default firmware entry
+point, and its link-only witness does not provide an operational ADC IRQ
+handler or hardware-validation evidence.
 
 ## Requirements and checks
 
