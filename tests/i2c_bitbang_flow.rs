@@ -559,3 +559,149 @@ fn gpio_backend_keeps_bridge_stop_cleanup_on_first_block_nack() {
     assert_eq!(state.values[2] & SDA_MASK, 0);
     assert_eq!(state.values[3] & SDA_MASK, 0);
 }
+
+#[derive(Default)]
+struct WelcomeDisplay {
+    accesses: usize,
+    bytes: Vec<u8>,
+    gpio: Option<SharedRegisters>,
+}
+
+impl uv_k5_rust_firmware::st7565_startup_executor::target_spi0::RegisterIo for WelcomeDisplay {
+    fn read(&mut self, _: usize) -> u32 {
+        if let Some(gpio) = &self.gpio {
+            let state = gpio.borrow();
+            assert!(state.samples.is_empty());
+            assert_eq!(state.delays, 420);
+            assert_eq!(state.values[0] & (SCL_MASK | SDA_MASK), SCL_MASK | SDA_MASK);
+        }
+        self.accesses += 1;
+        0
+    }
+
+    fn write(&mut self, address: usize, value: u32) {
+        self.accesses += 1;
+        if address == 0x400b_8004 {
+            self.bytes.push(value as u8);
+        }
+    }
+}
+
+#[derive(Default)]
+struct WelcomeDelay(Vec<u16>);
+
+impl uv_k5_rust_firmware::st7565_startup_executor::target_spi0::DelayMs for WelcomeDelay {
+    fn delay_ms(&mut self, ms: u16) {
+        self.0.push(ms);
+    }
+}
+
+#[test]
+fn gpio_bitbang_acquires_welcome_mode_before_concrete_display_startup() {
+    use uv_k5_rust_firmware::eeprom_i2c_bridge::I2cBitbangTransport;
+    use uv_k5_rust_firmware::eeprom_welcome_startup::{EepromWelcomeError, welcome_with_io};
+
+    for raw in [0, 1, 2, 3, 4, 255] {
+        let response = [0x5a, 0xa5, 0x80, 0x40, 0x20, 0x10, 0x08, raw];
+        let samples = startup_samples(&[response, response]);
+        let (mut gpio, shared) = target_mock(samples[..68].iter().copied());
+        let mut display = WelcomeDisplay {
+            gpio: Some(shared.clone()),
+            ..WelcomeDisplay::default()
+        };
+        let mut delay = WelcomeDelay::default();
+        let mut pages = [[0xa5; 128]; 7];
+        welcome_with_io(
+            &mut I2cBitbangTransport::new(&mut gpio),
+            &mut display,
+            &mut delay,
+            &mut pages,
+            std::num::NonZeroU32::new(3).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            display.bytes.len(),
+            if [0, 3].contains(&raw) { 41 } else { 173 }
+        );
+        assert!(!delay.0.is_empty());
+        assert_register_rmw_preserves_unrelated_bits(&shared.borrow().events);
+        gpio.handoff_to_keypad();
+        let state = shared.borrow();
+        assert_eq!(state.values[1] & SDA_MASK, SDA_MASK);
+        assert_eq!(state.values[2] & SDA_MASK, 0);
+        assert_eq!(state.values[3] & SDA_MASK, 0);
+    }
+
+    let (mut gpio, shared) = target_mock([High; 255]);
+    let mut display = WelcomeDisplay::default();
+    let mut delay = WelcomeDelay::default();
+    let mut pages = [[0xa5; 128]; 7];
+    assert_eq!(
+        welcome_with_io(
+            &mut I2cBitbangTransport::new(&mut gpio),
+            &mut display,
+            &mut delay,
+            &mut pages,
+            std::num::NonZeroU32::new(3).unwrap(),
+        ),
+        Err(EepromWelcomeError::Acquisition(ReadError::NotAcknowledged))
+    );
+    assert_eq!(display.accesses, 0);
+    assert!(delay.0.is_empty());
+    assert_eq!(pages, [[0xa5; 128]; 7]);
+    assert_eq!(shared.borrow().delays, 36);
+    gpio.handoff_to_keypad();
+    assert_eq!(shared.borrow().values[3] & SDA_MASK, 0);
+}
+
+#[test]
+fn welcome_acquisition_bit_trace_has_exact_address_and_seven_acks_then_nack() {
+    use uv_k5_rust_firmware::eeprom_i2c_bridge::I2cBitbangTransport;
+    use uv_k5_rust_firmware::eeprom_welcome_startup::welcome_with_io;
+
+    let response = [0xa5, 0x5a, 0xff, 0x80, 0x01, 0x40, 0x20, 1];
+    let samples = startup_samples(&[response, response]);
+    let mut pins = Mock::with_samples(samples[..68].iter().copied());
+    welcome_with_io(
+        &mut I2cBitbangTransport::new(&mut pins),
+        &mut WelcomeDisplay::default(),
+        &mut WelcomeDelay::default(),
+        &mut [[0; 128]; 7],
+        std::num::NonZeroU32::new(3).unwrap(),
+    )
+    .unwrap();
+
+    let start = [
+        Op::Sda(High),
+        Op::Delay,
+        Op::Scl(High),
+        Op::Delay,
+        Op::Sda(Low),
+        Op::Delay,
+        Op::Scl(Low),
+        Op::Delay,
+    ];
+    let mut expected = start.to_vec();
+    let bits =
+        |byte: u8| std::array::from_fn(|bit| if byte & (0x80 >> bit) == 0 { Low } else { High });
+    for byte in [0xa0, 0x0e, 0x90] {
+        expected.extend(write_trace(bits(byte), &[Low]));
+    }
+    expected.extend(start);
+    expected.extend(write_trace(bits(0xa1), &[Low]));
+    for (index, byte) in response.into_iter().enumerate() {
+        expected.push(Op::Delay);
+        expected.extend(read_trace(bits(byte), if index == 7 { High } else { Low }));
+    }
+    expected.extend([
+        Op::Sda(Low),
+        Op::Delay,
+        Op::Scl(Low),
+        Op::Delay,
+        Op::Scl(High),
+        Op::Delay,
+        Op::Sda(High),
+        Op::Delay,
+    ]);
+    pins.assert_trace(&expected);
+}
