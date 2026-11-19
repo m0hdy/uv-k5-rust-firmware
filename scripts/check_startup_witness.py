@@ -161,6 +161,10 @@ def validate_required_call_targets(disassembly: str) -> None:
         ),
         ("StartupIo>::adc_init", "StartupIo>::adc_init", True),
         ("StartupIo>::st7565_init", "StartupIo>::st7565_init", True),
+        ("StartupIo>::crc_init", "StartupIo>::crc_init", True),
+        ("crc_startup_adapter::apply_to_hardware", "crc_startup_adapter::apply_to_hardware", True),
+        ("crc_startup_adapter::apply_with_io::<", "crc_startup_adapter::apply_with_io::<", False),
+        ("crc_startup_adapter::WordIo>::write_word", "crc_startup_adapter::WordIo>::write_word", True),
         ("target_spi0::startup_mmio", "target_spi0::startup_mmio", False),
         (
             "target_spi0::startup_with_io::<",
@@ -276,6 +280,9 @@ def validate_required_call_targets(disassembly: str) -> None:
         ("StartupIo>::backlight_init_hardware", True),
         ("StartupIo>::adc_init", True),
         ("StartupIo>::st7565_init", True),
+        ("StartupIo>::crc_init", True),
+        ("crc_startup_adapter::apply_to_hardware", True),
+        ("crc_startup_adapter::apply_with_io::<", False),
         ("target_spi0::startup_mmio", False),
         ("adc_startup_adapter::physical::target::apply_to_hardware", False),
         ("adc_startup_adapter::physical::apply_with_words::<", False),
@@ -782,14 +789,6 @@ def validate_backlight_initializer_path(function: str) -> None:
         function,
         "backlight hardware initializer",
         [
-            (
-                "bl",
-                r"\s*[0-9a-fA-F]+\s+<.*>.*",
-                "backlight_startup_executor::apply_with_io",
-            ),
-            ("pop", r"\s*\{\s*r7,\s*pc\s*\}\s*", None),
-        ],
-        [
             ("push", r"\s*\{\s*r7,\s*lr\s*\}\s*", None),
             ("add", r"\s*r7,\s*sp,\s*#0\s*", None),
             ("sub", r"\s*sp,\s*#8\s*", None),
@@ -890,63 +889,6 @@ def validate_stopped_guard(
     )
 
 
-def validate_variant_guard(
-    prefix: list[tuple[int, int, str, str, str]],
-    branch: tuple[int, int, str, str, str],
-    instructions: list[tuple[int, int, str, str, str]],
-    highest_variant: int = 5,
-    variant_stack_offset: int = 8,
-    index_stack_offset: int = 0,
-    self_stack_offset: int = 4,
-) -> bool:
-    if len(prefix) < 5:
-        return False
-    load, extend, save, compare = prefix[-5:-1]
-    if not (
-        matches_instruction(
-            load, "ldr", rf"\s*r0,\s*\[sp,\s*#{variant_stack_offset}\]\s*"
-        )
-        and matches_instruction(extend, "uxtb", r"\s*r0,\s*r0\s*")
-        and matches_instruction(
-            save, "str", rf"\s*r0,\s*\[sp,\s*#{index_stack_offset}\]\s*"
-        )
-        and matches_instruction(compare, "cmp", rf"\s*r0,\s*#{highest_variant}\s*")
-        and branch[2] == "bhi.n"
-    ):
-        return False
-
-    target = branch_target(branch)
-    if target is None:
-        return False
-    by_address = {instruction[0]: instruction for instruction in instructions}
-    handler = [by_address.get(target + offset) for offset in (0, 2, 4, 6)]
-    if not all(handler):
-        return False
-    call = handler[3]
-    return_target = next(
-        (
-            branch_target(instruction)
-            for instruction in prefix
-            if instruction[2] == "bne.n"
-        ),
-        None,
-    )
-    tail = by_address.get(call[0] + call[1])
-    return (
-        matches_instruction(
-            handler[0], "ldr", rf"\s*r1,\s*\[sp,\s*#{variant_stack_offset}\]\s*"
-        )
-        and matches_instruction(
-            handler[1], "ldr", rf"\s*r0,\s*\[sp,\s*#{self_stack_offset}\]\s*"
-        )
-        and matches_instruction(handler[2], "ldr", r"\s*r0,\s*\[r0,\s*#0\]\s*")
-        and any("placeholder" in target for target in direct_call_targets(call[4]))
-        and tail is not None
-        and tail[2] in ("b.n", "b.w")
-        and branch_target(tail) == return_target
-    )
-
-
 def require_call_edge(disassembly: str, caller: str, callee: str) -> None:
     targets = reachable_call_targets(function_block(disassembly, caller))
     if not any(callee in target for target in targets):
@@ -956,15 +898,17 @@ def require_call_edge(disassembly: str, caller: str, callee: str) -> None:
 
 
 def backend_dispatch_targets(function: str) -> list[int]:
-    target_count = 7
-    highest_variant = target_count - 1
+    # Rust's valid Call enum has exactly nine discriminants. The emitted
+    # exhaustive match therefore indexes directly without a bounds guard; the
+    # sequencer and its exclusive call sites are pinned separately below.
+    target_count = 9
     stack_size = 24
     self_stack_offset = 8
     variant_stack_offset = 12
     index_stack_offset = 4
     instructions = parse_instructions(function)
-    prefix = instructions[:20]
-    if len(prefix) != 20 or any(
+    prefix = instructions[:18]
+    if len(prefix) != 18 or any(
         previous[0] + previous[1] != current[0]
         for previous, current in zip(prefix, prefix[1:])
     ):
@@ -986,12 +930,10 @@ def backend_dispatch_targets(function: str) -> list[int]:
         (10, "ldr", rf"\s*r0,\s*\[sp,\s*#{variant_stack_offset}\]\s*"),
         (11, "uxtb", r"\s*r0,\s*r0\s*"),
         (12, "str", rf"\s*r0,\s*\[sp,\s*#{index_stack_offset}\]\s*"),
-        (13, "cmp", rf"\s*r0,\s*#{highest_variant}\s*"),
-        (14, "bhi.n", r"\s*[0-9a-fA-F]+\b.*"),
-        (15, "ldr", rf"\s*r0,\s*\[sp,\s*#{index_stack_offset}\]\s*"),
-        (16, "lsls", r"\s*r1,\s*r0,\s*#2\s*"),
-        (18, "ldr", r"\s*r0,\s*\[r0,\s*r1\]\s*"),
-        (19, "mov", r"\s*pc,\s*r0\s*"),
+        (13, "ldr", rf"\s*r0,\s*\[sp,\s*#{index_stack_offset}\]\s*"),
+        (14, "lsls", r"\s*r1,\s*r0,\s*#2\s*"),
+        (16, "ldr", r"\s*r0,\s*\[r0,\s*r1\]\s*"),
+        (17, "mov", r"\s*pc,\s*r0\s*"),
     )
     if any(
         not matches_instruction(prefix[index], mnemonic, operands)
@@ -1002,33 +944,22 @@ def backend_dispatch_targets(function: str) -> list[int]:
         )
 
     stopped_branch = prefix[8]
-    variant_branch = prefix[14]
     if (
         not validate_stopped_guard(prefix[:9], stopped_branch, instructions)
         or branch_target(prefix[9]) != prefix[10][0]
-        or not validate_variant_guard(
-            prefix[:15],
-            variant_branch,
-            instructions,
-            highest_variant,
-            variant_stack_offset,
-            index_stack_offset,
-            self_stack_offset,
-        )
     ):
         raise WitnessError(
             "sequencer backend has no reachable ordered indexed dispatch from its function entry"
         )
 
-    table = re.search(
-        r"\badd\s+r0,\s*pc,\s*#[0-9]+\b.*?\badr\s+r0,\s*([0-9a-fA-F]+)\b",
-        prefix[17][4],
+    table = re.fullmatch(
+        r"\s*r0,\s*pc,\s*#(\d+)(?:\s+[@;].*)?\s*", prefix[15][3]
     )
-    if table is None:
+    if prefix[15][2] != "add" or table is None:
         raise WitnessError(
             "sequencer backend has no reachable ordered indexed dispatch from its function entry"
         )
-    table_address = int(table.group(1), 16)
+    table_address = ((prefix[15][0] + 4) & ~3) + int(table.group(1))
     words = {}
     for line in function.splitlines():
         match = re.match(
@@ -1038,14 +969,15 @@ def backend_dispatch_targets(function: str) -> list[int]:
         if match:
             words[int(match.group(1), 16)] = int(match.group(2), 16)
     try:
-        return [
-            words[table_address + offset] & ~1
-            for offset in range(0, target_count * 4, 4)
-        ]
+        entries = [words[table_address + offset] for offset in range(0, target_count * 4, 4)]
     except KeyError as error:
         raise WitnessError(
             f"sequencer backend dispatch table is missing one of its first {target_count} targets"
         ) from error
+    instruction_addresses = {instruction[0] for instruction in instructions}
+    if any(not entry & 1 or (entry & ~1) not in instruction_addresses for entry in entries):
+        raise WitnessError("sequencer backend dispatch target is not a Thumb instruction")
+    return [entry & ~1 for entry in entries]
 
 
 def validate_st7565_executor_path(disassembly: str) -> None:
@@ -1115,7 +1047,7 @@ def validate_st7565_executor_path(disassembly: str) -> None:
 def validate_st7565_stage(disassembly: str, backend: str) -> None:
     validate_st7565_executor_path(disassembly)
     targets = backend_dispatch_targets(backend)
-    if len(targets) != 7:
+    if len(targets) != 9:
         raise WitnessError("display variant is missing from sequencer backend dispatch")
     validate_st7565_backend_case(backend, targets[6])
 
@@ -1202,7 +1134,7 @@ def validate_st7565_backend_case(backend: str, address: int) -> None:
 def validate_backend_dispatch(disassembly: str) -> None:
     backend = function_block(disassembly, ">::call", suffix=True)
     targets = backend_dispatch_targets(backend)
-    target_count = 7
+    target_count = 9
     stack_size = 24
     self_stack_offset = 8
     portcon_offset = 4
@@ -1359,6 +1291,17 @@ def validate_backend_dispatch(disassembly: str) -> None:
     adc_end = expect(adc_end, "ldrh", rf"\s*r1,\s*\[r1,\s*#{adc_offset}\]\s*", 5)
     adc_end = expect_call(adc_end, methods[5], 5)
     expect_epilogue_branch(adc_end, 5)
+
+    placeholder_end = expect(targets[7], "ldr", r"\s*r1,\s*\[sp,\s*#12\]\s*", 7)
+    placeholder_end = expect(placeholder_end, "ldr", r"\s*r0,\s*\[sp,\s*#8\]\s*", 7)
+    placeholder_end = expect(placeholder_end, "ldr", r"\s*r0,\s*\[r0,\s*#0\]\s*", 7)
+    placeholder_end = expect_call(placeholder_end, "StartupIo>::placeholder", 7)
+    expect_epilogue_branch(placeholder_end, 7)
+
+    crc_end = expect(targets[8], "ldr", r"\s*r0,\s*\[sp,\s*#8\]\s*", 8)
+    crc_end = expect(crc_end, "ldr", r"\s*r0,\s*\[r0,\s*#0\]\s*", 8)
+    crc_end = expect_call(crc_end, "StartupIo>::crc_init", 8)
+    expect_epilogue_branch(crc_end, 8)
     validate_st7565_stage(disassembly, backend)
 
 def validate_backlight_executor_paths(function: str) -> None:
@@ -2198,6 +2141,12 @@ def validate_sequencer_continuation(sequence: str) -> None:
             raise WitnessError(
                 f"linked sequencer variant {variant} has an unexpected call continuation"
             )
+        if variant < 6:
+            next_arg = by_address.get(following[0] + following[1])
+            if not matches_instruction(next_arg, "movs", rf"\s*r1,\s*#{variant + 1}\s*") or (
+                calls[variant + 1][0] != next_arg[0] + next_arg[1]
+            ):
+                raise WitnessError("linked sequencer calls are not a contiguous ordered dispatch")
 
     tail = calls[6][0] + calls[6][1]
     guard = []
@@ -2308,6 +2257,259 @@ def validate_sequencer_continuation(sequence: str) -> None:
         and matches_instruction(epilogue_instructions[1], "pop", r"\s*\{\s*r7,\s*pc\s*\}\s*")
     ):
         raise WitnessError("linked sequencer has an unexpected shared return epilogue")
+
+
+def validate_crc_configuration(disassembly: str) -> None:
+    # Pin the complete argument construction and forwarding, not just the
+    # presence of conditional CRC dispatch in the generic sequencer.
+    prefixes = (
+        ("witness_main", """
+push {r7, lr}
+add r7, sp, #0
+sub sp, #24
+add r0, sp, #16
+movs r1, #0
+strb r1, [r0, #0]
+movs r2, #1
+strb r2, [r0, #1]
+strb r1, [r0, #2]
+ldrb r4, [r0, #2]
+add r3, sp, #20
+strb r4, [r3, #2]
+ldrb r4, [r0, #0]
+ldrb r0, [r0, #1]
+lsls r0, r0, #8
+adds r0, r0, r4
+strh r0, [r3, #0]
+ldrh r0, [r3, #0]
+ldrb r3, [r3, #2]
+lsls r3, r3, #16
+adds r0, r0, r3
+str r2, [sp, #4]
+ldr r2, [pc, #16]
+str r2, [sp, #0]
+ldr r2, [pc, #16]
+add r3, sp, #12
+""", "run_hardware"),
+        ("run_hardware", """
+push {r4, r5, r6, r7, lr}
+add r7, sp, #12
+sub sp, #28
+mov r6, r0
+ldr r5, [r7, #12]
+ldr r4, [r7, #8]
+add r0, sp, #16
+strh r6, [r0, #0]
+lsrs r6, r6, #16
+strb r6, [r0, #2]
+ldrb r6, [r0, #2]
+add r0, sp, #12
+strb r6, [r0, #2]
+ldr r6, [sp, #16]
+strh r6, [r0, #0]
+ldrb r0, [r0, #2]
+add r6, sp, #24
+strb r0, [r6, #2]
+ldr r0, [sp, #12]
+strh r0, [r6, #0]
+ldrh r0, [r6, #0]
+ldrb r6, [r6, #2]
+lsls r6, r6, #16
+adds r0, r0, r6
+add r6, sp, #20
+str r6, [sp, #8]
+str r5, [sp, #4]
+str r4, [sp, #0]
+""", "board_startup_adapters::run::<"),
+        ("board_startup_adapters::run::<", """
+push {r4, r5, r6, r7, lr}
+add r7, sp, #12
+sub sp, #52
+mov r4, r3
+mov r5, r2
+mov r6, r0
+ldr r0, [r7, #16]
+str r0, [sp, #0]
+ldr r2, [r7, #12]
+ldr r3, [r7, #8]
+add r0, sp, #16
+strh r6, [r0, #0]
+lsrs r6, r6, #16
+strb r6, [r0, #2]
+ldrb r6, [r0, #2]
+add r0, sp, #12
+str r0, [sp, #4]
+strb r6, [r0, #2]
+ldr r6, [sp, #16]
+strh r6, [r0, #0]
+ldr r0, [sp, #0]
+ldr r6, [sp, #12]
+str r0, [sp, #20]
+add r0, sp, #20
+str r0, [sp, #8]
+strb r1, [r0, #4]
+ldr r0, [sp, #4]
+ldr r1, [sp, #8]
+strb r6, [r1, #5]
+strh r5, [r1, #6]
+movs r5, #0
+strb r5, [r1, #8]
+str r4, [sp, #32]
+str r3, [sp, #36]
+str r2, [sp, #40]
+movs r2, #254
+strb r2, [r1, #24]
+ldrb r0, [r0, #2]
+add r2, sp, #48
+strb r0, [r2, #2]
+ldr r0, [sp, #12]
+strh r0, [r2, #0]
+ldrh r0, [r2, #0]
+ldrb r2, [r2, #2]
+lsls r2, r2, #16
+adds r0, r0, r2
+""", "board_sequence::run::<"),
+        ("board_sequence::run::<", """
+push {r7, lr}
+add r7, sp, #0
+sub sp, #16
+str r1, [sp, #0]
+mov r2, r0
+ldr r0, [sp, #0]
+add r1, sp, #12
+strh r2, [r1, #0]
+lsrs r2, r2, #16
+strb r2, [r1, #2]
+ldrb r1, [r1, #2]
+add r2, sp, #8
+str r2, [sp, #4]
+strb r1, [r2, #2]
+ldr r1, [sp, #12]
+strh r1, [r2, #0]
+movs r1, #0
+""", "Backend>::call"),
+    )
+    for symbol, source, callee in prefixes:
+        address, name = function_entry(disassembly, symbol, False)
+        path = reachable_instruction_prefix(function_entry_body(disassembly, address, name))
+        expected = source.strip().splitlines()
+        actual = [
+            instruction[2] + " " + re.split(r"\s+[@;]\s*", instruction[3], maxsplit=1)[0].strip()
+            for instruction in path[:len(expected)]
+        ]
+        if actual != expected or len(path) <= len(expected) or not any(
+            matches_call_symbol(callee, target)
+            for target in direct_call_targets(path[len(expected)][4])
+        ):
+            raise WitnessError(f"CRC enabled configuration forwarding is invalid in {symbol}")
+
+
+def validate_crc_path(disassembly: str) -> None:
+    call = r"\s*[0-9a-fA-F]+\s+<.*>.*"
+    push = ("push", r"\s*\{\s*r7,\s*lr\s*\}\s*", None)
+    frame = ("add", r"\s*r7,\s*sp,\s*#0\s*", None)
+    pop = ("pop", r"\s*\{\s*r7,\s*pc\s*\}\s*", None)
+    paths = (
+        ("StartupIo>::crc_init", True, [
+            push, frame, ("bl", call, "crc_startup_adapter::apply_to_hardware"), pop,
+        ]),
+        ("crc_startup_adapter::apply_to_hardware", True, [
+            push, frame,
+            ("sub", r"\s*sp,\s*#8\s*", None),
+            ("add", r"\s*r0,\s*sp,\s*#4\s*", None),
+            ("bl", call, "crc_startup_adapter::apply_with_io::<"),
+            ("add", r"\s*sp,\s*#8\s*", None), pop,
+        ]),
+        ("crc_startup_adapter::apply_with_io::<", False, [
+            push, frame,
+            ("sub", r"\s*sp,\s*#8\s*", None),
+            ("str", r"\s*r0,\s*\[sp,\s*#4\]\s*", None),
+            ("movs", r"\s*r1,\s*#1\s*", None),
+            ("lsls", r"\s*r2,\s*r1,\s*#8\s*", None),
+            ("ldr", r"\s*r1,\s*\[pc,\s*#\d+\](?:\s+[@;].*)?\s*", None),
+            ("bl", call, "crc_startup_adapter::WordIo>::write_word"),
+            ("ldr", r"\s*r0,\s*\[sp,\s*#4\]\s*", None),
+            ("ldr", r"\s*r1,\s*\[pc,\s*#\d+\](?:\s+[@;].*)?\s*", None),
+            ("movs", r"\s*r2,\s*#0\s*", None),
+            ("bl", call, "crc_startup_adapter::WordIo>::write_word"),
+            ("add", r"\s*sp,\s*#8\s*", None), pop,
+        ]),
+        ("crc_startup_adapter::WordIo>::write_word", True, [
+            push, frame, ("str", r"\s*r2,\s*\[r1,\s*#0\]\s*", None), pop,
+        ]),
+    )
+    for symbol, suffix, expected in paths:
+        address, name = function_entry(disassembly, symbol, suffix)
+        body = function_entry_body(disassembly, address, name)
+        validate_exact_returning_instruction_path(body, f"CRC {symbol}", expected)
+        if "apply_with_io::<" in symbol:
+            instructions = reachable_instruction_prefix(body)
+            words = {
+                int(match.group(1), 16): int(match.group(2), 16)
+                for line in body.splitlines()
+                if (match := re.match(
+                    r"\s*([0-9a-fA-F]+):\s+(?:[0-9a-fA-F]+\s+)+\.word\s+0x([0-9a-fA-F]+)\b", line
+                ))
+            }
+            values = []
+            for index in (6, 9):
+                instruction = instructions[index]
+                immediate = re.search(r"\[pc,\s*#(\d+)\]", instruction[3])
+                literal = ((instruction[0] + 4) & ~3) + int(immediate.group(1))
+                values.append(words.get(literal))
+            if values != [0x40003000, 0x40003004]:
+                raise WitnessError("CRC executor has unexpected register literals")
+
+
+def validate_concrete_wrapper_frames(disassembly: str) -> None:
+    call = r"\s*[0-9a-fA-F]+\s+<.*>.*"
+    push = ("push", r"\s*\{\s*r7,\s*lr\s*\}\s*", None)
+    frame = ("add", r"\s*r7,\s*sp,\s*#0\s*", None)
+    pop = ("pop", r"\s*\{\s*r7,\s*pc\s*\}\s*", None)
+    mov = ("mov", r"\s*r0,\s*r1\s*", None)
+    def bl(symbol: str) -> tuple[str, str, str]:
+        return ("bl", call, symbol)
+    def stack(mnemonic: str, amount: int) -> tuple[str, str, None]:
+        return (mnemonic, rf"\s*sp,\s*#{amount}\s*", None)
+    paths = (
+        ("StartupIo>::device_clock_gates", True, [push, frame, bl("apply_device_clock_gates"), pop]),
+        ("StartupIo>::systick", True, [push, frame, mov, bl("systick_startup_adapter::apply_to_hardware"), bl("systick_startup_adapter::InvalidReload>>::map_err"), pop]),
+        ("StartupIo>::portcon", True, [push, frame, mov, bl("apply_portcon_startup_plan"), pop]),
+        ("StartupIo>::gpio", True, [push, frame, stack("sub", 56),
+            ("add", r"\s*r0,\s*sp,\s*#8\s*", None),
+            ("str", r"\s*r0,\s*\[sp,\s*#4\]\s*", None),
+            bl("gpio_init_plan::GpioPlan>::for_features"),
+            ("ldr", r"\s*r0,\s*\[sp,\s*#4\]\s*", None),
+            bl("apply_gpio_startup_plan"), stack("add", 56), pop]),
+        ("StartupIo>::backlight_init_hardware", True, [push, frame, bl("initialize_backlight_hardware"), pop]),
+        ("StartupIo>::adc_init", True, [push, frame, mov, bl("adc_startup_adapter::physical::target::apply_to_hardware"), pop]),
+        ("StartupIo>::st7565_init", True, [push, frame, stack("sub", 8),
+            ("str", r"\s*r3,\s*\[sp,\s*#0\]\s*", None),
+            ("mov", r"\s*r0,\s*r2\s*", None),
+            ("ldr", r"\s*r2,\s*\[sp,\s*#0\]\s*", None),
+            ("str", r"\s*r0,\s*\[sp,\s*#4\]\s*", None),
+            mov, ("ldr", r"\s*r1,\s*\[sp,\s*#4\]\s*", None),
+            bl("target_spi0::startup_mmio"), stack("add", 8), pop]),
+        ("target_spi0::startup_mmio", False, [push, frame, stack("sub", 8),
+            ("mov", r"\s*r3,\s*r2\s*", None),
+            ("mov", r"\s*r2,\s*r1\s*", None),
+            ("mov", r"\s*r1,\s*r0\s*", None),
+            ("add", r"\s*r0,\s*sp,\s*#4\s*", None),
+            bl("target_spi0::startup_with_io::<"), stack("add", 8), pop]),
+        ("adc_startup_adapter::physical::target::apply_to_hardware", False, [push, frame, stack("sub", 8),
+            ("mov", r"\s*r1,\s*r0\s*", None), ("add", r"\s*r0,\s*sp,\s*#4\s*", None),
+            bl("adc_startup_adapter::physical::apply_with_words::<"), stack("add", 8), pop]),
+        ("adc_startup_adapter::physical::apply_with_words::<", False, [push, frame, stack("sub", 8),
+            ("str", r"\s*r0,\s*\[sp,\s*#4\]\s*", None),
+            ("add", r"\s*r0,\s*sp,\s*#4\s*", None),
+            bl("adc_startup_adapter::apply_with_io::<"), stack("add", 8), pop]),
+    )
+    for symbol, suffix, expected in paths:
+        address, name = function_entry(disassembly, symbol, suffix)
+        validate_exact_returning_instruction_path(
+            function_entry_body(disassembly, address, name),
+            f"concrete wrapper {symbol}", expected,
+        )
 
 
 def validate_call_path(disassembly: str) -> None:
@@ -2442,8 +2644,31 @@ def validate_call_path(disassembly: str) -> None:
     )
 
     validate_backend_dispatch(disassembly)
+    validate_crc_path(disassembly)
+    validate_crc_configuration(disassembly)
     validate_backlight_register_evidence(disassembly)
     validate_required_call_targets(disassembly)
+    validate_concrete_wrapper_frames(disassembly)
+    backend_instructions = {
+        instruction[0] for instruction in parse_instructions(
+            function_block(disassembly, "board_sequence::Backend>::call", suffix=True)
+        )
+    }
+    sequence_instructions = parse_instructions(sequence)
+    sequence_calls = [
+        instruction for instruction in sequence_instructions
+        if any("Backend>::call" in target for target in direct_call_targets(instruction[4]))
+    ]
+    all_backend_calls = [
+        instruction for instruction in parse_instructions(disassembly)
+        if instruction[2] in ("bl", "blx") and (
+            ((edge := re.search(r"\bblx?\s+([0-9a-fA-F]+)\b", instruction[4]))
+             and (int(edge.group(1), 16) & ~1) in backend_instructions)
+            or any("Backend>::call" in target for target in direct_call_targets(instruction[4]))
+        )
+    ]
+    if len(sequence_calls) != 9 or sorted(all_backend_calls) != sorted(sequence_calls):
+        raise WitnessError("sequencer backend has unexpected call sources or variant dispatches")
 
 
 def validate_systick_handler(disassembly: str, handler_address: int) -> None:

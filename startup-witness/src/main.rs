@@ -45,7 +45,7 @@ pub extern "C" fn witness_main() -> ! {
         run_hardware(
             Defines {
                 enable_fmradio: false,
-                enable_uart: false,
+                enable_uart: true,
                 enabled_aircopy: false,
             },
             false,
