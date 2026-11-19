@@ -2,9 +2,11 @@
 
 ## Status and scope
 
-**STOP: no configuration or recovery image is yet qualified for this
-project.** This runbook is preparation, not permission to flash. No device
-recovery is claimed here. The intended target is the Quansheng UV-K5(8), also
+**STOP: no recovery image is yet proven on the test radio.** This runbook is
+preparation, not permission to flash Rust. A baseline-only recovery attempt in
+[#12](https://github.com/m0hdy/uv-k5-rust-firmware/issues/12) may proceed once
+its prerequisites below are met; no device recovery is claimed here. The
+intended target is the Quansheng UV-K5(8), also
 marketed as UV-K6, but the exact board revision, MCU marking, bootloader
 version and compatible image for the test radio are not yet established.
 No other model, revision, or build configuration is covered by this runbook.
@@ -20,22 +22,25 @@ pages. Do not infer interchangeability or bypass a model/version refusal.
 
 ## Recovery kit and prerequisites
 
-1. Select **one exact updater-ready recovery image and SHA-256 per supported
-   model, board/MCU revision, bootloader and configuration**, with source,
-   version and evidence that it is known-good for that configuration. Record
-   the identity in the evidence record before bench work. Keep the actual file,
-   approved updater and required drivers on an offline-capable machine or
-   offline media; verify the file hash against the approved record before each
-   upload. If the image or offline updater is missing, stop.
+1. In #12, select and approve **one exact updater-ready recovery image and
+   SHA-256 for the identified model, board/MCU revision, bootloader and
+   configuration** for the baseline attempt. Record its source, version,
+   configuration, checksum and compatibility evidence, and verify the actual
+   file against that checksum before the attempt. This approval is not proof
+   that the image restores this particular radio: that proof requires the #12
+   re-flash, cold boot and checks below. Keep the actual file, approved updater
+   and required drivers on an offline-capable machine or offline media; verify
+   the file hash against the approved record before each upload. If the image,
+   compatibility evidence or offline updater is missing, stop.
 2. The only recorded C build is the default configuration at commit
    `7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3`: updater-formatted
    `firmware.packed.bin`, SHA-256
    `bf24474da3607610c0f213827a01daa54b478c58beac950f7cd3238dc57592ae`.
-   See the [build record](reference-baseline.md#results). It is a **candidate,
-   not a known-good recovery image**: reproducibility does not establish
-   compatibility or restoration on this radio. Do not substitute it for the
-   required approved image merely because its hash is recorded. No known-good
-   image and hash has yet been named for a supported configuration.
+   See the [build record](reference-baseline.md#results). It is an
+   **unqualified candidate, not an approved or device-proven recovery
+   image**: reproducibility does not establish compatibility or restoration on
+   this radio. Do not approve it merely because its hash is recorded. Select
+   and approve the actual artifact for the baseline attempt in #12.
 3. Use a supported serial updater for the selected image and exact radio. The
    [original C upstream](https://github.com/DualTachyon/uv-k5-firmware#flashing-with-the-official-updater)
    specifies `firmware.packed.bin` for the official updater; the
@@ -118,23 +123,29 @@ or debug-probe recovery as routine alternatives.
 
 ## Bench stop/go sequence
 
-Perform one radio session at a time. Every required check must pass; failure,
-unrun, uncertain identity, hash mismatch, rejected image or unexpected behavior
-means stop, preserve evidence and do not proceed. Do not retry with a forced
-or different procedure to bypass a failure.
+Perform one radio session at a time. Every check required for the current
+stage must pass; failure, unrun, uncertain identity, hash mismatch, rejected
+image or unexpected behavior means stop, preserve evidence and do not proceed.
+Do not retry with a forced or different procedure to bypass a failure.
 
-1. Complete the kit, backup, standalone entry/detection and audit prerequisites
-   above. Record the approved recovery image and hash. With no approved image
-   for this configuration, even baseline flashing is blocked.
+1. For the baseline-only #12 attempt, complete the recovery kit, backup,
+   standalone entry/detection and approved updater/recovery path prerequisites
+   above. Select and approve the recovery artifact in #12, recording its
+   identity, compatibility evidence and verified hash. With any prerequisite
+   missing, baseline flashing is blocked. No Rust candidate or Rust candidate
+   audit is required for #12.
 2. In [#12](https://github.com/m0hdy/uv-k5-rust-firmware/issues/12), before
    **any** Rust upload, use the approved updater to re-flash that exact
    recovery image. Record detection and upload result; disconnect only after
    completion, power fully off, cold boot, and check display, keys, receive and
    audio with a controlled signal, channel/frequency readback and settings.
-   Verify settings recovery separately as above. Record results in #12; the
-   same radio, image hash, updater and path must pass before proceeding.
-3. After the exact Rust candidate and audit gates pass, conduct the separately
-   authorized staged attempt in [#59](https://github.com/m0hdy/uv-k5-rust-firmware/issues/59).
+   Verify settings recovery separately as above. Record results in #12; only a
+   pass establishes restoration of that image on this radio. The same radio,
+   image hash, updater and path must pass before any Rust upload.
+3. Before #59 and any Rust upload, complete the exact Rust candidate image
+   checks and application/update-process audit above. After those gates pass,
+   conduct the separately authorized staged attempt in
+   [#59](https://github.com/m0hdy/uv-k5-rust-firmware/issues/59).
    Record its packed hash, detection, upload and cold-boot/basic results.
    After the attempt, power off, re-enter and detect the standalone bootloader,
    and restore the **same** recovery image through the same approved updater.
@@ -153,19 +164,20 @@ or different procedure to bypass a failure.
 Publish only the redacted record in #12 or #59. Keep serial numbers, identifying
 settings, credentials, backups and unredacted logs private. Use an opaque
 test-device ID. Each result is **PASS / FAIL / UNRUN** with a redacted evidence
-reference; an unrun required check is not a pass.
+reference; an unrun check required for that stage is not a pass. Rust-specific
+fields may remain UNRUN in the baseline-only #12 record.
 
 | Field | Record |
 | --- | --- |
 | Session / stage / date / opaque device ID | UNRUN |
 | Model, board revision, MCU marking, bootloader version / compatibility source | UNRUN |
-| Recovery image name, source, version, configuration, SHA-256 / offline availability | UNRUN |
-| Rust source commit; ELF, map, raw and packed SHA-256 / gate report | UNRUN |
+| #12 recovery image name, source, version, configuration, compatibility evidence, SHA-256 / approval and offline availability | UNRUN |
+| #59 Rust source commit; ELF, map, raw and packed SHA-256 / gate report | UNRUN |
 | Updater name, version, source, offline readiness; cable, port and power | UNRUN |
-| Audit reviewer, exact candidate and updater, evidence / separately tracked gaps | UNRUN |
+| #59 audit reviewer, exact candidate and updater, evidence / separately tracked gaps | UNRUN |
 | Settings/EEPROM backup scope, integrity and safe restore method | UNRUN |
 | Standalone bootloader LED, updater detection and independent-entry evidence | UNRUN |
-| #12 recovery upload / cold boot / display, keys, receive/audio, readback | UNRUN |
+| #12 recovery upload / cold boot / display, keys, receive/audio, readback / device restoration proof | UNRUN |
 | #12 settings comparison, restore if needed, readback and persistence | UNRUN |
 | #59 Rust detection / upload / cold boot / basic checks | UNRUN |
 | #59 post-attempt bootloader detection / same-image upload / cold boot / basic checks | UNRUN |

@@ -153,8 +153,9 @@ claiming a rollback path:
 3. Use a charged, stable power source and the controlled bench setup. Record
    programmer/software versions, cable, image hash, start/end time, and all
    status/error messages.
-4. Restore the known-good image, reboot, and verify boot, display, keys, receive,
-   channel/frequency readback, settings, and UART readback as applicable.
+4. Re-flash the recovery image approved for the baseline attempt, reboot, and
+   verify boot, display, keys, receive, channel/frequency readback, settings,
+   and UART readback as applicable.
 5. Record the observed results, device and build identities, and evidence link.
    Do not report restoration success until these checks have actually passed.
 
