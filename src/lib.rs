@@ -18,6 +18,7 @@ pub mod scan_decisions;
 pub mod settings_boot_composition;
 #[allow(unused_attributes)]
 pub mod settings_boot_defaults;
+pub mod scheduler;
 pub mod tuning_signalling;
 
 pub struct ByteQueue<const CAPACITY: usize> {

@@ -1,4 +1,4 @@
-#![no_std]
+//! Sticky periodic flags; the caller delivers ticks and acknowledges work.
 
 pub struct PeriodicSchedulerFlags {
     counter: u32,
@@ -60,5 +60,11 @@ impl PeriodicSchedulerFlags {
 
     pub fn acknowledge_500ms(&mut self) {
         self.pending_500ms = false;
+    }
+}
+
+impl Default for PeriodicSchedulerFlags {
+    fn default() -> Self {
+        Self::new()
     }
 }

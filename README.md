@@ -6,6 +6,32 @@ reset/vector path and linker layout, but remains an unqualified bootstrap, not
 a flashable firmware image. It makes no assumptions about the radio's boot ROM,
 bootloader handoff, clock state, or physical hardware revision.
 
+## Target component architecture
+
+The diagram shows how the completed Rust firmware is intended to fit
+together. The [component guide](docs/components.md) describes the boundaries
+and links to each subsystem's behavior and focused checks.
+
+```mermaid
+flowchart LR
+  Reset["Reset and runtime init"] --> Board["Board bring-up"]
+  Board --> Settings["Load settings"]
+  Settings --> Welcome["Startup display"]
+  Welcome --> Loop["Application scheduler"]
+  Board --> Tick["SysTick source"]
+  Tick --> Loop
+  Loop --> Input["Keypad and debounce"]
+  Input --> Control["Channel, tuning, and scan flows"]
+  Loop --> Control
+  Loop --> Battery["Battery sampling and status"]
+  Settings --> Storage["EEPROM transport"]
+  Control --> Storage
+  Control --> Radio["Radio drivers"]
+  Welcome --> Display["LCD rendering and SPI transport"]
+  Control --> Display
+  Battery --> Display
+```
+
 ## Requirements and checks
 
 The repository pins Rust 1.99.1 and the `thumbv6m-none-eabi` target in
