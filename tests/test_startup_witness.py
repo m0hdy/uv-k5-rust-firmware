@@ -259,6 +259,7 @@ CONNECTED_DISPATCH = """
  884: 9900 ldr r1, [sp, #156]
  886: f000 f800 bl 910 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>
  88a: f000 f800 bl 910 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>
+ 88e: 4770 bx lr
 00000900 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::read>:
  900: 4608 mov r0, r1
  902: f000 f800 bl 930 <backlight_startup_executor::RegisterAddress>::from_register>
@@ -571,6 +572,14 @@ BACKLIGHT_EXECUTOR_PLAN_BYPASS_REJOIN = _shift_apply_instructions(
     " 848: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
 )
 
+BACKLIGHT_EXECUTOR_RETURN_BYPASSES_PLAN = _shift_apply_instructions(
+    CONNECTED_DISPATCH, 0x84A
+).replace(
+    " 846: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
+    " 846: d023 beq.n 890 <backlight_startup_executor::apply_with_io+0x4a>\n"
+    " 848: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
+)
+
 BACKLIGHT_EXECUTOR_UNSUPPORTED_BRANCH = CONNECTED_DISPATCH.replace(
     " 846: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
     " 846: 4687 mov pc, r0",
@@ -804,6 +813,10 @@ class StartupWitnessCheckerTests(unittest.TestCase):
     def test_rejects_backlight_executor_branch_that_bypasses_plan_call_and_rejoins(self):
         with self.assertRaisesRegex(WitnessError, "backlight executor.*initialization plan"):
             validate_call_path(BACKLIGHT_EXECUTOR_PLAN_BYPASS_REJOIN)
+
+    def test_rejects_backlight_executor_branch_that_returns_before_plan(self):
+        with self.assertRaisesRegex(WitnessError, "backlight executor.*initialization plan"):
+            validate_call_path(BACKLIGHT_EXECUTOR_RETURN_BYPASSES_PLAN)
 
     def test_rejects_backlight_rmw_branch_that_bypasses_read_and_rejoins(self):
         with self.assertRaisesRegex(WitnessError, "ordered fresh RMW register evidence"):

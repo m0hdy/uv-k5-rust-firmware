@@ -813,6 +813,19 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
         for instruction, _ in register_calls
     ):
         raise WitnessError("backlight executor does not apply the ordered initialization plan")
+    if any(
+        plan_calls[1] not in apply_dominators[instruction[0]]
+        for instruction in instructions
+        if (
+            instruction[2] == "bx"
+            and re.fullmatch(r"\s*lr\s*", instruction[3])
+        )
+        or (
+            (instruction[2] == "pop" or instruction[2].startswith("ldm"))
+            and re.search(r"\bpc\b", instruction[3])
+        )
+    ):
+        raise WitnessError("backlight executor does not apply the ordered initialization plan")
 
     instruction_indexes = {instruction[0]: index for index, instruction in enumerate(instructions)}
     for pair, operation in zip(
