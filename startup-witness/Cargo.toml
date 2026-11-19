@@ -1,0 +1,17 @@
+[package]
+name = "startup-adapter-witness"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "startup-adapter-witness"
+path = "src/main.rs"
+test = false
+bench = false
+
+[profile.release]
+opt-level = 0
+debug = 0
+codegen-units = 1
+panic = "abort"
