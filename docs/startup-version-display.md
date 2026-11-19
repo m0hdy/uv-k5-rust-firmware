@@ -101,6 +101,25 @@ the entire call, across delays and row transfer. See the
 [startup backend](st7565-startup.md#callable-target-boundary) for the exact
 register mappings and initialization requirements.
 
+For board startup that has already successfully initialized the controller,
+`welcome_on_initialized_display_with_io` displays the package version without
+repeating SPI0 setup, reset, controller commands, or millisecond delays.
+`welcome_on_initialized_display_with_version_and_io` supplies the explicit
+version boundary. Both reuse the same validation, rendering and bounded row
+transfer: text modes send only the four row commands and 128 bytes described
+above; suppressed modes access no display registers and leave pages untouched.
+Validation errors precede display I/O; after rendering, transfer failure may
+leave page 6 modified and restores `MSR_SSN` as described above.
+
+The ARM bare-metal `welcome_on_initialized_display_mmio` requires successful
+prior controller initialization, mapped SPI0 CR/WDR/IF/FIFOST and GPIOB DATA,
+enabled SPI0/GPIOB clocks, configured display SPI0 mux and PB9 A0 output,
+operational status flags and an idle bus. It does not configure pins. Exclusive
+display ownership and serialization against every writer of those whole
+registers, including interrupts and unrelated-bit writers, must hold throughout
+the call. FIFO and drain polling use the same bounds as above. It needs no
+millisecond delay provider and does not reset PB11.
+
 This is a callable offline-validated entry, not evidence that the default
 `Reset_Handler` or application boot invokes it. Board/firmware entry wiring
 remains separate work under #234.
@@ -132,18 +151,24 @@ and
 
 ```mermaid
 flowchart LR
+    BOARD["Board order: initialize SPI0/reset/controller once"] -->|Success| EEPROM
     EEPROM["Read 8 bytes at 0x0E90 using existing fallible transport"] --> STOP["Complete STOP"]
     EEPROM -->|Read or STOP error| ACQ["Return Acquisition error; no display access, display delay or page changes"]
     STOP --> MODE["Decode byte 7; values >=4 default to Voltage"]
-    MODE --> PLAN["Existing welcome: validate/render caller-owned page 6"]
-    PLAN -->|Valid or suppressed| INIT["Existing SPI0/reset/controller startup"]
+    MODE --> PLAN["Initialized-display continuation: validate/render page 6"]
     PLAN -->|Render error| ERR["Return Welcome error"]
-    INIT -->|Initialization error| ERR
-    INIT -->|Custom or Voltage| ROW["Existing bounded page 7 M0HDY version-row transfer"]
-    INIT -->|FullScreen or None| DONE["Return without version pixels"]
+    PLAN -->|Custom or Voltage| ROW["Existing bounded page 7 M0HDY version-row transfer"]
+    PLAN -->|FullScreen or None| DONE["Return without display access or page changes"]
     ROW -->|Transfer error| ERR
     ROW --> DONE
 ```
+
+The diagram shows the new `eeprom_welcome_startup::welcome_on_initialized_display_with_io`
+continuation and its explicit-version counterpart. Neither performs controller
+startup; the caller must first complete it in board order. The existing
+`welcome_with_io` and `welcome_with_version_and_io` remain initialize-and-show
+entries: after acquisition they render, initialize and then optionally
+transfer the row, preserving their original ordering.
 
 `EepromWelcomeError::Acquisition` preserves the existing `ReadError`, including
 NACK, transport and STOP errors. The eight-byte response is local: even partial
@@ -175,6 +200,14 @@ does not issue STOP. All display prerequisites above also remain mandatory,
 including PB11 reset rather than live SWD, configured mux/output pins, idle
 SPI0, and whole-register serialization across delays and transfers. Both delay
 providers must honor their units, not panic and not access shared registers.
+
+The ARM bare-metal
+`eeprom_welcome_startup::welcome_on_initialized_display_mmio` similarly uses
+the GPIO backend and hands it back to the keypad on acquisition success or
+error, before any display continuation. It requires the GPIO prerequisites
+above and the initialized-display MMIO prerequisites; the caller supplies the
+one-microsecond I2C delay, but no millisecond display startup delay. It provides
+no new timing, pin configuration, or board policy.
 
 This boundary is offline software composition, not full welcome-screen parity,
 default `Reset_Handler` wiring, device execution, hardware validation or a final
