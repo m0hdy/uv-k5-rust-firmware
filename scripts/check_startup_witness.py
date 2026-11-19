@@ -89,6 +89,18 @@ def direct_call_targets(function: str) -> list[str]:
     ]
 
 
+def matches_call_symbol(symbol: str, target: str) -> bool:
+    if symbol.endswith("::<"):
+        return symbol in target
+    return (
+        re.search(
+            rf"{re.escape(symbol)}(?:\+0x[0-9a-fA-F]+|::<.*>)?(?:>|$)",
+            target,
+        )
+        is not None
+    )
+
+
 def validate_required_call_targets(disassembly: str) -> None:
     required_symbols = (
         ("witness_main", "witness_main", False),
@@ -107,8 +119,18 @@ def validate_required_call_targets(disassembly: str) -> None:
         ),
         ("apply_device_clock_gates", "apply_device_clock_gates", False),
         ("apply_to_hardware", "apply_to_hardware", True),
+        (
+            "systick_startup_adapter::InvalidReload>>::map_err",
+            "systick_startup_adapter::InvalidReload>>::map_err",
+            False,
+        ),
         ("apply_portcon_startup_plan", "apply_portcon_startup_plan", False),
         ("apply_gpio_startup_plan", "apply_gpio_startup_plan", False),
+        (
+            "gpio_init_plan::GpioPlan>::for_features",
+            "gpio_init_plan::GpioPlan>::for_features",
+            False,
+        ),
         (
             "initialize_backlight_hardware",
             "initialize_backlight_hardware",
@@ -141,7 +163,7 @@ def validate_required_call_targets(disassembly: str) -> None:
             False,
         ),
         (
-            "Iterator>::copied",
+            "Iterator>::copied::<",
             "backlight_plan::BacklightWrite> as core::iter::traits::iterator::Iterator>::copied",
             False,
         ),
@@ -184,15 +206,7 @@ def validate_required_call_targets(disassembly: str) -> None:
         return matches[0]
 
     def matches_symbol(symbol: str, target: str) -> bool:
-        if symbol.endswith("::<"):
-            return symbol in target
-        return (
-            re.search(
-                rf"{re.escape(symbol)}(?:\+0x[0-9a-fA-F]+|::<.*>)?(?:>|$)",
-                target,
-            )
-            is not None
-        )
+        return matches_call_symbol(symbol, target)
 
     callers = (
         ("Reset_Handler", False),
@@ -230,7 +244,16 @@ def validate_required_call_targets(disassembly: str) -> None:
                 if matches_symbol(symbol, target)
             }
             if not matching_entries:
-                continue
+                allowed_helpers = (
+                    ("placeholder", "StartupError>>::is_err")
+                    if caller == "board_sequence::Backend>::call"
+                    else ()
+                )
+                if any(matches_call_symbol(helper, target) for helper in allowed_helpers):
+                    continue
+                raise WitnessError(
+                    f"required caller {caller} has an unexpected call target {target}"
+                )
 
             entry = next(iter(matching_entries), None)
             if (
@@ -1775,7 +1798,10 @@ def validate_returning_call_path(
             (
                 index
                 for index in range(search_from, len(reachable))
-                if any(symbol in target for target in direct_call_targets(reachable[index][4]))
+                if any(
+                    matches_call_symbol(symbol, target)
+                    for target in direct_call_targets(reachable[index][4])
+                )
             ),
             None,
         )

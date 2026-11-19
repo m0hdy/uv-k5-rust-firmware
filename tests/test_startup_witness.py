@@ -234,6 +234,8 @@ CONNECTED_DISPATCH = """
  800: 4770 bx lr
 00000810 <apply_to_hardware>:
  810: 4770 bx lr
+00000811 <Result<(), startup_adapter_witness::board_startup_adapters::systick_startup_adapter::InvalidReload>>::map_err>:
+ 811: bd80 pop {r7, pc}
 00000820 <apply_portcon_startup_plan>:
  820: 4770 bx lr
 00000830 <apply_gpio_startup_plan>:
@@ -1255,6 +1257,51 @@ class StartupWitnessCheckerTests(unittest.TestCase):
             "00003000 <other::backlight_startup_executor::apply_with_io::<VolatileRegisterIo>>",
             mutated,
         )
+        with self.assertRaisesRegex(WitnessError, "required call target.*symbol entry"):
+            validate_call_path(mutated)
+
+    def test_rejects_initializer_call_redirected_to_lookalike_noop(self):
+        original = " 740: f000 f800 bl 840 <initialize_backlight_hardware>"
+        replacement = " 740: f000 f800 bl 3000 <initialize_backlight_hardware_noop>"
+        self.assertIn(original, CONNECTED_DISPATCH)
+        mutated = CONNECTED_DISPATCH.replace(original, replacement, 1)
+        mutated += (
+            "\n00003000 <initialize_backlight_hardware_noop>:\n"
+            " 3000: 4770 bx lr\n"
+        )
+        self.assertIn("00003000 <initialize_backlight_hardware_noop>", mutated)
+        with self.assertRaisesRegex(
+            WitnessError, "target backlight_init_hardware path does not reach"
+        ):
+            validate_call_path(mutated)
+
+    def test_rejects_unmatched_backend_call_target(self):
+        original = " 656: f000 f8f3 bl 800 <Hardware as StartupIo>::placeholder>"
+        replacement = " 656: f000 f8f3 bl 3000 <Hardware as StartupIo>::placeholder_noop>"
+        self.assertIn(original, CONNECTED_DISPATCH)
+        mutated = CONNECTED_DISPATCH.replace(original, replacement, 1)
+        mutated += (
+            "\n00003000 <Hardware as StartupIo>::placeholder_noop>:\n"
+            " 3000: 4770 bx lr\n"
+        )
+        with self.assertRaisesRegex(
+            WitnessError, "required caller board_sequence::Backend>::call.*unexpected call target"
+        ):
+            validate_call_path(mutated)
+
+    def test_rejects_copied_iterator_call_to_interior_entry(self):
+        original = (
+            " 110a: f000 f800 bl 1120 "
+            "<core::slice::iter::Iter<backlight_plan::BacklightWrite> as "
+            "core::iter::traits::iterator::Iterator>::copied::<backlight_plan::BacklightWrite>>"
+        )
+        replacement = (
+            " 110a: f000 f800 bl 1122 "
+            "<core::slice::iter::Iter<backlight_plan::BacklightWrite> as "
+            "core::iter::traits::iterator::Iterator>::copied::<backlight_plan::BacklightWrite>+0x2>"
+        )
+        self.assertIn(original, CONNECTED_DISPATCH)
+        mutated = CONNECTED_DISPATCH.replace(original, replacement, 1)
         with self.assertRaisesRegex(WitnessError, "required call target.*symbol entry"):
             validate_call_path(mutated)
 
