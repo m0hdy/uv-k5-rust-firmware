@@ -110,10 +110,10 @@ For the target probe, append
 `cargo build --locked --target thumbv6m-none-eabi --release`. Both commands
 must return nonzero; do not commit either injection.
 
-The default workflow does not run the reference-vector reports and does not
-require or inspect a C checkout or `UV_K5_C_REFERENCE`. The host-only Rust
-evaluator and the pinned C comparator are available as separate, explicit
-commands; neither is a default CI job. No image may be published until the
+The default workflow runs host tests that exercise the Rust vector evaluator.
+It does not run the pinned C comparator or require a C checkout or
+`UV_K5_C_REFERENCE`. The standalone reports below can be run locally.
+No image may be published until the
 mandatory size gate from issue
 [m0hdy/uv-k5-rust-firmware#26](https://github.com/m0hdy/uv-k5-rust-firmware/issues/26)
 has passed for that exact ELF and raw payload in every flashable job.
@@ -139,7 +139,7 @@ export UV_K5_C_REFERENCE=/path/to/reference-firmware
 python3 tools/reference-vectors/compare.py
 ```
 
-Both commands are local reports, not default CI checks. The C comparator
+Both commands produce standalone local reports. The C comparator
 rejects a checkout at another commit or with tracked or untracked changes; it
 never substitutes a moving upstream branch. It reports per-case input or
 result mismatches, including the canonical and captured results.

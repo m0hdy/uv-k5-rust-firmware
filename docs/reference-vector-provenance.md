@@ -139,9 +139,10 @@ python3 -m unittest discover -s tests -p test_compare.py -v
 python3 -m unittest discover -s tests -p test_reference_vectors.py -v
 ```
 
-These are explicit local checks; the default Rust CI workflow does not run
-either report or inspect `UV_K5_C_REFERENCE`. A full checkout of the pinned C
-repository is needed for `compare.py` or capture/regeneration. The fixture
+The default CI host suite runs these tests, including the Rust evaluator,
+without invoking the pinned C comparison or inspecting `UV_K5_C_REFERENCE`.
+A full checkout of the pinned C repository is needed for `compare.py` or
+capture/regeneration. The fixture
 SHA-256 is
 `361172955485ba9d7b6cd3b26cafc0f73cc8ed9e56ee84d79c36b8da6049c748`.
 Neither report validates EEPROM read/default handling: `SETTINGS_InitEEPROM`
@@ -175,13 +176,10 @@ it runs formatting, Clippy, host tests, and a Cortex-M0 release build with ELF
 and map artifacts. It does not run these reference vectors. The separate
 default C build evidence is recorded in [issue #11's evidence
 comment](https://github.com/m0hdy/uv-k5-rust-firmware/issues/11#issuecomment-6982758020);
-it is not a CI run of these vectors. In this sandbox, individual files were
-read from the pinned revision and their Git object IDs verified. Captures with
-GCC and Clang both matched the fixture in prior capture checks. In this run,
-the Rust report matched all 39 vectors, and the focused C-comparison and Rust
-evaluator tests passed. A clean checkout at the pinned revision was not
-available, so the C report and capture check were not run here; Rust results do
-not substitute for that comparison.
+it is not a CI run of these vectors. Captures with GCC and Clang previously
+matched the fixture. The documented C comparison and read-only capture check
+were also verified against a clean pinned checkout, and the Rust report
+independently matched all 39 vectors. Both focused test commands passed.
 
 No firmware image was built or flashed for this capture. Physical-device
 results are inapplicable because the work only records deterministic outputs
