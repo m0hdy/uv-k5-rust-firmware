@@ -1177,7 +1177,7 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
             instruction
             for instruction in writes_instructions
             if any(
-                "BacklightWrite" in target and ">::iter" in target
+                "BacklightWrite" in target and target.endswith(">::iter")
                 for target in direct_call_targets(instruction[4])
             )
         ),
@@ -1279,10 +1279,7 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
         ]
         if not (
             epilogue is not None
-            and epilogue[2] == "add"
-            and re.fullmatch(
-                r"\s*sp,\s*#\d+(?:\s+[@;].*)?\s*", epilogue[3]
-            )
+            and matches_instruction(epilogue, "add", r"\s*sp,\s*#\d+\s*")
             and len(exit_branches) == 1
             and exit_branches[0][2] == "beq.n"
             and apply_predecessors.get(epilogue[0]) == {exit_branches[0][0]}
