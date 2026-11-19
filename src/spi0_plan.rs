@@ -13,22 +13,22 @@
 //! the control-register clear mask, and its configured value is zero.
 
 const SPI_CR_SPR_MASK: u32 = 0b111;
-pub(super) const SPI_CR_SPE_MASK: u32 = 1 << 3;
+pub(crate) const SPI_CR_SPE_MASK: u32 = 1 << 3;
 const SPI_CR_CPHA_MASK: u32 = 1 << 4;
 const SPI_CR_CPOL_MASK: u32 = 1 << 5;
 const SPI_CR_MSTR_MASK: u32 = 1 << 6;
 const SPI_CR_LSB_MASK: u32 = 1 << 7;
 const SPI_CR_MSR_SSN_MASK: u32 = 1 << 12;
 const SPI_CR_RF_CLR_MASK: u32 = 1 << 15;
-pub(super) const SYSCON_DEV_CLK_GATE_SPI0_MASK: u32 = 1 << 10;
+pub(crate) const SYSCON_DEV_CLK_GATE_SPI0_MASK: u32 = 1 << 10;
 
-pub(super) const SPI0_CONFIGURATION_CLEAR_MASK: u32 = SPI_CR_SPR_MASK
+pub(crate) const SPI0_CONFIGURATION_CLEAR_MASK: u32 = SPI_CR_SPR_MASK
     | SPI_CR_CPHA_MASK
     | SPI_CR_CPOL_MASK
     | SPI_CR_MSTR_MASK
     | SPI_CR_LSB_MASK
     | SPI_CR_RF_CLR_MASK;
-pub(super) const SPI0_CONFIGURATION_BITS: u32 =
+pub(crate) const SPI0_CONFIGURATION_BITS: u32 =
     2 | SPI_CR_CPHA_MASK | SPI_CR_CPOL_MASK | SPI_CR_MSTR_MASK;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
