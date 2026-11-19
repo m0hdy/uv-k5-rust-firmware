@@ -48,13 +48,13 @@ impl<I: RegisterIo> spi0_startup_adapter::RegisterIo for Registers<'_, I> {
     }
 }
 
-struct StartupBackend<'a, I, D> {
+struct StartupBackend<'a, I, D: ?Sized> {
     registers: Registers<'a, I>,
     delay: &'a mut D,
     fill: Option<u8>,
 }
 
-impl<'a, I: RegisterIo, D> StartupBackend<'a, I, D> {
+impl<'a, I: RegisterIo, D: ?Sized> StartupBackend<'a, I, D> {
     fn line(&mut self) -> St7565MmioTransport<'_, Registers<'a, I>> {
         St7565MmioTransport {
             io: &mut self.registers,
@@ -62,7 +62,7 @@ impl<'a, I: RegisterIo, D> StartupBackend<'a, I, D> {
     }
 }
 
-impl<I: RegisterIo, D> LineTransport for StartupBackend<'_, I, D> {
+impl<I: RegisterIo, D: ?Sized> LineTransport for StartupBackend<'_, I, D> {
     fn set_spi_mode(&mut self, enabled: bool) {
         self.line().set_spi_mode(enabled);
     }
@@ -84,7 +84,7 @@ impl<I: RegisterIo, D> LineTransport for StartupBackend<'_, I, D> {
     }
 }
 
-impl<I: RegisterIo, D: DelayMs> StartupTransport for StartupBackend<'_, I, D> {
+impl<I: RegisterIo, D: DelayMs + ?Sized> StartupTransport for StartupBackend<'_, I, D> {
     fn initialize_spi0(&mut self) {
         spi0_startup_adapter::apply_with_io(&mut self.registers);
     }
@@ -140,7 +140,7 @@ fn select_zero_fill_pages(
 /// Every FIFO write uses the explicit nonzero per-byte poll budget. All drains
 /// use the existing bounded `DRAIN_POLL_LIMIT`. Errors restore MSR_SSN and stop
 /// subsequent commands/pages; no pixel bytes or boot-complete state are emitted.
-pub fn startup_with_io<I: RegisterIo, D: DelayMs>(
+pub fn startup_with_io<I: RegisterIo, D: DelayMs + ?Sized>(
     io: &mut I,
     delay: &mut D,
     fifo_poll_limit: NonZeroU32,
@@ -193,8 +193,8 @@ impl RegisterIo for VolatileRegisters {
 /// This function configures no GPIO direction/mux or arbitration and supplies
 /// no delay calibration, physical timing guarantee, or board-boot wiring.
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-pub unsafe fn startup_mmio<D: DelayMs>(
-    delay: &mut D,
+pub unsafe fn startup_mmio(
+    delay: &mut dyn DelayMs,
     fifo_poll_limit: NonZeroU32,
 ) -> Result<(), LineError> {
     startup_with_io(&mut VolatileRegisters, delay, fifo_poll_limit)

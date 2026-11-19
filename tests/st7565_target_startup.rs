@@ -337,3 +337,15 @@ fn every_drain_can_complete_on_its_last_permitted_read() {
     assert_eq!(io.bytes().len(), 41);
     assert_restored(&io);
 }
+
+#[test]
+fn caller_supplied_delay_trait_object_runs_the_same_startup() {
+    let (mut io, mut delay) = mocks();
+    let delay: &mut dyn DelayMs = &mut delay;
+    assert_eq!(
+        startup_with_io(&mut io, delay, NonZeroU32::new(1).unwrap()),
+        Ok(())
+    );
+    assert_eq!(io.bytes().len(), 41);
+    assert_eq!(io.reads(FIFOST), 41);
+}

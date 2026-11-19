@@ -57,8 +57,11 @@ existing `DRAIN_POLL_LIMIT = 100_001` status-read bound. Either timeout restores
 command sequence may remain in the FIFO/panel; mode restoration is not rollback.
 The boundary sends no screen data and publishes no boot-complete state.
 
-The ARM bare-metal-only unsafe `target_spi0::startup_mmio` uses aligned
-volatile `u32` accesses at the existing physical mappings:
+The ARM bare-metal-only unsafe `target_spi0::startup_mmio` takes
+`&mut dyn DelayMs` and the explicit nonzero poll budget. This concrete entry
+can be retained for target assembly inspection without a production delay
+implementation. It uses aligned volatile `u32` accesses at the existing
+physical mappings:
 
 | Registers | Addresses |
 | --- | --- |
