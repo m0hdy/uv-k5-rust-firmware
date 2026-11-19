@@ -14,10 +14,13 @@ use battery_indicator::compose_battery_indicator;
 pub use battery_status_text::BatteryStatusText;
 use battery_status_text::battery_status_text;
 
-pub const USB_ICON_COLUMN: usize = 102;
-pub const BATTERY_ICON_COLUMN: usize = 111;
-pub const USB_ICON_WIDTH: usize = 9;
-pub const BATTERY_ICON_WIDTH: usize = 17;
+use battery_indicator::BATTERY_BAR_WIDTH;
+pub use battery_indicator::BATTERY_INDICATOR_WIDTH as BATTERY_ICON_WIDTH;
+use battery_status_text::LCD_WIDTH;
+pub use battery_status_text::USB_ICON_WIDTH;
+
+const BATTERY_ICON_COLUMN: usize = LCD_WIDTH - BATTERY_ICON_WIDTH;
+const USB_ICON_COLUMN: usize = BATTERY_ICON_COLUMN - USB_ICON_WIDTH;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RenderOperation {
@@ -46,43 +49,58 @@ impl BatteryStatusComposition {
     }
 }
 
+pub struct StatusInputs {
+    pub mode: u8,
+    pub voltage_hundredths: u16,
+    pub percentage: u8,
+    pub occupied_prefix_end: usize,
+    pub charging: bool,
+    pub level: u8,
+    pub blink: u8,
+    pub direction: FillDirection,
+}
+
+pub struct IconPatterns<'a> {
+    pub usb: &'a [u8; USB_ICON_WIDTH],
+    pub outline: &'a [u8; BATTERY_ICON_WIDTH],
+    pub bar: &'a [u8; BATTERY_BAR_WIDTH],
+}
+
 pub fn compose_battery_status(
-    mode: u8,
-    voltage_hundredths: u16,
-    percentage: u8,
-    occupied_prefix_end: usize,
-    charging: bool,
-    usb_icon: &[u8; USB_ICON_WIDTH],
-    outline: &[u8; BATTERY_ICON_WIDTH],
-    bar: &[u8; 2],
-    level: u8,
-    blink: u8,
-    direction: FillDirection,
+    status: StatusInputs,
+    icons: IconPatterns<'_>,
 ) -> BatteryStatusComposition {
     let mut operations = [None; 3];
     let mut len = 0;
 
     if let Some(text) = battery_status_text(
-        mode,
-        voltage_hundredths,
-        percentage,
-        occupied_prefix_end,
-        charging,
+        status.mode,
+        status.voltage_hundredths,
+        status.percentage,
+        status.occupied_prefix_end,
+        status.charging,
     ) {
         operations[len] = Some(RenderOperation::Text(text));
         len += 1;
     }
 
-    if charging {
+    if status.charging {
         operations[len] = Some(RenderOperation::UsbIcon {
             start_column: USB_ICON_COLUMN,
-            bytes: *usb_icon,
+            bytes: *icons.usb,
         });
         len += 1;
     }
 
     let mut bitmap = [0; BATTERY_ICON_WIDTH];
-    compose_battery_indicator(&mut bitmap, outline, bar, level, blink, direction);
+    compose_battery_indicator(
+        &mut bitmap,
+        icons.outline,
+        icons.bar,
+        status.level,
+        status.blink,
+        status.direction,
+    );
     operations[len] = Some(RenderOperation::BatteryBitmap {
         start_column: BATTERY_ICON_COLUMN,
         bytes: bitmap,
