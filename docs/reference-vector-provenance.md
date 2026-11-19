@@ -84,66 +84,72 @@ unported:
 python3 tools/reference-vectors/compare_rust.py
 ```
 
-Host coverage is 38 of 39 vectors: 12 channel, 15 frequency, 5 DCS, 4 CTCSS,
-and 2 settings profiles. The single
-`firmware_container_checksum/byte_ramp_12k` vector remains unsupported because
-the Rust library has no updater-container packing or checksum API. Its payload,
-metadata, packed-image hash, and appended CRC concern the updater container,
-not EEPROM settings or a settings checksum. Neither unsupported domain is
-counted as parity coverage. The opt-in pinned C comparison remains available
-separately through `tools/reference-vectors/compare.py`, with a clean pinned C
-checkout supplied explicitly:
+The host Rust evaluator now executes and matches all 39 vectors: 12 channel,
+15 frequency, 5 DCS, 4 CTCSS, 2 settings profiles, and 1 firmware-container
+checksum. It passes the checksum vector through the Rust container API and
+compares the packed output metadata with the fixture. Run it from the
+repository root:
+
+```sh
+python3 tools/reference-vectors/compare_rust.py
+```
+
+The report is `Vector results: 39/39 matched (39 executed).` It compares each
+Rust result to the fixture and reports the vector ID plus expected and actual
+values for mismatches. Missing evaluators are reported as unported, not counted
+as coverage, and an incomplete or mismatched report exits nonzero.
+
+The separate C comparator runs the capture against the pinned source and
+compares each captured vector's identity, inputs, and result with the canonical
+fixture:
 
 ```sh
 UV_K5_C_REFERENCE=/path/to/clean/uv-k5-firmware-custom \
   python3 tools/reference-vectors/compare.py
 ```
 
-The host test suite validates this reader and runner against the approved
-fixture, including malformed input, a seeded mismatch, and a Rust-bridge
-regression that changes an expected result and requires a mismatch:
+`UV_K5_C_REFERENCE` must point to a Git checkout whose `HEAD` is exactly
+`7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3` and whose tracked and untracked
+working tree is clean. The comparator rejects a missing path setting, a
+different revision, or any working-tree changes before compiling or running
+the capture. It does not update the fixture. Input/result differences and
+missing, unexpected, or duplicate cases are reported as mismatches, and the
+command exits nonzero.
 
-```sh
-python3 -m unittest discover -s tests -v
-```
-
-Use a clean checkout at the pinned revision. The capture command rejects a
-different `HEAD` or any tracked/untracked working-tree changes before compiling
-or running code:
+Fixture regeneration is explicit and separate from both reports. It requires
+the same clean pinned checkout, host GNU C2x compiler (`cc` by default, or
+`CC`), Python 3, and `crcmod==1.7` for the pinned packer:
 
 ```sh
 python3 -m pip install crcmod==1.7
 UV_K5_C_REFERENCE=/path/to/clean/uv-k5-firmware-custom \
   python3 tools/reference-vectors/capture.py --write
-UV_K5_C_REFERENCE=/path/to/clean/uv-k5-firmware-custom \
-  python3 -m unittest discover -s tests/reference-vectors -v
 ```
 
-The capture uses a host C compiler supporting GNU C2x (`cc` by default, or
-`CC`), Python 3, and the pinned packer's `crcmod` dependency. The recorded
-capture used GCC 13.3.0 and Clang 18.1.3, Python 3.12.3, and `crcmod` 1.7.
-Both compilers reproduced the same fixture. These host tools are for reference
-capture only and are not Rust firmware build prerequisites.
+`--write` overwrites `tests/reference-vectors/golden.json`; review the change
+before accepting it. To verify a capture without changing the fixture, use
+`capture.py --check` with the same environment setting.
 
-The host bridge and suites were run with the following command and evidence:
+The narrow host tests for C comparison mismatch details and wrong-revision
+rejection, and for Rust's 39-case match and expected/actual mismatch reporting,
+are:
 
 ```sh
-rustc --version
-cargo --version
-python3 --version
-python3 tools/reference-vectors/compare_rust.py
-cargo test --offline --locked --all-targets
-python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s tests -p test_compare.py -v
+python3 -m unittest discover -s tests -p test_reference_vectors.py -v
 ```
 
-The host reported `rustc 1.99.1 (58cf8f9c3 2026-10-13)`, `cargo 1.99.1
-(5f94df478 2026-08-27)`, and `Python 3.12.3`. The bridge reported `38/39
-matched (38 executed)`, with no mismatches; only the firmware-container
-checksum case remains unsupported, so the command returns status 1 because the
-fixture is not fully covered. The Rust suite passed 58 tests; the Python suite
-passed 46 tests with two existing ARM-binutils-dependent tests skipped. The
-bridge used Cargo's offline mode. This is host-library evidence only, not a
-device or firmware-image claim.
+These are explicit local checks; the default Rust CI workflow does not run
+either report or inspect `UV_K5_C_REFERENCE`. A full checkout of the pinned C
+repository is needed for `compare.py` or capture/regeneration. The fixture
+SHA-256 is
+`361172955485ba9d7b6cd3b26cafc0f73cc8ed9e56ee84d79c36b8da6049c748`.
+Neither report validates EEPROM read/default handling: `SETTINGS_InitEEPROM`
+also depends on UI, radio, and device helpers, so malformed EEPROM reads and
+their defaults remain outside this fixture. The vectors exercise selected
+host-callable functions and inputs; they do not establish full firmware
+integration, hardware behavior, bootloader acceptance, image validity, or
+device/recovery safety.
 
 ## Evidence and limits
 
@@ -171,10 +177,11 @@ default C build evidence is recorded in [issue #11's evidence
 comment](https://github.com/m0hdy/uv-k5-rust-firmware/issues/11#issuecomment-6982758020);
 it is not a CI run of these vectors. In this sandbox, individual files were
 read from the pinned revision and their Git object IDs verified. Captures with
-GCC and Clang both matched the fixture. A full clean upstream checkout was
-unavailable, so the capture's clean-checkout gate and the unittest command
-above were not run here. The harness requires that gate for future
-regeneration; this limitation is not a pass.
+GCC and Clang both matched the fixture in prior capture checks. In this run,
+the Rust report matched all 39 vectors, and the focused C-comparison and Rust
+evaluator tests passed. A clean checkout at the pinned revision was not
+available, so the C report and capture check were not run here; Rust results do
+not substitute for that comparison.
 
 No firmware image was built or flashed for this capture. Physical-device
 results are inapplicable because the work only records deterministic outputs
