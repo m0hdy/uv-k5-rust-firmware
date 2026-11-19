@@ -17,7 +17,12 @@ The only Rust symbol currently exported to the linker is:
 No C-callable service functions, shared data structures, or C headers are
 implemented in the current Rust firmware. Any added boundary must be listed
 explicitly in this document and implemented as a separate, reviewed change.
-This contract does not establish mixed-language linkage or change startup.
+
+The separate opt-in `mixed-fallback` witness defines only
+`mixed_rust_channel_valid(uint16_t) -> uint8_t` and
+`mixed_c_channel_valid(uint16_t) -> uint8_t` to compare a pure predicate. These
+fixture-only symbols are not linked into `uv-k5-rust-firmware` and do not add
+a production service API or change the default firmware ABI.
 
 ## Types and layout
 
