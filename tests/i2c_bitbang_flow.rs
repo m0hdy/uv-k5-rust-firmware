@@ -1,10 +1,7 @@
-#[path = "../src/i2c_bitbang_flow.rs"]
-mod i2c_bitbang_flow;
-
-use i2c_bitbang_flow::{
+use std::collections::VecDeque;
+use uv_k5_rust_firmware::i2c_bitbang_flow::{
     Acknowledgement, Direction, I2cIo, Level, read_buffer, read_byte, start, stop, write_byte,
 };
-use std::collections::VecDeque;
 
 use Direction::{Input, Output};
 use Level::{High, Low};

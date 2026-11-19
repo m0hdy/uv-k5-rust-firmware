@@ -4,10 +4,11 @@
 [`driver/i2c.c:23–147`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/driver/i2c.c#L23-L147)
 at pinned public revision
 [`egzumer/uv-k5-firmware-custom@7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3`](https://github.com/egzumer/uv-k5-firmware-custom/tree/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3).
-It is a standalone, unexported, allocation-free `no_std` model. `I2cIo` supplies
-infallible typed mock operations for SCL, SDA, PA11 input enable, open drain
-and direction, SDA samples, and one-microsecond delays. These operations
-represent the reference's register operations, not a hardware implementation.
+It is an allocation-free `no_std` module exported by the firmware library.
+The `I2cIo` trait supplies infallible typed mock operations for SCL, SDA, PA11
+input enable, open drain and direction, SDA samples, and one-microsecond delays.
+These operations represent the reference's register operations, not a hardware
+implementation.
 
 START sets SDA high, sets SCL high, clears SDA, then clears SCL, with a delay
 after each operation. STOP clears SDA, clears SCL, sets SCL, then sets SDA,

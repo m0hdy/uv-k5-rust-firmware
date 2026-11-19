@@ -2,11 +2,7 @@
 
 //! Allocation-free execution of the existing EEPROM read plan.
 
-#[allow(dead_code, unused_attributes)]
-#[path = "eeprom_transaction.rs"]
-mod eeprom_transaction;
-
-pub use eeprom_transaction::{Command, ReadPlan, plan_read};
+pub use crate::eeprom_transaction::{Command, ReadPlan, plan_read};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Acknowledgement {

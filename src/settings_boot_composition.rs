@@ -1,20 +1,12 @@
 #![cfg_attr(not(test), no_std)]
 
-#[path = "display_boot_defaults.rs"]
-#[allow(unused_attributes)]
-mod display_boot_defaults;
-#[path = "eeprom_read_transport.rs"]
-#[allow(dead_code, unused_attributes)]
-mod eeprom_read_transport;
-#[path = "settings_boot_defaults.rs"]
-#[allow(unused_attributes)]
-mod settings_boot_defaults;
+use crate::{display_boot_defaults, settings_boot_defaults};
 
-pub use display_boot_defaults::{BacklightMinStatus, DisplayBootDefaults};
-use eeprom_read_transport::execute_read;
-pub use eeprom_read_transport::{
+use crate::eeprom_read_transport::execute_read;
+pub use crate::eeprom_read_transport::{
     Acknowledgement, Command, I2cTransport, ReadError, ReadPlan, plan_read,
 };
+pub use display_boot_defaults::{BacklightMinStatus, DisplayBootDefaults};
 pub use settings_boot_defaults::CoreSettings;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
