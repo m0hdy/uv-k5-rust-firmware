@@ -7,6 +7,8 @@ mod keyboard_decisions;
 #[path = "numeric_input_box.rs"]
 mod numeric_input_box;
 
+#[allow(unused_imports)]
+pub use keyboard_decisions::KeyboardDecisions;
 pub use keyboard_decisions::{Key, KeyEvent};
 pub use numeric_input_box::{Digit, NumericInputBox};
 
