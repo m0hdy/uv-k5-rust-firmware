@@ -136,34 +136,55 @@ fn feature_presence_controls_only_the_corresponding_assignments() {
 
 #[test]
 fn erased_bytes_are_decoded_data_not_a_read_error() {
-    let mut fixtures = Fixtures::new([[0xff; 8], [0xff; 8]]);
+    let erased = [0xff; 8];
+    let defaults = SettingsBoot {
+        core: CoreSettings {
+            call_channel: 0,
+            squelch_level: 1,
+            tx_timeout_timer: 1,
+            noaa_auto_scan: Some(false),
+            key_lock: false,
+            vox_switch: Some(false),
+            vox_level: Some(1),
+            mic_sensitivity: 4,
+        },
+        display: DisplayBootDefaults {
+            backlight_min: 0,
+            backlight_max: 10,
+            backlight_min_status: Some(BacklightMinStatus::On),
+            channel_display_mode: 0,
+            cross_band_rx_tx: 0,
+            battery_save: 4,
+            dual_watch: 1,
+            backlight_time: 3,
+            tail_tone_elimination: false,
+            vfo_open: true,
+        },
+    };
 
-    assert_eq!(
-        compose(&mut fixtures, ALL_FEATURES),
-        SettingsBoot {
-            core: CoreSettings {
-                call_channel: 0,
-                squelch_level: 1,
-                tx_timeout_timer: 1,
-                noaa_auto_scan: Some(false),
-                key_lock: false,
-                vox_switch: Some(false),
-                vox_level: Some(1),
-                mic_sensitivity: 4,
+    for (responses, expected) in [
+        ([erased, erased], defaults),
+        (
+            [erased, DISPLAY_DATA],
+            SettingsBoot {
+                core: defaults.core,
+                display: EXPECTED_DISPLAY,
             },
-            display: DisplayBootDefaults {
-                backlight_min: 0,
-                backlight_max: 10,
-                backlight_min_status: Some(BacklightMinStatus::On),
-                channel_display_mode: 0,
-                cross_band_rx_tx: 0,
-                battery_save: 4,
-                dual_watch: 1,
-                backlight_time: 3,
-                tail_tone_elimination: false,
-                vfo_open: true,
+        ),
+        (
+            [CORE_DATA, erased],
+            SettingsBoot {
+                core: EXPECTED_CORE,
+                display: defaults.display,
             },
-        }
-    );
-    assert_eq!(fixtures.reads, 2);
+        ),
+    ] {
+        let mut fixtures = Fixtures::new(responses);
+        assert_eq!(
+            compose(&mut fixtures, ALL_FEATURES),
+            expected,
+            "{responses:?}"
+        );
+        assert_eq!(fixtures.reads, 2);
+    }
 }
