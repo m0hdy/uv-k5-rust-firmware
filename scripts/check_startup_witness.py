@@ -89,6 +89,120 @@ def direct_call_targets(function: str) -> list[str]:
     ]
 
 
+def validate_required_call_targets(disassembly: str) -> None:
+    required_symbols = (
+        "witness_main",
+        "run_hardware",
+        "board_startup_adapters::run::<",
+        "board_sequence::run::<",
+        "Backend>::call",
+        "StartupIo>::device_clock_gates",
+        "StartupIo>::systick",
+        "StartupIo>::portcon",
+        "StartupIo>::gpio",
+        "StartupIo>::backlight_init_hardware",
+        "apply_device_clock_gates",
+        "apply_to_hardware",
+        "apply_portcon_startup_plan",
+        "apply_gpio_startup_plan",
+        "initialize_backlight_hardware",
+        "backlight_startup_executor::apply_with_io",
+        "BacklightInitPlan>::from_snapshot",
+        "BacklightInitPlan>::writes",
+        "BacklightWrite>::iter",
+        "IntoIterator>::into_iter",
+        "Iterator>::next",
+        "Iterator>::copied",
+        "RegisterIo>::read",
+        "RegisterIo>::write",
+        "RegisterAddress>::from_register",
+        "RegisterAddress>::address",
+        "__aeabi_memcpy4",
+    )
+    entries = [
+        (int(match.group(1), 16), match.group(2))
+        for line in disassembly.splitlines()
+        if (match := re.match(r"\s*([0-9a-fA-F]+)\s+<(.+)>:\s*$", line))
+    ]
+
+    def has_symbol_suffix(symbol: str, name: str) -> bool:
+        if symbol.endswith("::<"):
+            return symbol in name
+        return (
+            re.search(
+                rf"{re.escape(symbol)}(?:\+0x[0-9a-fA-F]+)?(?:>|$)", name
+            )
+            is not None
+        )
+
+    callers = (
+        ("Reset_Handler", False),
+        ("witness_main", False),
+        ("run_hardware", False),
+        ("board_startup_adapters::run::<", False),
+        ("board_sequence::run::<", False),
+        ("board_sequence::Backend>::call", False),
+        ("StartupIo>::device_clock_gates", True),
+        ("StartupIo>::systick", True),
+        ("StartupIo>::portcon", True),
+        ("StartupIo>::gpio", True),
+        ("StartupIo>::backlight_init_hardware", True),
+        ("initialize_backlight_hardware", False),
+        ("backlight_startup_executor::apply_with_io", False),
+        ("BacklightInitPlan>::from_snapshot", False),
+        ("BacklightInitPlan>::writes", False),
+        ("backlight_startup_executor::RegisterIo>::read", False),
+        ("backlight_startup_executor::RegisterIo>::write", False),
+    )
+    for caller, suffix in callers:
+        function = function_block(disassembly, caller, suffix=suffix)
+        for instruction in parse_instructions(function):
+            if instruction[2] not in ("bl", "blx"):
+                continue
+            edge = re.search(
+                r"\bbl(?:x)?\s+([0-9a-fA-F]+)\s+<(.+)>$", instruction[4]
+            )
+            if edge is None:
+                continue
+            address, target = int(edge.group(1), 16), edge.group(2)
+            matching_symbols = [
+                symbol
+                for symbol in required_symbols
+                if (
+                    symbol in target
+                    if symbol.endswith("::<")
+                    else re.search(
+                        rf"{re.escape(symbol)}(?:\+0x[0-9a-fA-F]+)?(?:>|$)",
+                        target,
+                    )
+                    is not None
+                )
+            ]
+            if not matching_symbols:
+                continue
+
+            matching_entries = {
+                entry
+                for entry in entries
+                if (entry[1] == target or entry[1].endswith(target))
+                and any(
+                    has_symbol_suffix(symbol, entry[1])
+                    for symbol in matching_symbols
+                )
+            }
+            entry = next(iter(matching_entries), None)
+            if (
+                re.search(r"\+0x[0-9a-fA-F]+$", target)
+                or len(matching_entries) != 1
+                or entry is None
+                or entry[0] != address
+                or not (entry[1] == target or entry[1].endswith(target))
+            ):
+                raise WitnessError(
+                    f"required call target {target} does not resolve to its symbol entry"
+                )
+
+
 def parse_instructions(function: str) -> list[tuple[int, int, str, str, str]]:
     instructions = []
     for line in function.splitlines():
@@ -1933,6 +2047,7 @@ def validate_call_path(disassembly: str) -> None:
 
     validate_backend_dispatch(disassembly)
     validate_backlight_register_evidence(disassembly)
+    validate_required_call_targets(disassembly)
 
 
 def validate_systick_handler(disassembly: str, handler_address: int) -> None:

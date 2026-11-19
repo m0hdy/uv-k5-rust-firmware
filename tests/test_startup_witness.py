@@ -100,25 +100,25 @@ CONNECTED_DISPATCH = """
  426: bd80 pop {r7, pc}
 00000500 <board_sequence::run::<Backend>>:
  500: 2100 movs r1, #0
- 502: f000 f800 bl 600 <<Backend>::call>
+ 502: f000 f800 bl 5f6 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>
  506: 9800 ldr r0, [sp, #0]
  508: 2101 movs r1, #1
- 50a: f000 f800 bl 600 <<Backend>::call>
+ 50a: f000 f800 bl 5f6 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>
  50e: 9800 ldr r0, [sp, #0]
  510: 2102 movs r1, #2
- 512: f000 f800 bl 600 <<Backend>::call>
+ 512: f000 f800 bl 5f6 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>
  516: 9800 ldr r0, [sp, #0]
  518: 2103 movs r1, #3
- 51a: f000 f800 bl 600 <<Backend>::call>
+ 51a: f000 f800 bl 5f6 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>
  51e: 9800 ldr r0, [sp, #0]
  520: 2104 movs r1, #4
- 522: f000 f800 bl 600 <<Backend>::call>
+ 522: f000 f800 bl 5f6 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>
  526: 9800 ldr r0, [sp, #0]
  528: 2105 movs r1, #5
- 52a: f000 f800 bl 600 <<Backend>::call>
+ 52a: f000 f800 bl 5f6 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>
  52e: 9800 ldr r0, [sp, #0]
  530: 2106 movs r1, #6
- 532: f000 f800 bl 600 <<Backend>::call>
+ 532: f000 f800 bl 5f6 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>
  536: 9801 ldr r0, [sp, #4]
  538: 7800 ldrb r0, [r0, #0]
  53a: 07c0 lsls r0, r0, #31
@@ -127,7 +127,7 @@ CONNECTED_DISPATCH = """
  540: e00e b.n 560 <board_sequence::run+0x60>
  550: 9800 ldr r0, [sp, #0]
  552: 2107 movs r1, #7
- 554: f000 f800 bl 600 <<Backend>::call>
+ 554: f000 f800 bl 5f6 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>
  558: e002 b.n 560 <board_sequence::run+0x60>
  560: a802 add r0, sp, #8
  562: 7840 ldrb r0, [r0, #1]
@@ -143,7 +143,7 @@ CONNECTED_DISPATCH = """
  576: e002 b.n 57e
  57e: 9800 ldr r0, [sp, #0]
  580: 2108 movs r1, #8
- 582: f000 f800 bl 600 <<Backend>::call>
+ 582: f000 f800 bl 5f6 <startup::SequencerBackend<Hardware> as startup::board_sequence::Backend>::call>
  586: e000 b.n 588
  588: b004 add sp, #16
  58a: bd80 pop {r7, pc}
@@ -230,6 +230,14 @@ CONNECTED_DISPATCH = """
 00000740 <<HardwareIo as StartupIo>::backlight_init_hardware>:
  740: f000 f800 bl 840 <initialize_backlight_hardware>
  744: bd80 pop {r7, pc}
+00000800 <apply_device_clock_gates>:
+ 800: 4770 bx lr
+00000810 <apply_to_hardware>:
+ 810: 4770 bx lr
+00000820 <apply_portcon_startup_plan>:
+ 820: 4770 bx lr
+00000830 <apply_gpio_startup_plan>:
+ 830: 4770 bx lr
 00000840 <initialize_backlight_hardware>:
  840: f000 f800 bl 846 <backlight_startup_executor::apply_with_io>
  844: bd80 pop {r7, pc}
@@ -442,6 +450,14 @@ CONNECTED_DISPATCH = """
  110e: bd80 pop {r7, pc}
 00001118 <backlight_startup_executor::BacklightWrite>::iter>:
  1118: bd80 pop {r7, pc}
+00001120 <core::iter::Iterator>::copied>:
+ 1120: bd80 pop {r7, pc}
+00001180 <core::iter::IntoIterator>::into_iter>:
+ 1180: bd80 pop {r7, pc}
+00001190 <core::iter::Iterator>::next>:
+ 1190: bd80 pop {r7, pc}
+00001200 <__aeabi_memcpy4>:
+ 1200: 4770 bx lr
 """
 
 _plan_instructions = """
@@ -1162,6 +1178,50 @@ class StartupWitnessCheckerTests(unittest.TestCase):
 
     def test_accepts_linked_backend_dispatch_to_matching_hardware_methods(self):
         validate_call_path(CONNECTED_DISPATCH)
+
+    def test_rejects_required_calls_that_do_not_target_the_symbol_entry(self):
+        mutations = (
+            (
+                " 100: f000 f800 bl 200 <witness_main>",
+                " 100: f000 f800 bl 202 <witness_main+0x2>",
+            ),
+            (
+                " 740: f000 f800 bl 840 <initialize_backlight_hardware>",
+                " 740: f000 f800 bl 842 <initialize_backlight_hardware+0x2>",
+            ),
+            (
+                " 840: f000 f800 bl 846 <backlight_startup_executor::apply_with_io>",
+                " 840: f000 f800 bl 8ac <backlight_startup_executor::apply_with_io>",
+            ),
+            (
+                " 840: f000 f800 bl 846 <backlight_startup_executor::apply_with_io>",
+                " 840: f000 f800 bl 846 <other::backlight_startup_executor::apply_with_io>",
+            ),
+            (
+                " 856: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
+                " 856: f000 f800 bl 1002 <backlight_startup_executor::BacklightInitPlan>::from_snapshot+0x2>",
+            ),
+            (
+                " 926: f000 f800 bl 942 <backlight_startup_executor::RegisterAddress>::from_register>",
+                " 926: f000 f800 bl 944 <backlight_startup_executor::RegisterAddress>::from_register+0x2>",
+            ),
+            (
+                " 8b8: f000 f800 bl 920 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::read>",
+                " 8b8: f000 f800 bl 922 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::read+0x2>",
+            ),
+            (
+                " 8c6: f000 f800 bl 2000 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write>",
+                " 8c6: f000 f800 bl 2002 <<backlight_startup_executor::VolatileRegisterIo as backlight_startup_executor::RegisterIo>::write+0x2>",
+            ),
+        )
+        for original, replacement in mutations:
+            with self.subTest(replacement=replacement):
+                self.assertIn(original, CONNECTED_DISPATCH)
+                mutated = CONNECTED_DISPATCH.replace(original, replacement, 1)
+                with self.assertRaisesRegex(
+                    WitnessError, "required call target.*symbol entry"
+                ):
+                    validate_call_path(mutated)
 
     def test_rejects_backlight_executor_evidence_after_address_preserving_early_return(self):
         self.assertIn("00000846 <backlight_startup_executor::apply_with_io>", BACKLIGHT_EXECUTOR_EARLY_RETURN)
