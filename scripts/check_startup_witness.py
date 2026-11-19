@@ -358,6 +358,99 @@ def indexed_dispatch_targets(
     return targets, {instruction[0]: instruction for instruction in instructions}
 
 
+def validate_register_mapping_input(function: str, description: str) -> None:
+    prefix = reachable_instruction_prefix(function)
+    expected = [
+        ("push", r"\s*\{\s*r7,\s*lr\s*\}\s*", None),
+        ("add", r"\s*r7,\s*sp,\s*#0\s*", None),
+        ("sub", r"\s*sp,\s*#8\s*", None),
+        ("uxtb", r"\s*r0,\s*r0\s*", None),
+        ("str", r"\s*r0,\s*\[sp,\s*#0\]\s*", None),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#0\]\s*", None),
+        ("lsls", r"\s*r1,\s*r0,\s*#2\s*", None),
+        ("add", r"\s*r0,\s*pc,\s*#[0-9]+.*", None),
+        ("ldr", r"\s*r0,\s*\[r0,\s*r1\].*", None),
+        ("mov", r"\s*pc,\s*r0\s*", None),
+    ]
+    if not matches_instruction_sequence(prefix, expected):
+        raise WitnessError(f"{description} has an unexpected indexed dispatch input")
+
+
+def validate_backlight_plan_path(function: str, words: dict[int, int]) -> None:
+    expected = """
+push {r4, r5, r6, r7, lr}
+add r7, sp, #12
+sub sp, #196
+movs r3, #23
+lsls r3, r3, #17
+orrs r1, r3
+add r5, sp, #4
+movs r4, #0
+strb r4, [r5, #12]
+str r4, [sp, #4]
+str r3, [sp, #8]
+str r1, [sp, #12]
+add r1, sp, #20
+movs r3, #1
+strb r3, [r1, #12]
+movs r1, #3
+str r1, [sp, #20]
+ldr r4, [pc, #168]
+str r4, [sp, #28]
+movs r4, #15
+lsls r5, r4, #24
+bics r2, r5
+add r6, sp, #36
+movs r4, #2
+strb r4, [r6, #12]
+str r3, [sp, #36]
+str r5, [sp, #40]
+str r2, [sp, #44]
+ldr r2, [sp, #44]
+lsls r3, r3, #24
+orrs r2, r3
+add r5, sp, #52
+strb r4, [r5, #12]
+str r4, [sp, #52]
+str r3, [sp, #56]
+str r2, [sp, #60]
+add r2, sp, #68
+strb r1, [r2, #12]
+str r1, [sp, #68]
+ldr r2, [pc, #128]
+str r2, [sp, #76]
+add r3, sp, #84
+movs r2, #4
+strb r2, [r3, #12]
+str r1, [sp, #84]
+movs r1, #5
+str r1, [sp, #92]
+""".strip().splitlines()
+    for base in range(6):
+        for offset in (12, 8, 4, 0):
+            expected.extend(
+                (f"ldr r1, [sp, #{4 + 16 * base + offset}]",
+                 f"str r1, [sp, #{100 + 16 * base + offset}]")
+            )
+    expected.extend(("add r1, sp, #100", "movs r2, #96", "bl",
+                     "add sp, #196", "pop {r4, r5, r6, r7, pc}"))
+    path = reachable_instruction_prefix(function)
+    if len(path) != len(expected):
+        raise WitnessError("backlight plan operands or instruction continuation are incorrect")
+    for instruction, wanted in zip(path, expected, strict=True):
+        operands = re.split(r"\s+[@;]\s*", instruction[3], maxsplit=1)[0]
+        actual = instruction[2] if wanted == "bl" else f"{instruction[2]} {operands}"
+        if re.sub(r"\s+", "", actual) != re.sub(r"\s+", "", wanted):
+            raise WitnessError("backlight plan operands or instruction continuation are incorrect")
+        if wanted == "bl" and direct_call_targets(instruction[4]) != ["__aeabi_memcpy4"]:
+            raise WitnessError("backlight plan operands or instruction continuation are incorrect")
+        if wanted in ("ldr r4, [pc, #168]", "ldr r2, [pc, #128]"):
+            immediate = 168 if wanted.startswith("ldr r4") else 128
+            value = 0x3FF if immediate == 168 else 0x01010000
+            if words.get(((instruction[0] + 4) & ~3) + immediate) != value:
+                raise WitnessError("backlight plan assignments do not match the pinned register sequence")
+
+
 def reachable_call_targets(function: str) -> list[str]:
     return [
         target
@@ -1152,6 +1245,7 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
     targets, by_address = indexed_dispatch_targets(
         address_body, "backlight register address mapping", 5
     )
+    validate_register_mapping_input(address_body, "backlight register address mapping")
     mapped_addresses = []
     first_store = by_address.get(targets[0] + 2)
     first_branch = by_address.get(targets[0] + 4)
@@ -1221,6 +1315,7 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
     conversion_targets, conversion_instructions = indexed_dispatch_targets(
         conversion, "backlight register conversion", 5
     )
+    validate_register_mapping_input(conversion, "backlight register conversion")
     conversion_epilogue = None
     for register, target in enumerate(conversion_targets):
         body = [
@@ -1286,48 +1381,7 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
     validate_backlight_initializer_path(initialize)
 
     plan = function_block(disassembly, "BacklightInitPlan>::from_snapshot")
-    plan_instructions, plan_dominators, _ = reachable_control_flow_analysis(
-        plan, "backlight initialization plan"
-    )
-    expected_plan_operations = (
-        ("movs", r"\s*r3,\s*#23\s*"),
-        ("lsls", r"\s*r3,\s*r3,\s*#17\s*"),
-        ("orrs", r"\s*r1,\s*r3\s*"),
-        ("movs", r"\s*r4,\s*#15\s*"),
-        ("lsls", r"\s*r5,\s*r4,\s*#24\s*"),
-        ("bics", r"\s*r2,\s*r5\s*"),
-        ("lsls", r"\s*r3,\s*r3,\s*#24\s*"),
-        ("orrs", r"\s*r2,\s*r3\s*"),
-        ("movs", r"\s*r1,\s*#5\s*"),
-    )
-    next_instruction = 0
-    previous_operation = None
-    for mnemonic, operands in expected_plan_operations:
-        found = next(
-            (
-                index
-                for index in range(next_instruction, len(plan_instructions))
-                if matches_instruction(plan_instructions[index], mnemonic, operands)
-            ),
-            None,
-        )
-        if found is None or (
-            previous_operation is not None
-            and plan_instructions[previous_operation][0]
-            not in plan_dominators[plan_instructions[found][0]]
-        ):
-            raise WitnessError("backlight plan operands do not match the pinned register sequence")
-        previous_operation = found
-        next_instruction = found + 1
-    plan_words = word_entries(plan)
-    plan_literals = {
-        plan_words[int(match.group(1), 16)]
-        for instruction in plan_instructions
-        if (match := re.search(r"@\s*\(([0-9a-fA-F]+)\b", instruction[4]))
-        and int(match.group(1), 16) in plan_words
-    }
-    if not {0x000003FF, 0x01010000} <= plan_literals:
-        raise WitnessError("backlight plan assignments do not match the pinned register sequence")
+    validate_backlight_plan_path(plan, word_entries(plan))
 
     apply = function_block(disassembly, "backlight_startup_executor::apply_with_io")
     instructions, apply_dominators, apply_predecessors = reachable_control_flow_analysis(
