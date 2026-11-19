@@ -103,7 +103,90 @@ register mappings and initialization requirements.
 
 This is a callable offline-validated entry, not evidence that the default
 `Reset_Handler` or application boot invokes it. Board/firmware entry wiring
-and acquisition of the actual startup-selected mode remain separate work.
+remains separate work under #234.
+
+## EEPROM-selected welcome execution
+
+[`eeprom_welcome_startup`](../src/eeprom_welcome_startup.rs) adds the callable,
+allocation-free acquisition boundary. Its `welcome_with_io` takes the existing
+fallible `I2cTransport`, display `RegisterIo`, explicit millisecond delay,
+caller-owned pages and nonzero FIFO budget. It executes
+`eeprom_read_transport::execute_read(plan_read(0x0e90, 8))`, decodes byte 7,
+then calls `welcome_startup::welcome_with_version_and_io` with the package
+version. `welcome_with_version_and_io` permits an explicit project version.
+No settings-read mock, strict write codec or Rust enum discriminant conversion
+is used by this path.
+
+The loading policy follows pinned
+[`settings.c`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/settings.c#L113-L124)
+and
+[`settings.h`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/settings.h#L28-L34):
+
+| EEPROM byte 7 | Acquired Rust mode | Version row |
+| --- | --- | --- |
+| 0 (`FULL_SCREEN`) | `FullScreen` | Suppressed |
+| 1 (`MESSAGE`) | `Custom` | `M0HDY <version>` |
+| 2 (`VOLTAGE`) | `Voltage` | `M0HDY <version>` |
+| 3 (`NONE`) | `None` | Suppressed |
+| 4–255 | `Voltage` | `M0HDY <version>` |
+
+```mermaid
+flowchart LR
+    EEPROM["Read 8 bytes at 0x0E90 using existing fallible transport"] --> STOP["Complete STOP"]
+    EEPROM -->|Read or STOP error| ACQ["Return Acquisition error; no display access, display delay or page changes"]
+    STOP --> MODE["Decode byte 7; values >=4 default to Voltage"]
+    MODE --> PLAN["Existing welcome: validate/render caller-owned page 6"]
+    PLAN -->|Valid or suppressed| INIT["Existing SPI0/reset/controller startup"]
+    PLAN -->|Render error| ERR["Return Welcome error"]
+    INIT -->|Initialization error| ERR
+    INIT -->|Custom or Voltage| ROW["Existing bounded page 7 M0HDY version-row transfer"]
+    INIT -->|FullScreen or None| DONE["Return without version pixels"]
+    ROW -->|Transfer error| ERR
+    ROW --> DONE
+```
+
+`EepromWelcomeError::Acquisition` preserves the existing `ReadError`, including
+NACK, transport and STOP errors. The eight-byte response is local: even partial
+reads and failed final STOPs leave caller pages untouched. Acquisition errors
+never substitute a default mode or invoke welcome initialization. After a
+successful START, intermediate failure triggers exactly one cleanup STOP;
+cleanup failure does not replace the original error. Initial START failure
+does not trigger STOP; final STOP failure is not retried.
+`EepromWelcomeError::Welcome` preserves the concrete version, row,
+initialization and transfer error distinctions and short-circuiting described
+above. Only successful acquisition reaches the welcome executor; its existing
+render-before-I/O semantics still apply.
+
+Host register-I/O composition can use
+`I2cBitbangTransport::new(&mut GpioI2cIo::new(registers, delay_1us))` with the
+existing [GPIO backend](i2c-bitbang-flow.md). Keep the GPIO owner alive across
+the complete transaction and explicitly hand it back to the keypad only after
+STOP. The ARM bare-metal unsafe `eeprom_welcome_startup::welcome_mmio` constructs
+that existing volatile GPIO backend with the supplied `Delay1us`, acquires the
+mode, hands GPIO back on success or error, then calls the existing
+`welcome_startup::welcome_mmio` only on success. Its package version and display
+polling behavior match the host entry. It invents no MMIO map or default timing.
+
+All GPIO backend prerequisites remain mandatory: board-configured PA10/PA11,
+GPIOA/PortCon clocks and mapping, exclusive pin/keypad ownership, and
+serialization against **all** writers to GPIOA DATA/DIR and PORTA input-enable/
+open-drain through operations, handoff and Drop. Dropping restores pin mode but
+does not issue STOP. All display prerequisites above also remain mandatory,
+including PB11 reset rather than live SWD, configured mux/output pins, idle
+SPI0, and whole-register serialization across delays and transfers. Both delay
+providers must honor their units, not panic and not access shared registers.
+
+This boundary is offline software composition, not full welcome-screen parity,
+default `Reset_Handler` wiring, device execution, hardware validation or a final
+installable firmware. Actual firmware/application invocation remains tracked
+by #234; acquisition alone does not close that parent.
+
+Focused integrated tests compare the acquired execution with the concrete
+welcome trace, cover all four encodings and invalid 4/255, every transaction
+failure position, cleanup-error precedence, and welcome render/initialization/
+transfer failures. Existing GPIO mocks also exercise acquisition through the
+real GPIO-bitbang bridge, preserving unrelated register bits and keypad
+handoff. A literal pin trace checks address bytes and seven ACKs/final NACK.
 
 Run focused checks from the repository root:
 
@@ -114,8 +197,11 @@ cargo test --locked --test startup_version_row_plan
 cargo clippy --locked --test startup_version_row_plan -- -D warnings
 cargo test --locked --test welcome_startup
 cargo clippy --locked --test welcome_startup -- -D warnings
+cargo test --locked --test eeprom_welcome_startup --test i2c_bitbang_flow
+cargo clippy --locked --test eeprom_welcome_startup --test i2c_bitbang_flow -- -D warnings
 cargo fmt --all -- --check
 rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
   -D warnings src/startup_version_display.rs -o /tmp/startup_version_display.rlib
 RUSTFLAGS="-D warnings" cargo check --locked --lib --target thumbv6m-none-eabi
+cargo clippy --locked --target thumbv6m-none-eabi --release -- -D warnings
 ```

@@ -12,6 +12,7 @@ pub mod eeprom_i2c_bridge;
 pub mod eeprom_read_transport;
 #[allow(unused_attributes)]
 pub mod eeprom_transaction;
+pub mod eeprom_welcome_startup;
 pub mod firmware_container_checksum;
 #[allow(unused_attributes)]
 pub mod i2c_bitbang_flow;
