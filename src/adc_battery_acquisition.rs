@@ -10,7 +10,7 @@
 
 #[path = "adc_samples.rs"]
 #[allow(dead_code)]
-mod adc_samples;
+pub(crate) mod adc_samples;
 
 use adc_samples::{AdcRegisterSnapshot, decode_adc_sample};
 
