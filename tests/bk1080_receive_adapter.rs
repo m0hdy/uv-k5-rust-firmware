@@ -141,6 +141,29 @@ fn register_write_and_read_have_exact_big_endian_frames_without_repeated_start()
 }
 
 #[test]
+fn complete_initialization_register_range_includes_decimal_25_internal_register() {
+    assert_eq!(Register::from_index(0).map(Register::index), Some(0));
+    assert_eq!(Register::from_index(33).map(Register::index), Some(33));
+    assert_eq!(Register::from_index(34), None);
+    assert_eq!(Register::Internal25.index(), 25);
+    assert_eq!(Register::from_index(25), Some(Register::Internal25));
+
+    let (mut bus, trace) = bus_with_data(&[]);
+    write_register(&mut bus, Register::Internal25, 0xa83c).unwrap();
+    assert_eq!(
+        *trace.borrow(),
+        [
+            Event::Start,
+            Event::Write(0x80),
+            Event::Write(0x32),
+            Event::Write(0xa8),
+            Event::Write(0x3c),
+            Event::Stop,
+        ]
+    );
+}
+
+#[test]
 fn tuning_reads_fresh_configuration_and_executes_plan_in_order_with_ten_ms_delay() {
     let (mut bus, trace) = bus_with_data(&[0xa5, 0x5a]);
     let mut delay = Delay(trace.clone());

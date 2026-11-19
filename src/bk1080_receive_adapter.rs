@@ -9,12 +9,23 @@ use crate::eeprom_read_transport::{Acknowledgement, I2cTransport};
 pub use bk1080_tuning::FrequencyDeviation;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u8)]
-pub enum Register {
-    PowerConfiguration = 0x02,
-    Channel = 0x03,
-    SystemConfiguration2 = 0x05,
-    Status = 0x07,
+pub struct Register(u8);
+
+#[allow(non_upper_case_globals)]
+impl Register {
+    pub const PowerConfiguration: Self = Self(0x02);
+    pub const Channel: Self = Self(0x03);
+    pub const SystemConfiguration2: Self = Self(0x05);
+    pub const Status: Self = Self(0x07);
+    pub const Internal25: Self = Self(25);
+
+    pub const fn from_index(index: u8) -> Option<Self> {
+        if index <= 33 { Some(Self(index)) } else { None }
+    }
+
+    pub const fn index(self) -> u8 {
+        self.0
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -55,7 +66,7 @@ pub fn write_register<T: I2cTransport>(
     value: u16,
 ) -> Result<(), ReceiveError<T::Error>> {
     transaction(transport, |transport| {
-        for byte in [0x80, (register as u8) << 1, (value >> 8) as u8, value as u8] {
+        for byte in [0x80, register.index() << 1, (value >> 8) as u8, value as u8] {
             write_byte(transport, byte)?;
         }
         Ok(())
@@ -69,7 +80,7 @@ pub fn read_register<T: I2cTransport>(
     let mut value = [0; 2];
     transaction(transport, |transport| {
         write_byte(transport, 0x80)?;
-        write_byte(transport, ((register as u8) << 1) | 1)?;
+        write_byte(transport, (register.index() << 1) | 1)?;
         transport
             .read_buffer(&mut value)
             .map_err(ReceiveError::Transport)

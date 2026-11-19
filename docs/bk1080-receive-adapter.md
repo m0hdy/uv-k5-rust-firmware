@@ -3,8 +3,9 @@
 `src/bk1080_receive_adapter.rs` executes BK1080 register operations over the
 existing `I2cTransport`, using the tune plan in `src/bk1080_tuning.rs`. The
 register protocol and tune behavior follow `BK1080_SetFrequency`,
-`BK1080_SetMute`, and `BK1080_GetFrequencyDeviation` in
+`BK1080_Mute`, and `BK1080_GetFrequencyDeviation` in
 [`driver/bk1080.c`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/driver/bk1080.c)
+and [`driver/bk1080-regs.h`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/driver/bk1080-regs.h)
 at pinned reference
 [`7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3`](https://github.com/egzumer/uv-k5-firmware-custom/tree/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3).
 The adapter is unexported and is not connected to startup or firmware entry.
@@ -31,6 +32,12 @@ value or a default.
 channel write, caller-provided 10 ms delay, and tune-bit channel write.
 Unrelated configuration bits, the model's band modulo/mask and `u16` wrapping
 behavior, and the reference's lack of out-of-range rejection are preserved.
+The adapter exposes `Register::from_index` for the full valid initialization
+range 0–33; out-of-range indices return `None`. In particular,
+`Register::Internal25` is register index decimal 25 (`0x19`), whose I2C
+register-address byte is `0x32`. This enables later initialization/calibration
+code to use the same typed register operations without duplicating bus framing.
+
 The adapter does not implement the missing nonzero-frequency first-init
 sequence: the receiver must already be initialized and powered. `set_muted`
 executes the existing mute command values. `read_frequency_deviation` reads
