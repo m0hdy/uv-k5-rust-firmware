@@ -371,11 +371,10 @@ Before any Rust image is considered for programming:
 - [ ] Review the exact programmer command, interface file, custom target config,
   selected address, erase ranges, and reset behavior. Do not rely on defaults
   or a previous device's settings.
-- [ ] Confirm an operator-controlled recovery path before programming: known
-  good image for this exact hardware, working and tested stock recovery/update
-  mechanism or compatible SWD probe and documented recovery procedure, required
-  drivers/cables/power, and a second device or other means to confirm the
-  recovery image. If any prerequisite is missing, do not flash.
+- [ ] Complete the [recovery runbook](recovery-runbook.md): require the
+  exact-hardware known-good image and independently verified standalone
+  bootloader/update path. A probe is not a substitute. If any prerequisite is
+  missing, do not flash.
 - [ ] After any separately authorized device test, record the device identity,
   exact image hashes, tool versions, command/procedure, result, and recovery
   outcome. A successful build or inspection is not a successful device test.

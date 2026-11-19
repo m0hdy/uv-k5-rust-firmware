@@ -77,6 +77,8 @@ unvalidated development outputs: the bootstrap is not hardware-validated and
 must not be treated as flashable or release-ready. The isolated negative job
 adds one byte to a disposable raw payload, requires the memory gate to reject it,
 and keeps its ELF/map diagnostics without uploading raw or packed output.
+The [recovery runbook](docs/recovery-runbook.md) defines the mandatory
+no-flash-until-recoverable preflight and rollback evidence.
 
 ```mermaid
 flowchart LR

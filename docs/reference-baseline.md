@@ -140,6 +140,8 @@ reference. “Not run” is not a pass.
 
 ### Recovery checklist
 
+The mandatory preflight and rollback sequence is in the
+[recovery runbook](recovery-runbook.md).
 No known-good packed image or successful restoration has been recorded yet.
 Complete and retain this evidence on a designated recoverable test radio before
 claiming a rollback path:
