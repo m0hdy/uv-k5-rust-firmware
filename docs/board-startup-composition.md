@@ -45,6 +45,7 @@ rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
 ```
 
 The standalone target compile checks that the composition needs neither `std`
-nor an allocator. This software-only child task does not add a public library
-API, hardware backend, firmware startup change, RF transmission, release,
-upload, or device testing; it does not establish hardware acceptance.
+nor an allocator. The separate target adapter dispatcher and link-only witness
+are described in [board startup adapters](board-startup-adapters.md); neither
+changes the default firmware startup or application image pipeline. This
+software-only work does not establish hardware acceptance.

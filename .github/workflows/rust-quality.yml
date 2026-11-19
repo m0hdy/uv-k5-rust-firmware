@@ -63,6 +63,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends binutils-arm-none-eabi
           arm-none-eabi-ld --version | head -n 1
+      - name: Build and inspect link-only startup witness
+        env:
+          ARM_BINUTILS_PREFIX: arm-none-eabi-
+          RUSTFLAGS: >-
+            -D warnings
+            -C link-arg=-Tlinker/startup-witness.ld
+            -C link-arg=-Map=../target/startup-witness/startup-adapter-witness.map
+        run: |
+          cargo build --locked \
+            --manifest-path startup-witness/Cargo.toml \
+            --target thumbv6m-none-eabi \
+            --release \
+            --target-dir target/startup-witness
+          python3 scripts/check_startup_witness.py \
+            --elf target/startup-witness/thumbv6m-none-eabi/release/startup-adapter-witness
       - name: Run Python suite and memory-budget fixtures
         env:
           ARM_BINUTILS_PREFIX: arm-none-eabi-
