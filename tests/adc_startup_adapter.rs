@@ -1,8 +1,9 @@
 #[path = "../src/adc_startup_adapter.rs"]
 mod adc_startup_adapter;
 
+use adc_startup_adapter::physical::{WordIo, apply_with_words};
 use adc_startup_adapter::{Interrupt, IrqAction, Register, RegisterIo, apply_with_io};
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Event {
@@ -133,4 +134,105 @@ fn nonzero_interrupt_enable_readback_enables_saradc_irq() {
             .count(),
         2
     );
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum PhysicalEvent {
+    Read32(usize, u32),
+    Write32(usize, u32),
+    SyncIrqDisable,
+}
+
+struct FakeWordIo {
+    registers: BTreeMap<usize, u32>,
+    enabled_irqs: u32,
+    events: Vec<PhysicalEvent>,
+}
+
+impl WordIo for FakeWordIo {
+    fn read_word(&mut self, address: usize) -> u32 {
+        assert_eq!(address % 4, 0);
+        let value = self.registers[&address];
+        self.events.push(PhysicalEvent::Read32(address, value));
+        value
+    }
+
+    fn write_word(&mut self, address: usize, value: u32) {
+        assert_eq!(address % 4, 0);
+        self.events.push(PhysicalEvent::Write32(address, value));
+        match address {
+            0xe000_e100 => self.enabled_irqs |= value,
+            0xe000_e180 => self.enabled_irqs &= !value,
+            0x400b_a00c => *self.registers.get_mut(&address).unwrap() &= !value,
+            _ => *self.registers.get_mut(&address).unwrap() = value,
+        }
+    }
+
+    fn sync_irq_disable(&mut self) {
+        self.events.push(PhysicalEvent::SyncIrqDisable);
+    }
+}
+
+#[test]
+fn physical_startup_uses_word_transactions_and_only_changes_the_saradc_nvic_line() {
+    use PhysicalEvent::{Read32, SyncIrqDisable, Write32};
+
+    for (preserved_ie, trigger, initial_nvic, final_nvic) in
+        [(0, 0xa55a, 0x38, 0x28), (0x8000_0000, 0xfedc, 0x28, 0x38)]
+    {
+        let initial_ie = preserved_ie | 0x0003_ffff;
+        let mut io = FakeWordIo {
+            registers: BTreeMap::from([
+                (0x4000_0008, 0x4000_0040),
+                (0x4000_0000, 0xa5a5_5a2a),
+                (0x400b_a000, 0xf800_8000),
+                (0x400b_a0b0, 0xdead_beef),
+                (0x400b_a0f0, 0xa5a4_5aaa),
+                (0x400b_a0f4, 0x1356_9bdf),
+                (0x400b_a00c, 0x0003_0210),
+                (0x400b_a008, initial_ie),
+                (0x400b_a004, 0x8000_0014),
+            ]),
+            enabled_irqs: initial_nvic,
+            events: Vec::new(),
+        };
+        apply_with_words(&mut io, trigger);
+
+        let mut expected = vec![
+            Read32(0x4000_0008, 0x4000_0040),
+            Write32(0x4000_0008, 0x4200_0040),
+            Read32(0x400b_a000, 0xf800_8000),
+            Write32(0x400b_a000, 0xf000_8000),
+            Read32(0x4000_0000, 0xa5a5_5a2a),
+            Write32(0x4000_0000, 0xa5a5_56aa),
+            Read32(0x400b_a000, 0xf000_8000),
+            Write32(0x400b_a000, 0xc7c3_8210),
+            Write32(0x400b_a0b0, u32::from(trigger)),
+            Read32(0x400b_a0f0, 0xa5a4_5aaa),
+            Write32(0x400b_a0f0, 0xa5a5_5aaa),
+            Read32(0x400b_a0f4, 0x1356_9bdf),
+            Write32(0x400b_a0f4, 0x1357_9bdf),
+            Write32(0x400b_a00c, u32::MAX),
+            Read32(0x400b_a008, initial_ie),
+            Write32(0x400b_a008, preserved_ie),
+            Read32(0x400b_a008, preserved_ie),
+        ];
+        if preserved_ie == 0 {
+            expected.extend([Write32(0xe000_e180, 0x10), SyncIrqDisable]);
+        } else {
+            expected.push(Write32(0xe000_e100, 0x10));
+        }
+        expected.extend([
+            Read32(0x400b_a000, 0xc7c3_8210),
+            Write32(0x400b_a000, 0xcfc3_8210),
+            Read32(0x400b_a004, 0x8000_0014),
+            Write32(0x400b_a004, 0x8000_0010),
+            Read32(0x400b_a004, 0x8000_0010),
+            Write32(0x400b_a004, 0x8000_0014),
+        ]);
+        assert_eq!(io.events, expected, "trigger {trigger:#06x}");
+        assert_eq!(io.registers[&0x400b_a00c], 0);
+        assert_eq!(io.registers[&0x400b_a0b0], u32::from(trigger));
+        assert_eq!(io.enabled_irqs, final_nvic);
+    }
 }
