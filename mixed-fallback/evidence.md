@@ -7,7 +7,7 @@ No target execution, device use, release artifact, or hardware dependency closur
 
 ## Source and toolchain
 
-- Git HEAD (base revision): `474c2e11b056601f6d555ac77020cc45da0d9dc3`; source input hashes below identify the exact working-tree inputs.
+- Git HEAD (base revision): `1eda7bce96aa6b5a47cbdc26372453e7879b2e4d`; source input hashes below identify the exact working-tree inputs.
 - Rust: `rustc 1.99.1 (58cf8f9c3 2026-10-13)`
 - Cargo: `cargo 1.99.1 (5f94df478 2026-08-27)`
 - Clang: `Ubuntu clang version 18.1.3 (1ubuntu1)`
@@ -22,13 +22,13 @@ Source SHA-256:
 - `mixed-fallback/fallback.c`: `48ac6c1810edd8fe54b24aa512e76221858301cbe364a5f08c97c721f3957c59`
 - `mixed-fallback/compare.c`: `f6fae60a5e2e50b8ea721b0a846e4fe64f12b5c4353a184524481b7027bf5163`
 - `mixed-fallback/rust_impl.rs`: `699682430b9302631cb3156d18902bcaad81fee9cd14162855ef7d19ee906c71`
-- `mixed-fallback/run.py`: `5ebb367905b50d09f39fbb587a015088b07a5c85fc294a229b25e59559150b62`
+- `mixed-fallback/run.py`: `6740410e63b177fada49e768b72a8bc5c68016e208c9605182836cafd5e28c2a`
 - `src/bin/mixed_fallback.rs`: `d35e7be3e14a892988081db78255201adbda1745d5ec4e9b2b660b68679b00a4`
 - `src/bin/startup.S`: `40b4e9713681d656ac20643f28a874cf62f0c80ff488217423defe970f212714`
 - `linker/firmware.ld`: `db5d0c300aa57de5bd9a3d68c67b993097ab4ce5bd05e8fd33a6080b11174226`
 - `scripts/check_startup_layout.py`: `5f5ce21e131f4a0c76d7d75c760fb024bb5c0acbb9b1e1d5c9853224205d1f3f`
 - `scripts/check_memory_budget.py`: `a14f66fbc05fc8adbb2473032c90c8877f1c10cd1e6931146785fd9c1427f4a9`
-- `tests/test_mixed_fallback.py`: `37eed10064116a600ccfc0377c3319ae1dc63311a91f35354b26e67beb0a4f94`
+- `tests/test_mixed_fallback.py`: `4d87dab3c9bd9f48ce6d381697ddda3f8af437913cfae0cb2734c8cef3f2ff1a`
 
 ## Target selections
 
@@ -36,7 +36,7 @@ Source SHA-256:
 
 - Retained implementation: `mixed_c_channel_valid`
 - ELF SHA-256: `6a8ab421a2a5678a124a5d3d84ecf4ce1b1f0a95629694a7c43c76f1575c0de3`
-- Map SHA-256: `5934f012e6577d11e6c9a68879f2ecd1c44a364949eb28bbfcaf2029220c905d`
+- Map SHA-256: `e902eb4cddf6c662cad2edad2258ce28c98f08aedbdb2a07f914e94dbb95a54e`
 - Raw SHA-256: `d462498c005966f84898ee0cdd34eabf027290c022c9546abe084767738e4fcc`
 - Raw bytes: 336
 - Flash load: 336 / 61440 bytes.
@@ -74,7 +74,7 @@ Budget check passed
 
 - Retained implementation: `mixed_rust_channel_valid`
 - ELF SHA-256: `7aa201320bc7a847fe69077bb20e08d5033b0396e081564b6707b8b5f01b19ee`
-- Map SHA-256: `31df4362ee7f7a3c8700dabd2203f121fe1cc74e0d8a094f74a95863e9042cc1`
+- Map SHA-256: `1ede6e4181b047534d28e77430f5280728dfe7b0144ffd0509effe7dbef38847`
 - Raw SHA-256: `2709d1c524793e6c468dea088aab57e8b025a61c8501dbdb54b22a484a4b710c`
 - Raw bytes: 340
 - Flash load: 340 / 61440 bytes.
@@ -117,7 +117,7 @@ UVK5_RUN_MIXED_FALLBACK=1 python3 -m unittest discover -s tests -p 'test_mixed_f
 python3 mixed-fallback/run.py --report mixed-fallback/evidence.md
 ```
 
-The runner compares host results, links each explicit feature selection, checks map and disassembly call retention, runs the startup-layout validator, creates the raw payload with ARM `objcopy`, and checks the exact ELF/raw pair with a 2 KiB stack reservation.
+The runner compares host results, links each explicit feature selection with Cargo's target directory pinned under the output directory, checks map and disassembly call retention, runs the startup-layout validator, creates the raw payload with ARM `objcopy`, and checks the exact ELF/raw pair with a 2 KiB stack reservation.
 
 ## Device results
 

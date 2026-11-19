@@ -31,5 +31,7 @@ The opt-in image includes the existing `src/bin/startup.S` and uses
 `linker/firmware.ld`. The runner proves that the selected implementation is
 called from `firmware_main`, the other implementation is absent from the
 linked symbol table, and each ELF/raw pair passes the startup and memory-budget
-checks with the existing 2 KiB stack reservation. No device execution or
-release artifact is involved.
+checks with the existing 2 KiB stack reservation. Both Cargo builds use a
+runner-owned target directory under the selected output directory, regardless
+of an ambient `CARGO_TARGET_DIR`. No device execution or release artifact is
+involved.

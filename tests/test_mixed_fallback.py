@@ -39,6 +39,9 @@ class MixedFallbackTests(unittest.TestCase):
     def test_host_comparison_and_both_target_selections(self):
         with tempfile.TemporaryDirectory() as output_dir:
             report = Path(output_dir) / "evidence.md"
+            conflicting_target_dir = Path(output_dir) / "conflicting-cargo-target"
+            environment = os.environ.copy()
+            environment["CARGO_TARGET_DIR"] = str(conflicting_target_dir)
             result = subprocess.run(
                 [
                     sys.executable,
@@ -49,6 +52,7 @@ class MixedFallbackTests(unittest.TestCase):
                     str(report),
                 ],
                 cwd=ROOT,
+                env=environment,
                 text=True,
                 capture_output=True,
             )
@@ -57,6 +61,11 @@ class MixedFallbackTests(unittest.TestCase):
             self.assertIn("C selected", evidence)
             self.assertIn("RUST selected", evidence)
             self.assertIn("2,048 bytes reserved for stack", evidence)
+            self.assertTrue(
+                (Path(output_dir) / "target" / "thumbv6m-none-eabi" / "release"
+                 / "mixed-fallback").is_file()
+            )
+            self.assertFalse(conflicting_target_dir.exists())
 
 
 if __name__ == "__main__":

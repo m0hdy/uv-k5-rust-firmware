@@ -166,6 +166,8 @@ def validate_target(name, selected, discarded, artifacts, tools):
 def build_target(output_dir, cargo, tools):
     artifacts = output_dir / "target"
     artifacts.mkdir(parents=True, exist_ok=True)
+    cargo_env = os.environ.copy()
+    cargo_env["CARGO_TARGET_DIR"] = str(artifacts.resolve())
     results = {}
     for name, (feature, selected, discarded) in SELECTORS.items():
         map_file = artifacts / f"fallback-{name}.map"
@@ -188,8 +190,8 @@ def build_target(output_dir, cargo, tools):
             "-C",
             "link-arg=--gc-sections",
         ]
-        run(cargo_args)
-        cargo_elf = ROOT / "target" / TARGET / "release" / "mixed-fallback"
+        run(cargo_args, env=cargo_env)
+        cargo_elf = artifacts / TARGET / "release" / "mixed-fallback"
         elf = artifacts / f"fallback-{name}.elf"
         shutil.copyfile(cargo_elf, elf)
         run([tools["objcopy"], "-O", "binary", elf, artifacts / f"fallback-{name}.bin"])
@@ -269,7 +271,7 @@ def make_report(results, versions):
         "python3 mixed-fallback/run.py --report mixed-fallback/evidence.md",
         "```",
         "",
-        "The runner compares host results, links each explicit feature selection, checks map and disassembly call retention, runs the startup-layout validator, creates the raw payload with ARM `objcopy`, and checks the exact ELF/raw pair with a 2 KiB stack reservation.",
+        "The runner compares host results, links each explicit feature selection with Cargo's target directory pinned under the output directory, checks map and disassembly call retention, runs the startup-layout validator, creates the raw payload with ARM `objcopy`, and checks the exact ELF/raw pair with a 2 KiB stack reservation.",
         "",
         "## Device results",
         "",
