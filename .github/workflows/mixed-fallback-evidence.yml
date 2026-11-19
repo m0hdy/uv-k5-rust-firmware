@@ -1,0 +1,91 @@
+name: Mixed-fallback evidence
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/mixed-fallback-evidence.yml
+      - .cargo/config.toml
+      - Cargo.lock
+      - Cargo.toml
+      - build.rs
+      - linker/firmware.ld
+      - mixed-fallback/**
+      - rust-toolchain.toml
+      - scripts/check_memory_budget.py
+      - scripts/check_startup_layout.py
+      - src/bin/mixed_fallback.rs
+      - src/bin/startup.S
+      - tests/test_mixed_fallback.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mixed-fallback:
+    name: Compare and validate both selections
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact source revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Create runner-owned scratch directory
+        run: |
+          workdir="$(mktemp -d "$RUNNER_TEMP/mixed-fallback.XXXXXX")"
+          echo "MIXED_FALLBACK_WORKDIR=$workdir" >> "$GITHUB_ENV"
+      - name: Install pinned Rust toolchain
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          import tomllib
+
+          with open("rust-toolchain.toml", "rb") as toolchain_file:
+              toolchain = tomllib.load(toolchain_file)["toolchain"]
+
+          command = [
+              "rustup",
+              "toolchain",
+              "install",
+              toolchain["channel"],
+              "--profile",
+              toolchain["profile"],
+          ]
+          for component in toolchain.get("components", []):
+              command.extend(["--component", component])
+          for target in toolchain.get("targets", []):
+              command.extend(["--target", target])
+          subprocess.run(command, check=True)
+          PY
+      - name: Install Clang and ARM GNU binutils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang binutils-arm-none-eabi
+          clang --version | head -n 1
+          arm-none-eabi-objcopy --version | head -n 1
+      - name: Run existing mixed-fallback evidence runner
+        run: |
+          python3 mixed-fallback/run.py \
+            --output-dir "$MIXED_FALLBACK_WORKDIR/build" \
+            --report "$MIXED_FALLBACK_WORKDIR/evidence.md"
+          test -s "$MIXED_FALLBACK_WORKDIR/evidence.md"
+          cat "$MIXED_FALLBACK_WORKDIR/evidence.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload diagnostic evidence report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mixed-fallback-evidence
+          path: ${{ env.MIXED_FALLBACK_WORKDIR }}/evidence.md
+          if-no-files-found: error
+          retention-days: 5
+      - name: Verify uploaded artifact contains the report
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mixed-fallback-evidence
+          path: ${{ runner.temp }}/mfa
+      - name: Compare downloaded report with generated report
+        run: |
+          cmp -- "$MIXED_FALLBACK_WORKDIR/evidence.md" \
+            "$RUNNER_TEMP/mfa/evidence.md"
