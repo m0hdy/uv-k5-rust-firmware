@@ -1,5 +1,7 @@
 #![no_std]
 
+#[allow(unused_attributes)]
+pub mod boot_coordinator;
 pub mod channel_codec;
 pub mod channel_validity;
 #[allow(unused_attributes)]
