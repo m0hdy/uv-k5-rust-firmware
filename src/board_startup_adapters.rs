@@ -1,5 +1,8 @@
 #![cfg_attr(not(test), no_std)]
 
+#[path = "backlight_startup_executor.rs"]
+#[allow(dead_code, unused_attributes, unused_imports)]
+pub(crate) mod backlight_startup_executor;
 #[path = "board_sequence.rs"]
 #[allow(unused_attributes)]
 mod board_sequence;
@@ -16,6 +19,8 @@ mod portcon_startup_adapter;
 #[allow(dead_code, unused_attributes)]
 mod systick_startup_adapter;
 
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+use backlight_startup_executor::initialize_backlight_hardware;
 pub use board_sequence::{Call, Defines};
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 use gpio_startup_adapter::{Features as GpioFeatures, GpioPlan};
@@ -31,6 +36,7 @@ pub trait StartupIo {
     fn systick(&mut self, period_ticks: u32) -> Result<(), StartupError>;
     fn portcon(&mut self, enable_swd: bool);
     fn gpio(&mut self, enable_fmradio: bool);
+    fn backlight_init_hardware(&mut self);
     fn placeholder(&mut self, call: Call);
 }
 
@@ -56,6 +62,7 @@ impl<IO: StartupIo> board_sequence::Backend for SequencerBackend<'_, IO> {
             }
             Call::PortconInit => self.io.portcon(self.enable_swd),
             Call::GpioInit => self.io.gpio(self.enable_fmradio),
+            Call::BacklightInitHardware => self.io.backlight_init_hardware(),
             other => self.io.placeholder(other),
         }
     }
@@ -112,6 +119,12 @@ impl StartupIo for HardwareIo {
         unsafe { gpio_startup_adapter::apply_gpio_startup_plan(&plan) }
     }
 
+    fn backlight_init_hardware(&mut self) {
+        // SAFETY: Startup has enabled the PWM clock; the caller must reserve B6 and
+        // provide the documented register mapping and exclusive ownership.
+        unsafe { initialize_backlight_hardware() }
+    }
+
     fn placeholder(&mut self, _call: Call) {}
 }
 
@@ -121,9 +134,9 @@ impl StartupIo for HardwareIo {
 /// # Safety
 ///
 /// The caller must satisfy the mapping and exclusive-ownership preconditions
-/// documented by all four target adapters, and must install a valid SysTick
-/// vector and handler before this enables SysTick. The link-only witness is
-/// deliberately not configured for hardware execution.
+/// documented by the target adapters, reserve B6 for the backlight, and
+/// install a valid SysTick vector and handler before this enables SysTick.
+/// The link-only witness is deliberately not configured for hardware execution.
 pub(super) unsafe fn run_hardware(defines: Defines, enable_swd: bool) -> Result<(), StartupError> {
     run(defines, enable_swd, &mut HardwareIo)
 }

@@ -16,6 +16,7 @@ enum Event {
     Systick(u32),
     Portcon(bool),
     Gpio(bool),
+    BacklightInit,
     BoardPlaceholder(BoardCall),
     EepromStart,
     EepromWrite(u8),
@@ -101,6 +102,10 @@ impl StartupIo for MockIo {
 
     fn gpio(&mut self, enable_fmradio: bool) {
         self.events.push(Event::Gpio(enable_fmradio));
+    }
+
+    fn backlight_init_hardware(&mut self) {
+        self.events.push(Event::BacklightInit);
     }
 
     fn placeholder(&mut self, call: BoardCall) {
@@ -206,7 +211,7 @@ fn success_runs_board_then_fallible_settings_then_bounded_battery_sampling() {
             Event::Systick(480_000),
             Event::Portcon(false),
             Event::Gpio(false),
-            Event::BoardPlaceholder(BoardCall::BacklightInitHardware),
+            Event::BacklightInit,
             Event::BoardPlaceholder(BoardCall::AdcInit),
             Event::BoardPlaceholder(BoardCall::St7565Init),
         ]

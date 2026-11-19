@@ -89,6 +89,213 @@ def direct_call_targets(function: str) -> list[str]:
     ]
 
 
+def matches_call_symbol(symbol: str, target: str) -> bool:
+    if symbol.endswith("::<"):
+        return symbol in target
+    return (
+        re.search(
+            rf"{re.escape(symbol)}(?:\+0x[0-9a-fA-F]+|::<.*>)?(?:>|$)",
+            target,
+        )
+        is not None
+    )
+
+
+def validate_required_call_targets(disassembly: str) -> None:
+    required_symbols = (
+        ("witness_main", "witness_main", False),
+        ("run_hardware", "run_hardware", False),
+        ("board_startup_adapters::run::<", "board_startup_adapters::run::<", False),
+        ("board_sequence::run::<", "board_sequence::run::<", False),
+        ("Backend>::call", "board_sequence::Backend>::call", False),
+        ("StartupIo>::device_clock_gates", "StartupIo>::device_clock_gates", True),
+        ("StartupIo>::systick", "StartupIo>::systick", True),
+        ("StartupIo>::portcon", "StartupIo>::portcon", True),
+        ("StartupIo>::gpio", "StartupIo>::gpio", True),
+        (
+            "StartupIo>::backlight_init_hardware",
+            "StartupIo>::backlight_init_hardware",
+            True,
+        ),
+        ("apply_device_clock_gates", "apply_device_clock_gates", False),
+        ("apply_to_hardware", "apply_to_hardware", True),
+        (
+            "systick_startup_adapter::InvalidReload>>::map_err",
+            "systick_startup_adapter::InvalidReload>>::map_err",
+            False,
+        ),
+        ("apply_portcon_startup_plan", "apply_portcon_startup_plan", False),
+        ("apply_gpio_startup_plan", "apply_gpio_startup_plan", False),
+        (
+            "gpio_init_plan::GpioPlan>::for_features",
+            "gpio_init_plan::GpioPlan>::for_features",
+            False,
+        ),
+        (
+            "initialize_backlight_hardware",
+            "initialize_backlight_hardware",
+            False,
+        ),
+        (
+            "backlight_startup_executor::apply_with_io",
+            "backlight_startup_executor::apply_with_io",
+            False,
+        ),
+        (
+            "BacklightInitPlan>::from_snapshot",
+            "BacklightInitPlan>::from_snapshot",
+            False,
+        ),
+        ("BacklightInitPlan>::writes", "BacklightInitPlan>::writes", False),
+        (
+            "BacklightWrite]>::iter",
+            "backlight_plan::BacklightWrite]>::iter",
+            False,
+        ),
+        (
+            "IntoIterator>::into_iter",
+            "backlight_plan::BacklightWrite>> as core::iter::traits::collect::IntoIterator>::into_iter",
+            False,
+        ),
+        (
+            "Iterator>::next",
+            "backlight_plan::BacklightWrite>> as core::iter::traits::iterator::Iterator>::next",
+            False,
+        ),
+        (
+            "Iterator>::copied::<",
+            "backlight_plan::BacklightWrite> as core::iter::traits::iterator::Iterator>::copied",
+            False,
+        ),
+        (
+            "RegisterIo>::read",
+            "backlight_startup_executor::RegisterIo>::read",
+            False,
+        ),
+        (
+            "RegisterIo>::write",
+            "backlight_startup_executor::RegisterIo>::write",
+            False,
+        ),
+        (
+            "RegisterAddress>::from_register",
+            "backlight_startup_executor::RegisterAddress>::from_register",
+            False,
+        ),
+        (
+            "RegisterAddress>::address",
+            "backlight_startup_executor::RegisterAddress>::address",
+            False,
+        ),
+        ("__aeabi_memcpy4", "__aeabi_memcpy4", False),
+    )
+
+    def function_entry(fragment: str, suffix: bool) -> tuple[int, str]:
+        matches = []
+        for line in disassembly.splitlines():
+            match = re.match(r"\s*([0-9a-fA-F]+)\s+<(.+)>:\s*$", line)
+            if match is None:
+                continue
+            name = match.group(2)
+            if name.endswith(fragment) if suffix else fragment in name:
+                matches.append((int(match.group(1), 16), name))
+        if len(matches) != 1:
+            raise WitnessError(
+                f"required call target {fragment} does not resolve uniquely to its symbol entry"
+            )
+        return matches[0]
+
+    def matches_symbol(symbol: str, target: str) -> bool:
+        return matches_call_symbol(symbol, target)
+
+    callers = (
+        ("Reset_Handler", False),
+        ("witness_main", False),
+        ("run_hardware", False),
+        ("board_startup_adapters::run::<", False),
+        ("board_sequence::run::<", False),
+        ("board_sequence::Backend>::call", False),
+        ("StartupIo>::device_clock_gates", True),
+        ("StartupIo>::systick", True),
+        ("StartupIo>::portcon", True),
+        ("StartupIo>::gpio", True),
+        ("StartupIo>::backlight_init_hardware", True),
+        ("initialize_backlight_hardware", False),
+        ("backlight_startup_executor::apply_with_io", False),
+        ("BacklightInitPlan>::from_snapshot", False),
+        ("BacklightInitPlan>::writes", False),
+        ("backlight_startup_executor::RegisterIo>::read", False),
+        ("backlight_startup_executor::RegisterIo>::write", False),
+    )
+    for caller, suffix in callers:
+        function = function_block(disassembly, caller, suffix=suffix)
+        for instruction in parse_instructions(function):
+            if instruction[2] not in ("bl", "blx"):
+                continue
+            edge = re.search(
+                r"\bbl(?:x)?\s+([0-9a-fA-F]+)\s+<(.+)>$", instruction[4]
+            )
+            if edge is None:
+                continue
+            address, target = int(edge.group(1), 16), edge.group(2)
+            matching_entries = {
+                function_entry(selector, suffix)
+                for symbol, selector, suffix in required_symbols
+                if matches_symbol(symbol, target)
+            }
+            if not matching_entries:
+                allowed_helpers = (
+                    (
+                        (
+                            "HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::placeholder",
+                            False,
+                            r"<?startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::placeholder",
+                        ),
+                        (
+                            "core::result::Result<(), startup_adapter_witness::board_startup_adapters::StartupError>>::is_err",
+                            False,
+                            r"<?core::result::Result<\(\), startup_adapter_witness::board_startup_adapters::StartupError>>::is_err",
+                        ),
+                    )
+                    if caller == "board_sequence::Backend>::call"
+                    else ()
+                )
+                matching_helpers = {
+                    function_entry(helper, suffix)
+                    for helper, suffix, identity in allowed_helpers
+                    if re.fullmatch(identity, target)
+                }
+                if len(matching_helpers) == 1:
+                    helper_entry = next(iter(matching_helpers))
+                    if (
+                        re.search(r"\+0x[0-9a-fA-F]+$", target)
+                        or helper_entry[0] != address
+                        or not (
+                            helper_entry[1] == target
+                            or helper_entry[1].endswith(target)
+                        )
+                    ):
+                        raise WitnessError(
+                            f"allowed helper call target {target} does not resolve to its symbol entry"
+                        )
+                    continue
+                raise WitnessError(
+                    f"required caller {caller} has an unexpected call target {target}"
+                )
+
+            entry = next(iter(matching_entries), None)
+            if (
+                re.search(r"\+0x[0-9a-fA-F]+$", target)
+                or len(matching_entries) != 1
+                or entry is None
+                or entry[0] != address
+                or not (entry[1] == target or entry[1].endswith(target))
+            ):
+                raise WitnessError(
+                    f"required call target {target} does not resolve to its symbol entry"
+                )
+
+
 def parse_instructions(function: str) -> list[tuple[int, int, str, str, str]]:
     instructions = []
     for line in function.splitlines():
@@ -152,6 +359,305 @@ def reachable_instruction_prefix(function: str) -> list[tuple[int, int, str, str
     return reachable
 
 
+def reachable_control_flow_analysis(
+    function: str, description: str
+) -> tuple[
+    list[tuple[int, int, str, str, str]],
+    dict[int, set[int]],
+    dict[int, set[int]],
+]:
+    instructions = parse_instructions(function)
+    if not instructions:
+        raise WitnessError(f"{description} has no reachable instructions")
+
+    by_address = {instruction[0]: instruction for instruction in instructions}
+    index_by_address = {
+        instruction[0]: index for index, instruction in enumerate(instructions)
+    }
+    words = {
+        int(match.group(1), 16): int(match.group(2), 16)
+        for line in function.splitlines()
+        if (
+            match := re.match(
+                r"\s*([0-9a-fA-F]+):\s+(?:[0-9a-fA-F]+\s+)+\.word\s+0x([0-9a-fA-F]+)\b",
+                line,
+            )
+        )
+    }
+
+    def indirect_targets(index: int) -> list[int]:
+        if index < 2:
+            return []
+        address, _, mnemonic, operands, _ = instructions[index]
+        previous, lookup = instructions[index - 2 : index]
+        immediate = re.fullmatch(
+            r"\s*r0,\s*pc,\s*#(\d+)(?:\s*@.*)?\s*", previous[3]
+        )
+        if not (
+            mnemonic == "mov"
+            and re.fullmatch(r"\s*pc,\s*r0\s*", operands)
+            and previous[2] == "add"
+            and immediate
+            and lookup[0] == previous[0] + previous[1]
+            and lookup[2] == "ldr"
+            and re.fullmatch(
+                r"\s*r0,\s*\[r0,\s*r1\](?:\s*@.*)?\s*", lookup[3]
+            )
+            and address == lookup[0] + lookup[1]
+        ):
+            return []
+
+        table = ((previous[0] + 4) & ~3) + int(immediate.group(1))
+        targets = []
+        while table in words:
+            targets.append(words[table] & ~1)
+            table += 4
+        if not targets or any(target not in by_address for target in targets):
+            return []
+        return targets
+
+    pending = [instructions[0][0]]
+    reachable = set()
+    predecessors: dict[int, set[int]] = {}
+    indirect_dispatches = {}
+    while pending:
+        address = pending.pop()
+        if address in reachable:
+            continue
+        instruction = by_address.get(address)
+        if instruction is None:
+            raise WitnessError(f"{description} has an unsupported control-flow target")
+        reachable.add(address)
+        _, size, mnemonic, operands, line = instruction
+        fallthrough = address + size
+        successors = []
+
+        if mnemonic in ("bl", "blx"):
+            if not direct_call_targets(line):
+                raise WitnessError(f"{description} has an unsupported indirect call")
+            successors.append(fallthrough)
+        elif mnemonic in ("b", "b.n", "b.w"):
+            target = branch_target(instruction)
+            if target is None:
+                raise WitnessError(f"{description} has an unsupported branch")
+            successors.append(target)
+        elif re.fullmatch(
+            r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.(?:n|w))?",
+            mnemonic,
+        ):
+            target = branch_target(instruction)
+            if target is None:
+                raise WitnessError(f"{description} has an unsupported conditional branch")
+            successors.extend((target, fallthrough))
+        elif mnemonic == "bx":
+            if not re.fullmatch(r"\s*lr\s*", operands):
+                raise WitnessError(f"{description} has an unsupported indirect branch")
+        elif mnemonic in ("udf", "bkpt", "svc"):
+            raise WitnessError(f"{description} has an unsupported trap instruction")
+        elif (mnemonic == "pop" or mnemonic.startswith("ldm")) and re.search(
+            r"\bpc\b", operands
+        ):
+            pass
+        elif mnemonic == "mov" and re.match(r"\s*pc\s*,", operands):
+            targets = indirect_targets(index_by_address[address])
+            if not targets:
+                raise WitnessError(f"{description} has an unsupported indirect branch")
+            lookup = instructions[index_by_address[address] - 1]
+            setup = instructions[index_by_address[address] - 2]
+            indirect_dispatches[address] = (setup[0], lookup[0])
+            successors.extend(targets)
+        elif is_control_transfer(mnemonic, operands, line):
+            raise WitnessError(f"{description} has an unsupported control-flow instruction")
+        else:
+            successors.append(fallthrough)
+
+        for successor in successors:
+            if successor in by_address:
+                predecessors.setdefault(successor, set()).add(address)
+                pending.append(successor)
+            elif successor != fallthrough:
+                raise WitnessError(f"{description} has an unsupported control-flow target")
+
+    for dispatch, (setup, lookup) in indirect_dispatches.items():
+        if (
+            predecessors.get(lookup) != {setup}
+            or predecessors.get(dispatch) != {lookup}
+        ):
+            raise WitnessError(
+                f"{description} has an indirect branch that bypasses its table setup"
+            )
+
+    entry = instructions[0][0]
+    dominators = {address: set(reachable) for address in reachable}
+    dominators[entry] = {entry}
+    changed = True
+    while changed:
+        changed = False
+        for address in sorted(reachable - {entry}):
+            incoming = predecessors.get(address, set())
+            common = set.intersection(*(dominators[pred] for pred in incoming))
+            updated = {address} | common
+            if updated != dominators[address]:
+                dominators[address] = updated
+                changed = True
+
+    return (
+        [instruction for instruction in instructions if instruction[0] in reachable],
+        dominators,
+        predecessors,
+    )
+
+
+def reachable_control_flow(
+    function: str, description: str
+) -> list[tuple[int, int, str, str, str]]:
+    return reachable_control_flow_analysis(function, description)[0]
+
+
+def indexed_dispatch_targets(
+    function: str, description: str, count: int
+) -> tuple[list[int], dict[int, tuple[int, int, str, str, str]]]:
+    instructions = parse_instructions(function)
+    prefix = reachable_instruction_prefix(function)
+    if len(prefix) < 3 or not (
+        matches_instruction(prefix[-3], "add", r"\s*r0,\s*pc,\s*#[0-9]+.*")
+        and matches_instruction(prefix[-2], "ldr", r"\s*r0,\s*\[r0,\s*r1\].*")
+        and matches_instruction(prefix[-1], "mov", r"\s*pc,\s*r0\s*")
+    ):
+        raise WitnessError(f"{description} has no reachable indexed dispatch from entry")
+
+    table_match = re.search(
+        r"\badr\s+r0,\s*([0-9a-fA-F]+)\b", prefix[-3][4]
+    )
+    if table_match is None:
+        raise WitnessError(f"{description} has no reachable indexed dispatch table")
+    table_address = int(table_match.group(1), 16)
+    words = {
+        int(match.group(1), 16): int(match.group(2), 16)
+        for line in function.splitlines()
+        if (
+            match := re.match(
+                r"\s*([0-9a-fA-F]+):\s+(?:[0-9a-fA-F]+\s+)+\.word\s+0x([0-9a-fA-F]+)\b",
+                line,
+            )
+        )
+    }
+    try:
+        targets = [
+            words[table_address + offset] & ~1 for offset in range(0, count * 4, 4)
+        ]
+    except KeyError as error:
+        raise WitnessError(f"{description} indexed dispatch table is incomplete") from error
+    if table_address + count * 4 in words:
+        raise WitnessError(f"{description} indexed dispatch table has unexpected cases")
+
+    reachable, dominators, _ = reachable_control_flow_analysis(
+        function, description
+    )
+    dispatch_address = prefix[-1][0]
+    reachable_addresses = {instruction[0] for instruction in reachable}
+    if any(
+        target not in reachable_addresses
+        or dispatch_address not in dominators[target]
+        for target in targets
+    ):
+        raise WitnessError(f"{description} indexed dispatch does not reach every case")
+    return targets, {instruction[0]: instruction for instruction in instructions}
+
+
+def validate_register_mapping_input(function: str, description: str) -> None:
+    prefix = reachable_instruction_prefix(function)
+    expected = [
+        ("push", r"\s*\{\s*r7,\s*lr\s*\}\s*", None),
+        ("add", r"\s*r7,\s*sp,\s*#0\s*", None),
+        ("sub", r"\s*sp,\s*#8\s*", None),
+        ("uxtb", r"\s*r0,\s*r0\s*", None),
+        ("str", r"\s*r0,\s*\[sp,\s*#0\]\s*", None),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#0\]\s*", None),
+        ("lsls", r"\s*r1,\s*r0,\s*#2\s*", None),
+        ("add", r"\s*r0,\s*pc,\s*#[0-9]+.*", None),
+        ("ldr", r"\s*r0,\s*\[r0,\s*r1\].*", None),
+        ("mov", r"\s*pc,\s*r0\s*", None),
+    ]
+    if not matches_instruction_sequence(prefix, expected):
+        raise WitnessError(f"{description} has an unexpected indexed dispatch input")
+
+
+def validate_backlight_plan_path(function: str, words: dict[int, int]) -> None:
+    expected = """
+push {r4, r5, r6, r7, lr}
+add r7, sp, #12
+sub sp, #196
+movs r3, #23
+lsls r3, r3, #17
+orrs r1, r3
+add r5, sp, #4
+movs r4, #0
+strb r4, [r5, #12]
+str r4, [sp, #4]
+str r3, [sp, #8]
+str r1, [sp, #12]
+add r1, sp, #20
+movs r3, #1
+strb r3, [r1, #12]
+movs r1, #3
+str r1, [sp, #20]
+ldr r4, [pc, #168]
+str r4, [sp, #28]
+movs r4, #15
+lsls r5, r4, #24
+bics r2, r5
+add r6, sp, #36
+movs r4, #2
+strb r4, [r6, #12]
+str r3, [sp, #36]
+str r5, [sp, #40]
+str r2, [sp, #44]
+ldr r2, [sp, #44]
+lsls r3, r3, #24
+orrs r2, r3
+add r5, sp, #52
+strb r4, [r5, #12]
+str r4, [sp, #52]
+str r3, [sp, #56]
+str r2, [sp, #60]
+add r2, sp, #68
+strb r1, [r2, #12]
+str r1, [sp, #68]
+ldr r2, [pc, #128]
+str r2, [sp, #76]
+add r3, sp, #84
+movs r2, #4
+strb r2, [r3, #12]
+str r1, [sp, #84]
+movs r1, #5
+str r1, [sp, #92]
+""".strip().splitlines()
+    for base in range(6):
+        for offset in (12, 8, 4, 0):
+            expected.extend(
+                (f"ldr r1, [sp, #{4 + 16 * base + offset}]",
+                 f"str r1, [sp, #{100 + 16 * base + offset}]")
+            )
+    expected.extend(("add r1, sp, #100", "movs r2, #96", "bl",
+                     "add sp, #196", "pop {r4, r5, r6, r7, pc}"))
+    path = reachable_instruction_prefix(function)
+    if len(path) != len(expected):
+        raise WitnessError("backlight plan operands or instruction continuation are incorrect")
+    for instruction, wanted in zip(path, expected, strict=True):
+        operands = re.split(r"\s+[@;]\s*", instruction[3], maxsplit=1)[0]
+        actual = instruction[2] if wanted == "bl" else f"{instruction[2]} {operands}"
+        if re.sub(r"\s+", "", actual) != re.sub(r"\s+", "", wanted):
+            raise WitnessError("backlight plan operands or instruction continuation are incorrect")
+        if wanted == "bl" and direct_call_targets(instruction[4]) != ["__aeabi_memcpy4"]:
+            raise WitnessError("backlight plan operands or instruction continuation are incorrect")
+        if wanted in ("ldr r4, [pc, #168]", "ldr r2, [pc, #128]"):
+            immediate = 168 if wanted.startswith("ldr r4") else 128
+            value = 0x3FF if immediate == 168 else 0x01010000
+            if words.get(((instruction[0] + 4) & ~3) + immediate) != value:
+                raise WitnessError("backlight plan assignments do not match the pinned register sequence")
+
+
 def reachable_call_targets(function: str) -> list[str]:
     return [
         target
@@ -166,9 +672,133 @@ def branch_target(instruction: tuple[int, int, str, str, str]) -> int | None:
 
 
 def matches_instruction(
-    instruction: tuple[int, int, str, str, str], mnemonic: str, operands: str
+    instruction: tuple[int, int, str, str, str] | None, mnemonic: str, operands: str
 ) -> bool:
-    return instruction[2] == mnemonic and re.fullmatch(operands, instruction[3]) is not None
+    if instruction is None or instruction[2] != mnemonic:
+        return False
+    return any(
+        re.fullmatch(operands, candidate) is not None
+        for candidate in (
+            instruction[3],
+            re.split(r"\s+[@;]\s*", instruction[3], maxsplit=1)[0],
+        )
+    )
+
+
+def matches_instruction_sequence(
+    instructions: list[tuple[int, int, str, str, str]],
+    expected: list[tuple[str, str, str | None]],
+) -> bool:
+    return len(instructions) == len(expected) and all(
+        matches_instruction(instruction, mnemonic, operands)
+        and (
+            call_symbol is None
+            or any(
+                call_symbol in target
+                for target in direct_call_targets(instruction[4])
+            )
+        )
+        for instruction, (mnemonic, operands, call_symbol) in zip(
+            instructions, expected, strict=True
+        )
+    )
+
+
+def validate_exact_returning_instruction_path(
+    function: str,
+    description: str,
+    *expected_sequences: list[tuple[str, str, str | None]],
+) -> None:
+    path = reachable_instruction_prefix(function)
+    if not any(
+        matches_instruction_sequence(path, expected)
+        for expected in expected_sequences
+    ):
+        raise WitnessError(f"{description} has an unexpected instruction continuation")
+
+
+def validate_backlight_initializer_path(function: str) -> None:
+    validate_exact_returning_instruction_path(
+        function,
+        "backlight hardware initializer",
+        [
+            (
+                "bl",
+                r"\s*[0-9a-fA-F]+\s+<.*>.*",
+                "backlight_startup_executor::apply_with_io",
+            ),
+            ("pop", r"\s*\{\s*r7,\s*pc\s*\}\s*", None),
+        ],
+        [
+            ("push", r"\s*\{\s*r7,\s*lr\s*\}\s*", None),
+            ("add", r"\s*r7,\s*sp,\s*#0\s*", None),
+            ("sub", r"\s*sp,\s*#8\s*", None),
+            ("add", r"\s*r0,\s*sp,\s*#4\s*", None),
+            (
+                "bl",
+                r"\s*[0-9a-fA-F]+\s+<.*>.*",
+                "backlight_startup_executor::apply_with_io",
+            ),
+            ("add", r"\s*sp,\s*#8\s*", None),
+            ("pop", r"\s*\{\s*r7,\s*pc\s*\}\s*", None),
+        ],
+    )
+
+
+def validate_backlight_register_io_path(function: str, method: str) -> None:
+    if method == "read":
+        compact = [
+            ("mov", r"\s*r0,\s*r1\s*", None),
+            (
+                "bl",
+                r"\s*[0-9a-fA-F]+\s+<.*>.*",
+                "RegisterAddress>::from_register",
+            ),
+            (
+                "bl",
+                r"\s*[0-9a-fA-F]+\s+<.*>.*",
+                "RegisterAddress>::address",
+            ),
+            ("ldr", r"\s*r0,\s*\[r0,\s*#0\]\s*", None),
+            ("pop", r"\s*\{\s*r7,\s*pc\s*\}\s*", None),
+        ]
+        emitted = [
+            ("push", r"\s*\{\s*r7,\s*lr\s*\}\s*", None),
+            ("add", r"\s*r7,\s*sp,\s*#0\s*", None),
+            *compact,
+        ]
+    elif method == "write":
+        compact = [
+            ("mov", r"\s*r0,\s*r1\s*", None),
+            (
+                "bl",
+                r"\s*[0-9a-fA-F]+\s+<.*>.*",
+                "RegisterAddress>::from_register",
+            ),
+            (
+                "bl",
+                r"\s*[0-9a-fA-F]+\s+<.*>.*",
+                "RegisterAddress>::address",
+            ),
+            ("ldr", r"\s*r2,\s*\[sp,\s*#4\]\s*", None),
+            ("str", r"\s*r2,\s*\[r0,\s*#0\]\s*", None),
+            ("pop", r"\s*\{\s*r7,\s*pc\s*\}\s*", None),
+        ]
+        emitted = [
+            ("push", r"\s*\{\s*r7,\s*lr\s*\}\s*", None),
+            ("add", r"\s*r7,\s*sp,\s*#0\s*", None),
+            ("sub", r"\s*sp,\s*#8\s*", None),
+            ("str", r"\s*r2,\s*\[sp,\s*#4\]\s*", None),
+            *compact[:-1],
+            ("add", r"\s*sp,\s*#8\s*", None),
+            compact[-1],
+        ]
+    else:
+        raise ValueError(f"unsupported backlight register I/O method: {method}")
+
+    validate_exact_returning_instruction_path(
+        function, f"backlight register {method}", emitted
+    )
 
 
 def validate_stopped_guard(
@@ -212,7 +842,7 @@ def validate_variant_guard(
         matches_instruction(load, "ldr", r"\s*r0,\s*\[sp,\s*#8\]\s*")
         and matches_instruction(extend, "uxtb", r"\s*r0,\s*r0\s*")
         and matches_instruction(save, "str", r"\s*r0,\s*\[sp,\s*#0\]\s*")
-        and matches_instruction(compare, "cmp", r"\s*r0,\s*#3\s*")
+        and matches_instruction(compare, "cmp", r"\s*r0,\s*#4\s*")
         and branch[2] == "bhi.n"
     ):
         return False
@@ -278,7 +908,7 @@ def backend_dispatch_targets(function: str) -> list[int]:
         (10, "ldr", r"\s*r0,\s*\[sp,\s*#8\]\s*"),
         (11, "uxtb", r"\s*r0,\s*r0\s*"),
         (12, "str", r"\s*r0,\s*\[sp,\s*#0\]\s*"),
-        (13, "cmp", r"\s*r0,\s*#3\s*"),
+        (13, "cmp", r"\s*r0,\s*#4\s*"),
         (14, "bhi.n", r"\s*[0-9a-fA-F]+\b.*"),
         (15, "ldr", r"\s*r0,\s*\[sp,\s*#0\]\s*"),
         (16, "lsls", r"\s*r1,\s*r0,\s*#2\s*"),
@@ -322,16 +952,16 @@ def backend_dispatch_targets(function: str) -> list[int]:
         if match:
             words[int(match.group(1), 16)] = int(match.group(2), 16)
     try:
-        return [words[table_address + offset] & ~1 for offset in range(0, 16, 4)]
+        return [words[table_address + offset] & ~1 for offset in range(0, 20, 4)]
     except KeyError as error:
-        raise WitnessError("sequencer backend dispatch table is missing one of its first four targets") from error
+        raise WitnessError("sequencer backend dispatch table is missing one of its first five targets") from error
 
 
 def validate_backend_dispatch(disassembly: str) -> None:
     backend = function_block(disassembly, ">::call", suffix=True)
     targets = backend_dispatch_targets(backend)
-    if len(set(targets)) != 4:
-        raise WitnessError("sequencer backend first four variants do not have distinct dispatch targets")
+    if len(set(targets)) != 5:
+        raise WitnessError("sequencer backend first five variants do not have distinct dispatch targets")
 
     instructions = parse_instructions(backend)
     by_address = {instruction[0]: instruction for instruction in instructions}
@@ -340,6 +970,7 @@ def validate_backend_dispatch(disassembly: str) -> None:
         "StartupIo>::systick",
         "StartupIo>::portcon",
         "StartupIo>::gpio",
+        "StartupIo>::backlight_init_hardware",
     )
     epilogue = branch_target(parse_instructions(backend)[8])
     if epilogue is None:
@@ -438,6 +1069,748 @@ def validate_backend_dispatch(disassembly: str) -> None:
     gpio_end = expect_call(gpio_end, methods[3], 3)
     expect_epilogue_branch(gpio_end, 3)
 
+    backlight_end = expect(targets[4], "ldr", r"\s*r0,\s*\[sp,\s*#4\]\s*", 4)
+    backlight_end = expect(backlight_end, "ldr", r"\s*r0,\s*\[r0,\s*#0\]\s*", 4)
+    backlight_end = expect_call(
+        backlight_end, methods[4], 4
+    )
+    expect_epilogue_branch(backlight_end, 4)
+
+
+def validate_backlight_executor_paths(function: str) -> None:
+    instructions = reachable_control_flow(function, "backlight executor")
+    by_address = {instruction[0]: instruction for instruction in instructions}
+    prefix = reachable_instruction_prefix(function)
+    prefix_calls = [
+        target
+        for instruction in prefix
+        for target in direct_call_targets(instruction[4])
+    ]
+    expected_plan_calls = (
+        "BacklightInitPlan>::from_snapshot",
+        "BacklightInitPlan>::writes",
+        "IntoIterator>::into_iter",
+    )
+    plan_call_indexes = [
+        next((i for i, target in enumerate(prefix_calls) if symbol in target), None)
+        for symbol in expected_plan_calls
+    ]
+    if (
+        any(index is None for index in plan_call_indexes)
+        or plan_call_indexes != sorted(plan_call_indexes)
+        or not prefix
+        or prefix[-1][2] not in ("b.n", "b.w")
+        or len(prefix_calls) != len(expected_plan_calls)
+    ):
+        raise WitnessError(
+            "backlight executor does not reach the initialization plan before its write loop"
+        )
+    expected_prefix = [
+        ("push", r"\s*\{\s*r7,\s*lr\s*\}\s*", None),
+        ("add", r"\s*r7,\s*sp,\s*#0\s*", None),
+        ("sub", r"\s*sp,\s*#160\s*", None),
+        ("str", r"\s*r0,\s*\[sp,\s*#16\]\s*", None),
+        ("add", r"\s*r0,\s*sp,\s*#24\s*", None),
+        ("str", r"\s*r0,\s*\[sp,\s*#20\]\s*", None),
+        ("movs", r"\s*r2,\s*#0\s*", None),
+        ("mov", r"\s*r1,\s*r2\s*", None),
+        ("bl", r"\s*[0-9a-fA-F]+\s+<.*>", expected_plan_calls[0]),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#20\]\s*", None),
+        ("bl", r"\s*[0-9a-fA-F]+\s+<.*>", expected_plan_calls[1]),
+        ("bl", r"\s*[0-9a-fA-F]+\s+<.*>", expected_plan_calls[2]),
+        ("str", r"\s*r0,\s*\[sp,\s*#120\]\s*", None),
+        ("str", r"\s*r1,\s*\[sp,\s*#124\]\s*", None),
+        ("b.n", r"\s*[0-9a-fA-F]+\b.*", None),
+    ]
+    if not matches_instruction_sequence(prefix, expected_prefix):
+        raise WitnessError("backlight executor has an unexpected plan input continuation")
+
+    loop_head = branch_target(prefix[-1])
+    if loop_head is None:
+        raise WitnessError("backlight executor has no reachable write loop")
+
+    def expect(
+        address: int, mnemonic: str, operands: str, description: str
+    ) -> tuple[int, int, str, str, str]:
+        instruction = by_address.get(address)
+        if not matches_instruction(instruction, mnemonic, operands):
+            raise WitnessError(f"backlight executor has an unexpected {description} continuation")
+        return instruction
+
+    def expect_call(
+        address: int, symbol: str, description: str
+    ) -> tuple[int, int, str, str, str]:
+        instruction = by_address.get(address)
+        if (
+            instruction is None
+            or instruction[2] not in ("bl", "blx")
+            or not any(symbol in target for target in direct_call_targets(instruction[4]))
+        ):
+            raise WitnessError(f"backlight executor does not reach {description}")
+        return instruction
+
+    head = expect(loop_head, "add", r"\s*r0,\s*sp,\s*#128\s*", "iterator loop head")
+    next_address = head[0] + head[1]
+    next_address = expect(
+        next_address, "add", r"\s*r1,\s*sp,\s*#120\s*", "iterator setup"
+    )[0] + 2
+    iterator_call = expect_call(next_address, "Iterator>::next", "the plan iterator")
+    cursor = iterator_call[0] + iterator_call[1]
+    cursor = expect(
+        cursor, "ldr", r"\s*r0,\s*\[sp,\s*#128\]\s*", "iterator result"
+    )[0] + 2
+    cursor = expect(cursor, "adds", r"\s*r0,\s*r0,\s*#1\s*", "iterator option check")[0] + 2
+    cursor = expect(cursor, "cmp", r"\s*r0,\s*#0\s*", "iterator option check")[0] + 2
+    option_branch = expect(
+        cursor, "beq.n", r"\s*[0-9a-fA-F]+\b.*", "iterator completion branch"
+    )
+    exit_address = branch_target(option_branch)
+    dispatch_branch = expect(
+        option_branch[0] + option_branch[1],
+        "b.n",
+        r"\s*[0-9a-fA-F]+\b.*",
+        "nonempty iterator branch",
+    )
+    dispatch_setup = branch_target(dispatch_branch)
+    if exit_address is None or dispatch_setup != dispatch_branch[0] + dispatch_branch[1]:
+        raise WitnessError("backlight executor loop branches do not reach its cases and return")
+
+    exit_path = [
+        by_address.get(exit_address),
+        by_address.get(exit_address + 2),
+    ]
+    if not (
+        all(exit_path)
+        and matches_instruction(exit_path[0], "add", r"\s*sp,\s*#160\s*")
+        and matches_instruction(exit_path[1], "pop", r"\s*\{\s*r7,\s*pc\s*\}\s*")
+    ):
+        raise WitnessError("backlight executor loop has an unexpected shared return epilogue")
+
+    dispatches = [
+        instruction
+        for instruction in instructions
+        if matches_instruction(instruction, "mov", r"\s*pc,\s*r0\s*")
+    ]
+    raw_instructions = parse_instructions(function)
+    dispatch = dispatches[0] if len(dispatches) == 1 else None
+    dispatch_index = (
+        next(
+            (
+                index
+                for index, instruction in enumerate(raw_instructions)
+                if dispatch is not None and instruction[0] == dispatch[0]
+            ),
+            None,
+        )
+    )
+    setup = (
+        raw_instructions[dispatch_index - 2]
+        if dispatch_index is not None and dispatch_index >= 2
+        else None
+    )
+    lookup = (
+        raw_instructions[dispatch_index - 1]
+        if dispatch_index is not None and dispatch_index >= 1
+        else None
+    )
+    table_match = (
+        re.search(r"\badr\s+r0,\s*([0-9a-fA-F]+)\b", setup[4])
+        if setup is not None
+        else None
+    )
+    words = {
+        int(match.group(1), 16): int(match.group(2), 16)
+        for line in function.splitlines()
+        if (
+            match := re.match(
+                r"\s*([0-9a-fA-F]+):\s+(?:[0-9a-fA-F]+\s+)+\.word\s+0x([0-9a-fA-F]+)\b",
+                line,
+            )
+        )
+    }
+    if not (
+        dispatch is not None
+        and dispatch_index is not None
+        and matches_instruction(setup, "add", r"\s*r0,\s*pc,\s*#[0-9]+.*")
+        and setup[0] + setup[1] == lookup[0]
+        and matches_instruction(lookup, "ldr", r"\s*r0,\s*\[r0,\s*r1\]\s*")
+        and lookup[0] + lookup[1] == dispatch[0]
+        and table_match is not None
+        and setup[0] >= dispatch_setup
+    ):
+        raise WitnessError("backlight executor has no reachable indexed write-case dispatch")
+
+    cursor = dispatch_setup
+    for mnemonic, operands in (
+        ("ldr", r"\s*r0,\s*\[sp,\s*#140\]\s*"),
+        ("str", r"\s*r0,\s*\[sp,\s*#156\]\s*"),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#136\]\s*"),
+        ("str", r"\s*r0,\s*\[sp,\s*#152\]\s*"),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#132\]\s*"),
+        ("str", r"\s*r0,\s*\[sp,\s*#148\]\s*"),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#128\]\s*"),
+        ("str", r"\s*r0,\s*\[sp,\s*#144\]\s*"),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#144\]\s*"),
+        ("str", r"\s*r0,\s*\[sp,\s*#12\]\s*"),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#12\]\s*"),
+        ("lsls", r"\s*r1,\s*r0,\s*#2\s*"),
+    ):
+        instruction = expect(cursor, mnemonic, operands, "iterator dispatch input")
+        cursor = instruction[0] + instruction[1]
+    if cursor != setup[0]:
+        raise WitnessError("backlight executor has an unexpected iterator dispatch continuation")
+
+    table_address = int(table_match.group(1), 16)
+    try:
+        case_targets = [
+            words[table_address + offset] & ~1 for offset in range(0, 16, 4)
+        ]
+    except KeyError as error:
+        raise WitnessError("backlight executor write-case table is incomplete") from error
+    if (
+        table_address + 16 in words
+        or len(set(case_targets)) != 4
+        or case_targets != sorted(case_targets)
+        or any(target not in by_address for target in case_targets)
+    ):
+        raise WitnessError("backlight executor has unreachable indexed write cases")
+
+    expected_case_calls = (
+        ("RegisterIo>::read", "RegisterIo>::write"),
+        ("RegisterIo>::read", "RegisterIo>::write"),
+        ("RegisterIo>::read", "RegisterIo>::write"),
+        ("RegisterIo>::write",),
+    )
+    expected_case_sequences = (
+        [
+            ("ldr", r"\s*r0,\s*\[sp,\s*#16\]\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#148\]\s*", None),
+            ("str", r"\s*r1,\s*\[sp,\s*#8\]\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#156\]\s*", None),
+            ("bl", r"\s*[0-9a-fA-F]+\s+<.*>.*", "RegisterIo>::read"),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#8\]\s*", None),
+            ("mov", r"\s*r2,\s*r0\s*", None),
+            ("ldr", r"\s*r0,\s*\[sp,\s*#16\]\s*", None),
+            ("orrs", r"\s*r2,\s*r1\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#156\]\s*", None),
+            ("bl", r"\s*[0-9a-fA-F]+\s+<.*>.*", "RegisterIo>::write"),
+            ("b.n", r"\s*[0-9a-fA-F]+\b.*", None),
+        ],
+        [
+            ("ldr", r"\s*r0,\s*\[sp,\s*#16\]\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#148\]\s*", None),
+            ("str", r"\s*r1,\s*\[sp,\s*#4\]\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#156\]\s*", None),
+            ("bl", r"\s*[0-9a-fA-F]+\s+<.*>.*", "RegisterIo>::read"),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#4\]\s*", None),
+            ("mov", r"\s*r2,\s*r0\s*", None),
+            ("ldr", r"\s*r0,\s*\[sp,\s*#16\]\s*", None),
+            ("bics", r"\s*r2,\s*r1\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#156\]\s*", None),
+            ("bl", r"\s*[0-9a-fA-F]+\s+<.*>.*", "RegisterIo>::write"),
+            ("b.n", r"\s*[0-9a-fA-F]+\b.*", None),
+        ],
+        [
+            ("ldr", r"\s*r0,\s*\[sp,\s*#16\]\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#148\]\s*", None),
+            ("str", r"\s*r1,\s*\[sp,\s*#0\]\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#156\]\s*", None),
+            ("bl", r"\s*[0-9a-fA-F]+\s+<.*>.*", "RegisterIo>::read"),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#0\]\s*", None),
+            ("mov", r"\s*r2,\s*r0\s*", None),
+            ("ldr", r"\s*r0,\s*\[sp,\s*#16\]\s*", None),
+            ("orrs", r"\s*r2,\s*r1\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#156\]\s*", None),
+            ("bl", r"\s*[0-9a-fA-F]+\s+<.*>.*", "RegisterIo>::write"),
+            ("b.n", r"\s*[0-9a-fA-F]+\b.*", None),
+        ],
+        [
+            ("ldr", r"\s*r0,\s*\[sp,\s*#16\]\s*", None),
+            ("ldr", r"\s*r2,\s*\[sp,\s*#152\]\s*", None),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#156\]\s*", None),
+            ("bl", r"\s*[0-9a-fA-F]+\s+<.*>.*", "RegisterIo>::write"),
+            ("b.n", r"\s*[0-9a-fA-F]+\b.*", None),
+        ],
+    )
+    case_branches = []
+    for variant, (target, expected_calls) in enumerate(
+        zip(case_targets, expected_case_calls, strict=True)
+    ):
+        case_calls = []
+        case_instructions = []
+        address = target
+        for _ in range(32):
+            instruction = by_address.get(address)
+            if instruction is None:
+                raise WitnessError(
+                    f"backlight executor write case {variant} has an unsupported continuation"
+                )
+            if instruction[2] in ("b.n", "b.w"):
+                case_branches.append(instruction)
+                if branch_target(instruction) != loop_head:
+                    raise WitnessError(
+                        f"backlight executor write case {variant} does not return to its loop"
+                    )
+                case_instructions.append(instruction)
+                break
+            if re.fullmatch(
+                r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.(?:n|w))?",
+                instruction[2],
+            ) or instruction[2] == "bx" or (
+                instruction[2] == "pop" and re.search(r"\bpc\b", instruction[3])
+            ):
+                raise WitnessError(
+                    f"backlight executor write case {variant} has an unsupported branch"
+                )
+            case_calls.extend(direct_call_targets(instruction[4]))
+            case_instructions.append(instruction)
+            address += instruction[1]
+        else:
+            raise WitnessError(
+                f"backlight executor write case {variant} has no loop continuation"
+            )
+        if not matches_instruction_sequence(
+            case_instructions, expected_case_sequences[variant]
+        ):
+            raise WitnessError(
+                f"backlight executor write case {variant} has an unexpected register continuation"
+            )
+        observed_calls = [
+            "RegisterIo>::read" if "RegisterIo>::read" in target else "RegisterIo>::write"
+            for target in case_calls
+            if "RegisterIo>::read" in target or "RegisterIo>::write" in target
+        ]
+        if observed_calls != list(expected_calls):
+            raise WitnessError(
+                f"backlight executor write case {variant} has an unexpected register continuation"
+            )
+
+    all_calls = [
+        target
+        for instruction in instructions
+        for target in direct_call_targets(instruction[4])
+    ]
+    required_call_kinds = (
+        "BacklightInitPlan>::from_snapshot",
+        "BacklightInitPlan>::writes",
+        "IntoIterator>::into_iter",
+        "Iterator>::next",
+    )
+    if (
+        len(all_calls) != 11
+        or any(
+            not any(
+                fragment in target
+                for fragment in (*required_call_kinds, "RegisterIo>::read", "RegisterIo>::write")
+            )
+            for target in all_calls
+        )
+    ):
+        raise WitnessError("backlight executor has an unsupported call continuation")
+
+    branch_instructions = [
+        instruction
+        for instruction in instructions
+        if re.fullmatch(
+            r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.(?:n|w))?",
+            instruction[2],
+        )
+    ]
+    if (
+        len(branch_instructions) != 7
+        or sum(instruction[2] == "beq.n" for instruction in branch_instructions) != 1
+        or sum(instruction[2] in ("b.n", "b.w") for instruction in branch_instructions) != 6
+        or len(case_branches) != 4
+        or any(
+            branch_target(instruction) != loop_head
+            for instruction in case_branches
+        )
+        or sum(
+            instruction[2] == "mov"
+            and re.fullmatch(r"\s*pc,\s*r0\s*", instruction[3]) is not None
+            for instruction in instructions
+        )
+        != 1
+    ):
+        raise WitnessError("backlight executor has an unsupported loop or case branch")
+
+
+def validate_backlight_register_evidence(disassembly: str) -> None:
+    def word_entries(function: str) -> dict[int, int]:
+        entries = {}
+        for line in function.splitlines():
+            match = re.match(
+                r"\s*([0-9a-fA-F]+):\s+(?:[0-9a-fA-F]+\s+)+\.word\s+0x([0-9a-fA-F]+)\b",
+                line,
+            )
+            if match:
+                entries[int(match.group(1), 16)] = int(match.group(2), 16)
+        return entries
+
+    address_body = function_block(
+        disassembly, "backlight_startup_executor::RegisterAddress>::address"
+    )
+    address_words = word_entries(address_body)
+
+    address_literals = [
+        int(match.group(1), 16)
+        for line in address_body.splitlines()
+        if (match := re.search(r"\.word\s+0x([0-9a-fA-F]+)\b", line))
+        and 0x4000_0000 <= int(match.group(1), 16) < 0x5000_0000
+    ]
+    expected_addresses = {
+        0x400B4008,
+        0x400B401C,
+        0x400B0008,
+        0x400B4004,
+        0x400B4000,
+    }
+    if len(address_literals) != 5 or set(address_literals) != expected_addresses:
+        raise WitnessError("backlight register address evidence is missing or incorrect")
+
+    targets, by_address = indexed_dispatch_targets(
+        address_body, "backlight register address mapping", 5
+    )
+    validate_register_mapping_input(address_body, "backlight register address mapping")
+    mapped_addresses = []
+    first_store = by_address.get(targets[0] + 2)
+    first_branch = by_address.get(targets[0] + 4)
+    epilogue = (
+        branch_target(first_branch)
+        if matches_instruction(first_store, "str", r"\s*r0,\s*\[sp,\s*#4\]\s*")
+        and matches_instruction(first_branch, "b.n", r"\s*[0-9a-fA-F]+\b.*")
+        else None
+    )
+    for register, target in enumerate(targets):
+        load = by_address.get(target)
+        literal = (
+            re.search(r"[@;]\s*\(?([0-9a-fA-F]+)\b", load[4])
+            if load is not None
+            and matches_instruction(load, "ldr", r"\s*r0,\s*\[pc,\s*#[0-9]+\].*")
+            else None
+        )
+        if literal is None or int(literal.group(1), 16) not in address_words:
+            raise WitnessError("backlight register address mapping is incomplete")
+        mapped_addresses.append(address_words[int(literal.group(1), 16)])
+        store = by_address.get(target + 2)
+        continuation = by_address.get(target + 4)
+        if not (
+            epilogue is not None
+            and matches_instruction(
+                store, "str", r"\s*r0,\s*\[sp,\s*#4\]\s*"
+            )
+            and matches_instruction(
+                continuation, "b.n", r"\s*[0-9a-fA-F]+\b.*"
+            )
+            and branch_target(continuation) == epilogue
+        ):
+            raise WitnessError(
+                "backlight register address case does not reach its shared return epilogue"
+            )
+    address_return = [
+        by_address.get(epilogue),
+        by_address.get(epilogue + 2) if epilogue is not None else None,
+        by_address.get(epilogue + 4) if epilogue is not None else None,
+    ]
+    if not (
+        epilogue is not None
+        and all(address_return)
+        and matches_instruction(
+            address_return[0], "ldr", r"\s*r0,\s*\[sp,\s*#4\]\s*"
+        )
+        and matches_instruction(address_return[1], "add", r"\s*sp,\s*#8\s*")
+        and matches_instruction(
+            address_return[2], "pop", r"\s*\{\s*r7,\s*pc\s*\}\s*"
+        )
+    ):
+        raise WitnessError(
+            "backlight register address mapping has an unexpected shared return epilogue"
+        )
+    if mapped_addresses != [
+        0x400B4008,
+        0x400B401C,
+        0x400B0008,
+        0x400B4004,
+        0x400B4000,
+    ]:
+        raise WitnessError("backlight register addresses do not match their register variants")
+
+    conversion = function_block(
+        disassembly, "backlight_startup_executor::RegisterAddress>::from_register"
+    )
+    conversion_targets, conversion_instructions = indexed_dispatch_targets(
+        conversion, "backlight register conversion", 5
+    )
+    validate_register_mapping_input(conversion, "backlight register conversion")
+    conversion_epilogue = None
+    for register, target in enumerate(conversion_targets):
+        body = [
+            conversion_instructions.get(target),
+            conversion_instructions.get(target + 2),
+            conversion_instructions.get(target + 4),
+            conversion_instructions.get(target + 6),
+        ]
+        if not (
+            all(body)
+            and matches_instruction(body[0], "add", r"\s*r1,\s*sp,\s*#4\s*")
+            and matches_instruction(body[1], "movs", rf"\s*r0,\s*#{register}\s*")
+            and matches_instruction(body[2], "strb", r"\s*r0,\s*\[r1,\s*#0\]\s*")
+            and body[3][2] in ("b.n", "b.w")
+            and branch_target(body[3]) is not None
+        ):
+            raise WitnessError("backlight register conversion does not preserve register variants")
+        continuation = conversion_instructions.get(target + 6)
+        if not matches_instruction(
+            continuation, "b.n", r"\s*[0-9a-fA-F]+\b.*"
+        ):
+            raise WitnessError(
+                "backlight register conversion case does not reach its shared return epilogue"
+            )
+        target_epilogue = branch_target(continuation)
+        if conversion_epilogue is None:
+            conversion_epilogue = target_epilogue
+        elif target_epilogue != conversion_epilogue:
+            raise WitnessError(
+                "backlight register conversion cases do not share their return epilogue"
+            )
+    conversion_return = [
+        conversion_instructions.get(conversion_epilogue),
+        conversion_instructions.get(conversion_epilogue + 2)
+        if conversion_epilogue is not None
+        else None,
+        conversion_instructions.get(conversion_epilogue + 4)
+        if conversion_epilogue is not None
+        else None,
+    ]
+    if not (
+        conversion_epilogue is not None
+        and all(conversion_return)
+        and matches_instruction(
+            conversion_return[0], "ldr", r"\s*r0,\s*\[sp,\s*#4\]\s*"
+        )
+        and matches_instruction(
+            conversion_return[1], "add", r"\s*sp,\s*#8\s*"
+        )
+        and matches_instruction(
+            conversion_return[2], "pop", r"\s*\{\s*r7,\s*pc\s*\}\s*"
+        )
+    ):
+        raise WitnessError(
+            "backlight register conversion has an unexpected shared return epilogue"
+        )
+
+    validate_backlight_executor_paths(
+        function_block(disassembly, "backlight_startup_executor::apply_with_io")
+    )
+
+    initialize = function_block(disassembly, "initialize_backlight_hardware")
+    validate_backlight_initializer_path(initialize)
+
+    plan = function_block(disassembly, "BacklightInitPlan>::from_snapshot")
+    validate_backlight_plan_path(plan, word_entries(plan))
+
+    apply = function_block(disassembly, "backlight_startup_executor::apply_with_io")
+    instructions, apply_dominators, apply_predecessors = reachable_control_flow_analysis(
+        apply, "backlight executor"
+    )
+    apply_calls = [
+        (instruction, target)
+        for instruction in instructions
+        for target in direct_call_targets(instruction[4])
+    ]
+    plan_calls = [
+        next(
+            (instruction[0] for instruction, target in apply_calls if symbol in target),
+            None,
+        )
+        for symbol in ("BacklightInitPlan>::from_snapshot", "BacklightInitPlan>::writes")
+    ]
+    if (
+        any(address is None for address in plan_calls)
+        or plan_calls[0] not in apply_dominators[plan_calls[1]]
+    ):
+        raise WitnessError("backlight executor does not apply the ordered initialization plan")
+    writes = function_block(disassembly, "BacklightInitPlan>::writes")
+    validate_exact_returning_instruction_path(
+        writes,
+        "backlight initialization writes",
+        [
+            ("push", r"\s*\{\s*r7,\s*lr\s*\}\s*", None),
+            ("add", r"\s*r7,\s*sp,\s*#0\s*", None),
+            ("movs", r"\s*r1,\s*#6\s*", None),
+            ("bl", r"\s*[0-9a-fA-F]+\s+<.*BacklightWrite.*>::iter>", "BacklightWrite"),
+            ("bl", r"\s*[0-9a-fA-F]+\s+<.*>", "Iterator>::copied"),
+            ("pop", r"\s*\{\s*r7,\s*pc\s*\}\s*", None),
+        ],
+    )
+
+    register_calls = [
+        (instruction, target)
+        for instruction in instructions
+        for target in direct_call_targets(instruction[4])
+        if "RegisterIo>::read" in target or "RegisterIo>::write" in target
+    ]
+    kinds = [
+        "read" if "RegisterIo>::read" in target else "write"
+        for _, target in register_calls
+    ]
+    if kinds != ["read", "write", "read", "write", "read", "write", "write"]:
+        raise WitnessError("backlight executor is missing ordered fresh RMW register evidence")
+
+    if any(
+        plan_calls[1] not in apply_dominators[instruction[0]]
+        for instruction, _ in register_calls
+    ):
+        raise WitnessError("backlight executor does not apply the ordered initialization plan")
+    instruction_indexes = {instruction[0]: index for index, instruction in enumerate(instructions)}
+    for pair, operation in zip(
+        (register_calls[0:2], register_calls[2:4], register_calls[4:6]),
+        ("orrs", "bics", "orrs"),
+        strict=True,
+    ):
+        read_instruction, write_instruction = pair[0][0], pair[1][0]
+        read_index = instruction_indexes[read_instruction[0]]
+        write_index = instruction_indexes[write_instruction[0]]
+        before_read = instructions[read_index - 1] if read_index else None
+        between = instructions[read_index + 1 : write_index]
+        expected = (
+            ("mov", r"\s*r2,\s*r0\s*"),
+            (operation, r"\s*r2,\s*r1\s*"),
+            ("ldr", r"\s*r1,\s*\[sp,\s*#156\](?:\s*@.*)?\s*"),
+        )
+        expected_index = 0
+        matched_operations = []
+        for instruction in between:
+            mnemonic, operands = expected[expected_index]
+            if matches_instruction(instruction, mnemonic, operands):
+                matched_operations.append(instruction)
+                expected_index += 1
+                if expected_index == len(expected):
+                    break
+        path = [before_read, read_instruction, *matched_operations, write_instruction]
+        if not (
+            before_read is not None
+            and matches_instruction(
+                before_read, "ldr", r"\s*r1,\s*\[sp,\s*#156\](?:\s*@.*)?\s*"
+            )
+            and expected_index == len(expected)
+            and read_instruction[0] in apply_dominators[write_instruction[0]]
+            and all(
+                previous[0] in apply_dominators[current[0]]
+                for previous, current in zip(path, path[1:])
+            )
+        ):
+            raise WitnessError("backlight executor is missing ordered fresh RMW register evidence")
+
+    return_instructions = [
+        instruction
+        for instruction in instructions
+        if (
+            instruction[2] == "bx"
+            and re.fullmatch(r"\s*lr\s*", instruction[3])
+        )
+        or (
+            (instruction[2] == "pop" or instruction[2].startswith("ldm"))
+            and re.search(r"\bpc\b", instruction[3])
+        )
+    ]
+    final_write = register_calls[-1][0][0]
+    if not all(
+        final_write in apply_dominators[instruction[0]]
+        for instruction in return_instructions
+    ):
+        instruction_by_address = {instruction[0]: instruction for instruction in instructions}
+        if len(return_instructions) != 1 or return_instructions[0][2] != "pop":
+            raise WitnessError("backlight executor returns before the ordered MMIO writes")
+
+        return_instruction = return_instructions[0]
+        epilogue = instruction_by_address.get(return_instruction[0] - 2)
+        exit_branches = [
+            instruction
+            for instruction in instructions
+            if instruction[2].startswith("b")
+            and branch_target(instruction) == (epilogue[0] if epilogue else None)
+        ]
+        if not (
+            epilogue is not None
+            and matches_instruction(epilogue, "add", r"\s*sp,\s*#\d+\s*")
+            and len(exit_branches) == 1
+            and exit_branches[0][2] == "beq.n"
+            and apply_predecessors.get(epilogue[0]) == {exit_branches[0][0]}
+        ):
+            raise WitnessError("backlight executor returns before the ordered MMIO writes")
+
+        exit_branch = exit_branches[0]
+        comparison = instruction_by_address.get(exit_branch[0] - 2)
+        increment = instruction_by_address.get(exit_branch[0] - 4)
+        option = instruction_by_address.get(exit_branch[0] - 6)
+        next_call = instruction_by_address.get(exit_branch[0] - 10)
+        if not (
+            comparison is not None
+            and matches_instruction(comparison, "cmp", r"\s*r0,\s*#0\s*")
+            and increment is not None
+            and matches_instruction(increment, "adds", r"\s*r0,\s*r0,\s*#1\s*")
+            and option is not None
+            and matches_instruction(
+                option,
+                "ldr",
+                r"\s*r0,\s*\[sp,\s*#\d+\](?:\s+[@;].*)?\s*",
+            )
+            and next_call is not None
+            and next_call[0] + next_call[1] == option[0]
+            and any(
+                "Iterator>::next" in target
+                for target in direct_call_targets(next_call[4])
+            )
+        ):
+            raise WitnessError("backlight executor returns before the ordered MMIO writes")
+
+        dispatches = [
+            instruction
+            for instruction in instructions
+            if instruction[2] == "mov"
+            and re.fullmatch(r"\s*pc,\s*r0\s*", instruction[3])
+        ]
+        write_sites = {
+            instruction[0]
+            for instruction, target in register_calls
+            if "RegisterIo>::write" in target
+        }
+        by_following_address = {
+            instruction[0] + instruction[1]: instruction for instruction in instructions
+        }
+        back_edges = [
+            (instruction, by_following_address.get(instruction[0]))
+            for instruction in instructions
+            if instruction[2] in ("b", "b.n", "b.w")
+            and (target := branch_target(instruction)) is not None
+            and target < instruction[0]
+        ]
+        if (
+            len(dispatches) != 1
+            or len(back_edges) != len(write_sites)
+            or {previous[0] for _, previous in back_edges if previous is not None}
+            != write_sites
+            or len({branch_target(branch) for branch, _ in back_edges}) != 1
+            or any(
+                previous is None
+                or not any(
+                    "RegisterIo>::write" in target
+                    for target in direct_call_targets(previous[4])
+                )
+                or dispatches[0][0] not in apply_dominators[previous[0]]
+                for _, previous in back_edges
+            )
+            or exit_branch[0] + exit_branch[1] not in apply_dominators[dispatches[0][0]]
+        ):
+            raise WitnessError("backlight executor returns before the ordered MMIO writes")
+
+    for method in ("read", "write"):
+        io_body = function_block(
+            disassembly, f"backlight_startup_executor::RegisterIo>::{method}"
+        )
+        validate_backlight_register_io_path(io_body, method)
+
 
 def validate_returning_call_path(
     function: str,
@@ -453,7 +1826,10 @@ def validate_returning_call_path(
             (
                 index
                 for index in range(search_from, len(reachable))
-                if any(symbol in target for target in direct_call_targets(reachable[index][4]))
+                if any(
+                    matches_call_symbol(symbol, target)
+                    for target in direct_call_targets(reachable[index][4])
+                )
             ),
             None,
         )
@@ -720,6 +2096,7 @@ def validate_call_path(disassembly: str) -> None:
         ("systick", "apply_to_hardware"),
         ("portcon", "apply_portcon_startup_plan"),
         ("gpio", "apply_gpio_startup_plan"),
+        ("backlight_init_hardware", "initialize_backlight_hardware"),
     ):
         method_body = function_block(disassembly, f"StartupIo>::{method}", suffix=True)
         if not any(adapter in target for target in reachable_call_targets(method_body)):
@@ -751,6 +2128,11 @@ def validate_call_path(disassembly: str) -> None:
             ("apply_gpio_startup_plan",),
             (("add", r"\s*sp,\s*#56(?:\s+[@;].*)?\s*"),),
         ),
+        (
+            "backlight_init_hardware",
+            ("initialize_backlight_hardware",),
+            (),
+        ),
     ):
         validate_returning_call_path(
             function_block(disassembly, f"StartupIo>::{method}", suffix=True),
@@ -760,6 +2142,8 @@ def validate_call_path(disassembly: str) -> None:
         )
 
     validate_backend_dispatch(disassembly)
+    validate_backlight_register_evidence(disassembly)
+    validate_required_call_targets(disassembly)
 
 
 def validate_systick_handler(disassembly: str, handler_address: int) -> None:
@@ -825,6 +2209,7 @@ def validate(elf: Path) -> tuple[int, int]:
         "apply_to_hardware",
         "apply_portcon_startup_plan",
         "apply_gpio_startup_plan",
+        "initialize_backlight_hardware",
     )
     for symbol in required_symbols:
         if not any(symbol in name for name in symbols):
