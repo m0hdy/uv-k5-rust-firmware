@@ -68,7 +68,8 @@ unresolved policy decision.
   startup. The adapter does not install vectors or clear pending state.
 
 The adapter remains an internal module and is called by the board startup
-dispatcher at `Call::AdcInit`, after backlight and before the ST7565 placeholder.
+dispatcher at `Call::AdcInit`, after backlight and before the concrete ST7565
+startup stage.
 `BootConfig::exttrig_sel` is forwarded unchanged to this executor; the pinned
 board initializer still supplies no production value. The adapter does not
 configure ADC channel pins, start battery sampling, or poll for conversion

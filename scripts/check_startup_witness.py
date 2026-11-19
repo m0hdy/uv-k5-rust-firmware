@@ -1072,7 +1072,11 @@ def validate_st7565_stage(disassembly: str, backend: str) -> None:
     targets = backend_dispatch_targets(backend)
     if len(targets) != 7:
         raise WitnessError("display variant is missing from sequencer backend dispatch")
-    display_case = instruction_tail(backend, targets[6])
+    validate_st7565_backend_case(backend, targets[6])
+
+
+def validate_st7565_backend_case(backend: str, address: int) -> None:
+    display_case = instruction_tail(backend, address)
     reachable = reachable_instruction_prefix(display_case)
     if not any(
         "StartupIo>::st7565_init" in target

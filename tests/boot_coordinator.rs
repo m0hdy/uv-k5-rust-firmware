@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::num::NonZeroU32;
 
 use uv_k5_rust_firmware::boot_coordinator::{
@@ -8,10 +8,23 @@ use uv_k5_rust_firmware::boot_coordinator::{
 };
 use uv_k5_rust_firmware::settings_boot_composition::{Features as SettingsFeatures, ReadError};
 use uv_k5_rust_firmware::st7565_line_transport::LineError;
-use uv_k5_rust_firmware::st7565_startup_executor::target_spi0::DelayMs;
+use uv_k5_rust_firmware::st7565_startup_executor::target_spi0::{
+    DelayMs, RegisterIo as DisplayRegisterIo, startup_with_io,
+};
 
 const CORE_DATA: [u8; 8] = [73, 8, 10, 1, 1, 1, 9, 4];
 const DISPLAY_DATA: [u8; 8] = [0x24, 3, 1, 4, 2, 5, 1, 1];
+const SPI_CR: usize = 0x400b_8000;
+const SPI_WDR: usize = 0x400b_8004;
+const SPI_IE: usize = 0x400b_8010;
+const SPI_IF: usize = 0x400b_8014;
+const SPI_FIFOST: usize = 0x400b_8018;
+const GPIOB_DATA: usize = 0x4006_0800;
+const SYSCON_CLOCK: usize = 0x4000_0008;
+const ST7565_COMMANDS: [u8; 17] = [
+    0xe2, 0xa2, 0xc0, 0xa1, 0xa6, 0xa4, 0x24, 0x81, 0x1f, 0x2b, 0x2e, 0x2f, 0x2f, 0x2f, 0x2f, 0x40,
+    0xaf,
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Event {
@@ -30,6 +43,12 @@ enum Event {
     EepromStop,
     BatteryRead(BatteryReadRegister),
     BatteryWrite(BatteryWriteRegister, u32),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DisplayEvent {
+    Read(usize, u32),
+    Write(usize, u32),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -52,6 +71,8 @@ struct MockIo {
     settings_responses: [[u8; 8]; 2],
     settings_reads: usize,
     battery_reads: VecDeque<(BatteryReadRegister, u32)>,
+    display_registers: BTreeMap<usize, u32>,
+    display_trace: Vec<DisplayEvent>,
 }
 
 #[derive(Default)]
@@ -78,12 +99,24 @@ impl MockIo {
                 ]
             })
             .collect();
+        let display_registers = [
+            (SPI_CR, 0xa5a5_ffff),
+            (SPI_WDR, 0),
+            (SPI_IE, u32::MAX),
+            (SPI_IF, 0),
+            (SPI_FIFOST, u32::from(failure == Failure::Display) << 4),
+            (GPIOB_DATA, 0x5a5a_f7ff),
+            (SYSCON_CLOCK, 0x1234_0000),
+        ]
+        .into();
         Self {
             events: Vec::new(),
             failure,
             settings_responses: [CORE_DATA, DISPLAY_DATA],
             settings_reads: 0,
             battery_reads,
+            display_registers,
+            display_trace: Vec::new(),
         }
     }
 
@@ -133,16 +166,30 @@ impl StartupIo for MockIo {
         fifo_poll_limit: NonZeroU32,
     ) -> Result<(), LineError> {
         self.events.push(Event::St7565Init(fifo_poll_limit));
-        delay.delay_ms(37);
-        if self.failure == Failure::Display {
-            Err(LineError::DrainTimeout)
-        } else {
-            Ok(())
-        }
+        startup_with_io(self, delay, fifo_poll_limit)
     }
 
     fn placeholder(&mut self, call: BoardCall) {
         self.events.push(Event::BoardPlaceholder(call));
+    }
+}
+
+impl DisplayRegisterIo for MockIo {
+    fn read(&mut self, address: usize) -> u32 {
+        let value = *self
+            .display_registers
+            .get(&address)
+            .expect("known ST7565 register");
+        self.display_trace.push(DisplayEvent::Read(address, value));
+        value
+    }
+
+    fn write(&mut self, address: usize, value: u32) {
+        *self
+            .display_registers
+            .get_mut(&address)
+            .expect("known ST7565 register") = value;
+        self.display_trace.push(DisplayEvent::Write(address, value));
     }
 }
 
@@ -253,13 +300,26 @@ fn success_runs_board_then_fallible_settings_then_bounded_battery_sampling() {
         ]
     );
     assert_eq!(
+        io.display_trace
+            .iter()
+            .filter_map(|event| match event {
+                DisplayEvent::Write(SPI_WDR, byte) => Some(*byte as u8),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        ST7565_COMMANDS
+            .into_iter()
+            .chain((0..8).flat_map(|page| [0xb0 + page, 0x10, 0x04]))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(delay.0, [1, 20, 120, 120, 1, 1, 40]);
+    assert_eq!(
         io.events
             .iter()
             .filter(|event| matches!(event, Event::St7565Init(_)))
             .count(),
         1
     );
-    assert_eq!(delay.0, [37]);
     assert_eq!(
         io.events
             .iter()
@@ -292,7 +352,7 @@ fn display_failure_preserves_cause_and_stops_before_settings_and_battery() {
     assert_eq!(
         coordinate(&mut io, &mut delay, config()),
         Err(BootError::Board(BoardStartupError::St7565(
-            LineError::DrainTimeout
+            LineError::FifoTimeout
         )))
     );
     assert!(matches!(io.events.last(), Some(Event::St7565Init(_))));
@@ -302,7 +362,7 @@ fn display_failure_preserves_cause_and_stops_before_settings_and_battery() {
             Event::EepromStart | Event::BatteryRead(_) | Event::BatteryWrite(_, _)
         )
     }));
-    assert_eq!(delay.0, [37]);
+    assert_eq!(delay.0, [1, 20, 120]);
 }
 
 #[test]

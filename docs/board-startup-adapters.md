@@ -5,12 +5,15 @@ clock-gate, SysTick, PortCon, GPIO, backlight, and SARADC target adapters.
 `ENABLE_SWD` is forwarded to PortCon and `ENABLE_FMRADIO` to GPIO. Backlight
 initialization reuses
 `backlight_startup_executor::initialize_backlight_hardware`; `Call::AdcInit`
-reuses `adc_startup_adapter::apply_to_hardware` after backlight and before the
-ST7565 placeholder. `BootConfig` supplies the ADC's `exttrig_sel` explicitly.
-The pinned `BOARD_ADC_Init()` leaves `EXTTRIG_SEL` uninitialised, so neither the
-board adapter nor this documentation selects a production value. ST7565,
-BK1080, and CRC remain typed placeholders. A failed SysTick setup stops all
-later board calls, including backlight, ADC, display, and optional stages.
+reuses `adc_startup_adapter::apply_to_hardware` after backlight. The next
+`Call::St7565Init` reuses
+`st7565_startup_executor::target_spi0::startup_mmio`. `BootConfig` supplies
+the ADC's `exttrig_sel` and a nonzero ST7565 FIFO poll budget; the caller
+supplies the millisecond `DelayMs` implementation. The pinned
+`BOARD_ADC_Init()` leaves `EXTTRIG_SEL` uninitialised, so no production value
+is selected here. BK1080 and CRC remain typed placeholders. SysTick or
+ST7565 failure stops all later board calls; an ST7565 failure retains its
+`LineError` cause.
 
 ```mermaid
 flowchart LR
@@ -19,18 +22,56 @@ flowchart LR
   Tick -->|failure| Stop["Stop with startup error"]
   Pins --> Light["Backlight adapter"]
   Light --> ADC["SARADC adapter\ncaller-supplied EXTTRIG_SEL"]
-  ADC --> Display["ST7565 placeholder"]
+  ADC --> Display["ST7565 SPI0/reset/startup and zero-fill page selection"]
   Display --> Optional["Optional BK1080 and CRC placeholders"]
+  Display -->|ST7565 error| Stop["Stop with display error"]
 ```
 
-The host test checks the composed call order, exact ADC trigger forwarding,
-feature forwarding, backlight register sequence, fresh read-modify-write
-behavior, preservation of unrelated clock and PORTB bits, and stop behavior.
+The host tests check the composed call order, exact ADC trigger and display
+poll-budget forwarding, caller delay use, backlight register sequence, fresh
+read-modify-write behavior, preservation of unrelated clock and PORTB bits,
+and error short-circuiting. The boot integration test runs the existing
+`target_spi0::startup_with_io` executor and checks its command/delay trace.
 Target execution requires the DP32G030 PWM_PLUS0 and PORTB register mappings,
 the PWM_PLUS0 clock gate enabled by the earlier clock-gate stage, B6 reserved
 for the backlight and selected for PWMP0_CH0 by the backlight mux update, and
 exclusive access to PWM_PLUS0 CLKSRC, PERIOD, GEN, CFG and PORTB SEL0 for the
 complete sequence.
+
+The ST7565 target stage calls the existing `target_spi0::startup_mmio`; it
+does not create a second startup plan or delay provider. Before entering it,
+the caller must have the SPI0 and GPIOB register mappings and clocks enabled,
+operational FIFO/status registers, and an idle SPI0 bus. B7/B8/B10 must
+already be muxed for display SPI0, PB9 configured as the A0 GPIO output, and
+PB11 configured as the reset GPIO output and owned by the display. PB11 reset
+ownership conflicts with live SWD use of that pin; enabling SWD does not
+resolve the conflict. The caller must pass a `DelayMs` implementation that
+provides the requested milliseconds and a nonzero FIFO poll budget. No delay
+calibration, pin mux, or production poll-budget default is supplied here.
+
+Keep exclusive display ownership throughout the operation, including every
+delay and the page handoff. Serialize against every writer, including
+interrupts, to SPI0 CR/WDR/IE/IF/FIFOST, GPIOB DATA, and the SYSCON device
+clock gate. These whole-register/interrupt serialization requirements cover
+the complete multi-register startup, not only individual volatile accesses.
+`FillScreen(0)` preserves the pinned behavior: it selects pages 0 through 7
+but writes no pixel bytes. Board wiring does not call the initialize-and-show
+welcome API, which remains a separate callable continuation for an already
+initialized display.
+
+The existing interrupt obligations remain: install a valid SysTick handler
+before enabling SysTick, and if preserved SARADC IE bits can enable NVIC IRQ 4,
+install a valid handler at vector slot 20 and prevent that IRQ from racing
+initialization. Serialize the entire SARADC operation against every writer to
+its touched SYSCON/SARADC registers and IRQ line. Neither the board adapter
+nor the link-only witness supplies operational handlers. The default
+`firmware_main` path remains unchanged; this board-stage wiring does not
+invoke it or complete application startup.
+
+The link-only witness delay stand-in exists only to retain and inspect the
+concrete target call path. It does not model elapsed time, provide production
+timing, or establish a display timing policy; the witness is never executed
+or published.
 
 The SARADC adapter may enable NVIC IRQ 4 when preserved SARADC IE bits are
 nonzero. Before running startup with interrupt delivery possible, install a
@@ -47,9 +88,10 @@ CI separately links `startup-witness/` for Cortex-M0 with a dedicated
 vector table and a returning SysTick handler. Its linker places code at
 `0x10000000` and RAM at `0x20010000`, outside the DP32G030 memory map, and
 enforces 16 KiB code/load and 4 KiB RAM limits. The inspection checks vector
-targets, the linked sequencer-to-adapter call path, the reachable ADC stage and
-dispatch through the existing target executor, reachable backlight register
-accesses and their order, retained adapter symbols, and section budgets. The
+targets, the linked sequencer-to-adapter call path, reachable ADC and ST7565
+stages, the concrete `startup_mmio` to `startup_with_io` call chain, reachable
+backlight register accesses and their order, retained adapter symbols, and
+section budgets. The
 ADC path is checked through its existing word adapter to `apply_with_io`; the
 register/NVIC transaction behavior remains covered by the focused ADC adapter
 tests. The SysTick vector must match the exact linked handler symbol, whose
@@ -57,20 +99,24 @@ first instruction must be `bx lr`.
 
 The backend-dispatch check is intentionally pinned to the emitted Cortex-M0
 shape. It requires the function entry to save incoming `r1` at `sp+8`, load
-that saved variant, byte-extend and save the checked index, compare against 5,
+that saved variant, byte-extend and save the checked index, compare against 6,
 and branch with `bhi` to the non-table placeholder path. The path must return
 to the stack teardown before the contiguous indexed-table sequence reloads the
-saved index from `sp+0`, scales it, addresses the literal table, and branches
-through its entry. Each of the first six cases is checked through its matching
-hardware call and the following unconditional branch to the shared stack
-teardown. This includes the ADC case's forwarded trigger field. The backlight
-case must reach the real executor and preserve the pinned register sequence.
+saved index from `sp+4`, scales it, addresses the literal table, and branches
+through its entry. Each of the first seven cases is checked through its
+matching hardware call and the following continuation to the shared stack
+teardown. This includes the ADC case's forwarded trigger field and the
+reachable ST7565 dispatch case. The latter must call the concrete target entry.
+The backlight case must reach the real executor and preserve the pinned
+register sequence.
 The SysTick case also checks the `Result::is_err` split: success continues to
 teardown, while the error edge stores the stopped flag before joining that same
 teardown. The sequencer's first seven backend calls are checked for their call
 continuations and the optional FM-radio and CRC paths are checked through their
-shared return epilogue. The `run_hardware` wrapper and all six target wrappers
-are checked from their linked calls through stack cleanup and return. The
+shared return epilogue. The `run_hardware` wrapper and all seven target
+wrappers are checked from their linked calls through stack cleanup and return.
+The display entry is checked for its call into the existing MMIO startup
+executor, and that entry is checked for its call into `startup_with_io`. The
 adapter's `Result` split is checked so both success and error edges reach its
 shared return. Reset and `witness_main` retain their intentional terminal
 loops and are not treated as returning wrappers.

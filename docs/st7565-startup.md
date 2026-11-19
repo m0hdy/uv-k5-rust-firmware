@@ -3,9 +3,10 @@
 `src/st7565_startup.rs` provides the pinned startup plan, and
 `src/st7565_startup_executor.rs` provides its allocation-free executor.
 `execute_startup` runs the plan through typed reset, delay and SPI
-initialization hooks plus the existing bounded line transport. It is not
-connected to firmware startup. Its `target_spi0` child provides a callable
-MMIO boundary, without board-sequencer wiring.
+initialization hooks plus the existing bounded line transport. The integrated
+board startup dispatches this operation after SARADC using its
+`target_spi0::startup_mmio` boundary. The separate callable welcome APIs remain
+available; the board path does not invoke initialize-and-show welcome.
 Its source is
 [`ST7565_Init`, `cmds`, `ST7565_HardwareReset` and `ST7565_WriteByte`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/driver/st7565.c),
 and [`SPI_ToggleMasterMode` and the FIFO drain](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/driver/spi.c)
@@ -58,13 +59,12 @@ existing `DRAIN_POLL_LIMIT = 100_001` status-read bound. Either timeout restores
 command sequence may remain in the FIFO/panel; mode restoration is not rollback.
 The startup boundary sends no screen data and publishes no boot-complete state.
 The separate [welcome execution](startup-version-display.md#callable-welcome-execution)
-can follow it with a version-row transfer; it does not wire startup into boot.
+remains a callable continuation for version-row transfer; board startup does
+not invoke it.
 
 The ARM bare-metal-only unsafe `target_spi0::startup_mmio` takes
-`&mut dyn DelayMs` and the explicit nonzero poll budget. This concrete entry
-can be retained for target assembly inspection without a production delay
-implementation. It uses aligned volatile `u32` accesses at the existing
-physical mappings:
+`&mut dyn DelayMs` and the explicit nonzero poll budget. It uses aligned
+volatile `u32` accesses at the existing physical mappings:
 
 | Registers | Addresses |
 | --- | --- |
@@ -77,7 +77,7 @@ and SPI0 clocks, operational FIFO/status registers, and an idle bus. SPI0 CR
 is accessed before the initializer updates the clock gate, so that update
 does not replace the prior-clock requirement. B7/B8/B10 must already be muxed
 for display SPI0, PB9 configured as the A0 GPIO output, and PB11 configured as
-the reset GPIO output and owned by the display, **not SWD**. Pin assignments
+the reset GPIO output and owned by the display, **not live SWD**. Pin assignments
 follow the pinned
 [`driver/gpio.h`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/driver/gpio.h).
 
@@ -89,8 +89,11 @@ unrelated bits; SPI0 configuration retains the existing initializer's field
 masks and intentional IE-zero replacement. Delay/register implementations
 must be infallible and not panic; the caller's delay must provide the requested
 milliseconds without accessing those shared registers. The boundary configures
-no pin directions/muxes, supplies no arbitration or calibrated delay, and is
-not wired into board startup.
+no pin directions/muxes, supplies no arbitration or calibrated delay. The
+integrated board stage supplies its caller-provided delay and FIFO budget.
+Existing SysTick and SARADC IRQ/vector obligations remain in force; see
+[board startup adapters](board-startup-adapters.md) for the complete board
+ownership and interrupt contract.
 
 The host traces check ordering, command values, repeated power writes and delay
 requests, polling boundaries, and cleanup. They cannot establish elapsed time,

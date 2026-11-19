@@ -11,6 +11,7 @@ from check_startup_witness import (  # noqa: E402
     validate_backlight_initializer_path,
     validate_backlight_register_io_path,
     validate_call_path,
+    validate_st7565_backend_case,
     validate_st7565_executor_path,
     validate_systick_handler,
 )
@@ -714,6 +715,12 @@ ST7565_EXECUTOR_PATH = """
  300: 4770 bx lr
 """
 
+ST7565_DISPATCH_CASE = """
+ 100: 9802 ldr r0, [sp, #8]
+ 102: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>
+ 106: e000 b.n 108
+"""
+
 ADAPTER_RUN_ERROR_SELF_LOOP = CONNECTED_DISPATCH.replace(
     " 41e: e7ff b.n 420",
     " 41e: e7fe b.n 41e",
@@ -1076,6 +1083,26 @@ TRAP_BEFORE_RETURN = """
 
 
 class StartupWitnessCheckerTests(unittest.TestCase):
+    def test_accepts_reachable_st7565_dispatch_variant(self):
+        validate_st7565_backend_case(ST7565_DISPATCH_CASE, 0x100)
+
+    def test_rejects_st7565_dispatch_call_after_early_return(self):
+        disconnected = ST7565_DISPATCH_CASE.replace(
+            " 102: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>",
+            " 102: 4770 bx lr\n"
+            " 104: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>",
+        )
+        with self.assertRaisesRegex(WitnessError, "display variant has no reachable ST7565 startup call"):
+            validate_st7565_backend_case(disconnected, 0x100)
+
+    def test_rejects_bypassed_st7565_dispatch_call_with_symbol_retained(self):
+        bypassed = ST7565_DISPATCH_CASE.replace(
+            " 102: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>",
+            " 102: f000 f800 bl 300 <startup_noop>",
+        ) + "\n 108: f000 f800 bl 200 <HardwareIo as StartupIo>::st7565_init>\n"
+        with self.assertRaisesRegex(WitnessError, "display variant has no reachable ST7565 startup call"):
+            validate_st7565_backend_case(bypassed, 0x100)
+
     def test_accepts_concrete_st7565_executor_call_chain(self):
         validate_st7565_executor_path(ST7565_EXECUTOR_PATH)
 
