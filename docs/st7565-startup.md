@@ -1,40 +1,42 @@
-# ST7565 offline startup sequence
+# ST7565 startup execution
 
-`src/st7565_startup.rs` is an allocation-free, standalone plan. It does not
-perform I/O or connect to firmware startup. Its source is
+`src/st7565_startup.rs` provides the pinned startup plan, and
+`src/st7565_startup_executor.rs` provides its allocation-free executor.
+`execute_startup` runs the plan through typed reset, delay and SPI
+initialization hooks plus the existing bounded line transport. It is not
+connected to firmware startup and does not add MMIO or target startup wiring.
+Its source is
 [`ST7565_Init`, `cmds`, `ST7565_HardwareReset` and `ST7565_WriteByte`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/driver/st7565.c),
 and [`SPI_ToggleMasterMode` and the FIFO drain](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/driver/spi.c)
 at revision `7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3`.
 
-The SPI initialization effect is a handoff to the existing SPI0 startup
-adapter. Reset levels are GPIO RES levels; delays are requested milliseconds.
-The master-select effects correspond to clearing and setting `MSR_SSN`, not
-disabling and enabling SPI. Each command effect represents one source
-`ST7565_WriteByte`: set A0 low, wait for transmit FIFO space, then write the
-byte. The drain effect represents the source's bounded FIFO status wait; the
-plan does not model its polling outcome or implement a timeout policy.
+The SPI initialization effect is a typed caller hook. Reset levels are GPIO
+RES levels; delays are requested milliseconds. The master-select effects
+correspond to clearing and setting `MSR_SSN`, not disabling and enabling SPI.
+Each command effect sets A0 low and uses the caller-supplied FIFO poll limit;
+the drain effect uses the line transport's fixed `DRAIN_POLL_LIMIT`. If either
+wait times out after `MSR_SSN` is cleared, execution restores the mode, returns
+the corresponding `LineError`, and skips the remaining effects.
 
-The last effect is the source call `ST7565_FillScreen(0)`, not an executed
-clear. The pinned `DrawLine` uses its `size_defVal` argument as both the loop
-bound and fill value, so this call selects each page but writes **no** data
-bytes. A consumer choosing to actually clear the screen can instead supply a
-128-byte zero line to the existing `DisplayBlitPlan::draw_line` for each of
-pages 0 through 7; that is an intentional behavioral difference, not a trace
-of the pinned fill implementation. That constructor rejects empty payloads,
-so it cannot represent the pinned page-selection-only fill. The plan does
-not execute this handoff.
+The last effect calls `fill_screen_handoff(0)` after restoring SPI mode. This
+is the caller's handoff, not an executed clear. The pinned `DrawLine` uses its
+`size_defVal` argument as both the loop bound and fill value, so this call
+selects each page but writes **no** data bytes. The executor does not silently
+write 128-byte zero lines; the caller owns any further action. The existing
+`DisplayBlitPlan::draw_line` rejects empty payloads and is not used to model
+the page-selection-only handoff.
 
-The host trace checks ordering, command values, repeated power writes and delay
-requests. It cannot establish elapsed time, GPIO or SPI electrical behavior,
-successful FIFO completion, or panel initialization; those require target and
-hardware evidence.
+The host traces check ordering, command values, repeated power writes and delay
+requests, polling boundaries, and cleanup. They cannot establish elapsed time,
+GPIO or SPI electrical behavior, successful FIFO completion, or panel
+initialization; those require target and hardware evidence.
 
 Focused checks from the repository root:
 
 ```sh
-cargo test --locked --test st7565_startup --test st7565_display --test spi0_startup_adapter
-cargo clippy --locked --test st7565_startup -- -D warnings
-rustfmt --check --edition 2024 src/st7565_startup.rs tests/st7565_startup.rs
-rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
-  -D warnings src/st7565_startup.rs -o /tmp/st7565_startup.rlib
+cargo test --locked --test st7565_startup --test st7565_startup_executor \
+  --test st7565_display --test st7565_line_transport --test st7565_mmio_transport
+cargo clippy --locked --test st7565_startup --test st7565_startup_executor \
+  --test st7565_line_transport --test st7565_mmio_transport -- -D warnings
+cargo clippy --locked --target thumbv6m-none-eabi --release -- -D warnings
 ```

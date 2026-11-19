@@ -44,20 +44,19 @@ Run focused host tests and format/lint checks from the repository root:
 ```sh
 cargo test --locked --test st7565_mmio_transport --test st7565_line_transport
 cargo clippy --locked --test st7565_mmio_transport -- -D warnings
-rustfmt --check --edition 2024 \
-  src/st7565_mmio_transport.rs tests/st7565_mmio_transport.rs
+cargo fmt --all -- --check
 ```
 
 Compile the adapter for Cortex-M0 and retain the target-only entry and volatile
 operations for inspection:
 
 ```sh
-rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
-  -D warnings -C opt-level=2 -C link-dead-code=yes --emit=asm \
-  src/st7565_mmio_transport.rs -o /tmp/st7565_mmio_transport.s
+cargo rustc --locked --lib --target thumbv6m-none-eabi -- \
+  -D warnings -C opt-level=2 -C link-dead-code=yes --emit=asm
 ```
 
-Inspect the assembly for 32-bit volatile loads/stores at the listed register
-addresses and the bounded FIFO/drain polling paths. This compiles and inspects
-the implementation only; it does not access a device or produce a firmware
-image.
+The assembly is emitted under `target/thumbv6m-none-eabi/debug/deps/` as
+`uv_k5_rust_firmware-*.s`. Inspect it for 32-bit volatile loads/stores at the
+listed register addresses and the bounded FIFO/drain polling paths. This
+compiles and inspects the implementation only; it does not access a device or
+produce a firmware image.

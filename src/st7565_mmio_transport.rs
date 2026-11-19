@@ -2,13 +2,9 @@
 
 //! Target-only register adapter for the bounded ST7565 line transport.
 
-#[allow(dead_code, unused_attributes)]
-#[path = "st7565_line_transport.rs"]
-mod st7565_line_transport;
-
+pub use crate::st7565_line_transport::LineError;
+use crate::st7565_line_transport::{self, A0, LineTransport};
 use core::num::NonZeroU32;
-pub use st7565_line_transport::LineError;
-use st7565_line_transport::{A0, LineTransport};
 
 pub const SPI_CR_MSR_SSN_MASK: u32 = 1 << 12;
 pub const SPI_FIFOST_TFF_MASK: u32 = 1 << 4;

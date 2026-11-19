@@ -45,10 +45,10 @@ reports a drain timeout and performs no further writes.
 
 This module does not implement MMIO, boot wiring, other blit entry points, or
 hardware validation. Run focused host tests and a warnings-denied Cortex-M0
-compile from the repository root:
+library check from the repository root:
 
 ```sh
 cargo test --locked --test st7565_line_transport --test st7565_display
-rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
-  -D warnings src/st7565_line_transport.rs -o /tmp/st7565_line_transport.rlib
+cargo clippy --locked --test st7565_line_transport -- -D warnings
+cargo clippy --locked --lib --target thumbv6m-none-eabi -- -D warnings
 ```

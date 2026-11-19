@@ -2,12 +2,8 @@
 
 //! Bounded, allocation-free execution of a checked ST7565 line plan.
 
-#[allow(dead_code, unused_attributes)]
-#[path = "st7565_display.rs"]
-mod st7565_display;
-
+use crate::st7565_display::{CommandStep, DisplayBlitPlan};
 use core::num::NonZeroU32;
-use st7565_display::{CommandStep, DisplayBlitPlan};
 
 /// Maximum number of drain-status reads, matching the pinned driver.
 pub const DRAIN_POLL_LIMIT: u32 = 100_001;
@@ -37,7 +33,7 @@ pub enum LineError {
     DrainTimeout,
 }
 
-fn write<T: LineTransport>(
+pub(crate) fn write<T: LineTransport>(
     transport: &mut T,
     byte: u8,
     fifo_poll_limit: NonZeroU32,
@@ -51,7 +47,7 @@ fn write<T: LineTransport>(
     Err(LineError::FifoTimeout)
 }
 
-fn drain<T: LineTransport>(transport: &mut T) -> Result<(), LineError> {
+pub(crate) fn drain<T: LineTransport>(transport: &mut T) -> Result<(), LineError> {
     for _ in 0..DRAIN_POLL_LIMIT {
         if !transport.drain_busy() {
             return Ok(());

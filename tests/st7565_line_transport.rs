@@ -1,3 +1,6 @@
+#[allow(dead_code, unused_attributes)]
+#[path = "../src/st7565_display.rs"]
+mod st7565_display;
 #[path = "../src/st7565_line_transport.rs"]
 mod st7565_line_transport;
 
