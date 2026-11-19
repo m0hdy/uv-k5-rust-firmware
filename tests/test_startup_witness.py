@@ -607,6 +607,15 @@ BACKLIGHT_EXECUTOR_ALWAYS_TAKEN_PLAN_BYPASS = _shift_apply_instructions(
     " 84a: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
 )
 
+BACKLIGHT_EXECUTOR_ALWAYS_TAKEN_EARLY_RETURN = _shift_apply_instructions(
+    CONNECTED_DISPATCH, 0x846, 4
+).replace(
+    " 84a: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
+    " 846: 4280 cmp r0, r0\n"
+    " 848: d023 beq.n 892 <early_return>\n"
+    " 84a: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
+)
+
 BACKLIGHT_EXECUTOR_UNSUPPORTED_BRANCH = CONNECTED_DISPATCH.replace(
     " 846: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
     " 846: 4687 mov pc, r0",
@@ -900,6 +909,19 @@ class StartupWitnessCheckerTests(unittest.TestCase):
             WitnessError, "backlight executor.*initialization plan"
         ):
             validate_call_path(BACKLIGHT_EXECUTOR_ALWAYS_TAKEN_PLAN_BYPASS)
+
+    def test_rejects_always_taken_branch_to_early_return_with_retained_plan(self):
+        self.assertIn(" 846: 4280 cmp r0, r0", BACKLIGHT_EXECUTOR_ALWAYS_TAKEN_EARLY_RETURN)
+        self.assertIn(" 848: d023 beq.n 892", BACKLIGHT_EXECUTOR_ALWAYS_TAKEN_EARLY_RETURN)
+        self.assertIn(
+            " 84a: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
+            BACKLIGHT_EXECUTOR_ALWAYS_TAKEN_EARLY_RETURN,
+        )
+        self.assertIn(" 892: 4770 bx lr", BACKLIGHT_EXECUTOR_ALWAYS_TAKEN_EARLY_RETURN)
+        with self.assertRaisesRegex(
+            WitnessError, "backlight executor returns before the ordered MMIO writes"
+        ):
+            validate_call_path(BACKLIGHT_EXECUTOR_ALWAYS_TAKEN_EARLY_RETURN)
 
     def test_rejects_backlight_rmw_branch_that_bypasses_read_and_rejoins(self):
         with self.assertRaisesRegex(WitnessError, "ordered fresh RMW register evidence"):
