@@ -121,6 +121,20 @@ jobs:
           --bin uv-k5-rust-firmware --
           -D warnings
           -C link-arg=-Map=target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
+      - name: Validate startup ELF and linker map
+        run: |
+          python3 scripts/check_startup_layout.py \
+            --elf target/thumbv6m-none-eabi/release/uv-k5-rust-firmware \
+            --map target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
+      - name: Record target report hashes
+        if: always() && steps.target-build.outcome == 'success'
+        run: |
+          {
+            echo '### Cortex-M0 target report SHA-256'
+            sha256sum \
+              target/thumbv6m-none-eabi/release/uv-k5-rust-firmware \
+              target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Attach target build report
         if: always() && steps.target-build.outcome == 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -1,8 +1,9 @@
 # uv-k5-rust-firmware
 
-Standalone Rust migration target for the UV-K5(8). This bootstrap is not
-flashable: it has no hardware startup/vector table, linker script, packaging,
-or device-size checks.
+Standalone Rust migration target for the UV-K5(8). It has a minimal Cortex-M0
+reset/vector path and linker layout, but remains an unqualified bootstrap, not
+a flashable firmware image. It makes no assumptions about the radio's boot ROM,
+bootloader handoff, clock state, or physical hardware revision.
 
 ## Requirements and checks
 
@@ -14,14 +15,18 @@ repository root:
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo test --all-targets
-cargo build --target thumbv6m-none-eabi --release
+cargo rustc --locked --target thumbv6m-none-eabi --release \
+  --bin uv-k5-rust-firmware -- \
+  -C link-arg=-Map=target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
+python3 scripts/check_startup_layout.py \
+  --elf target/thumbv6m-none-eabi/release/uv-k5-rust-firmware \
+  --map target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
 python3 -m unittest discover -s tests -v
 ```
 
-The crate has no external dependencies or allocator requirement.
-The Cortex-M0 build produces a target-only `no_std` entry stub, not a
-flashable firmware image. The memory-budget checker uses only the Python
-standard library; the optional real-image test also uses GNU ARM binutils.
+The crate has no external dependencies or allocator requirement. The startup
+layout checker and memory-budget checker use only the Python standard library;
+the optional real-image memory-gate fixtures also use GNU ARM binutils.
 
 ## Continuous integration
 
@@ -34,17 +39,15 @@ The `Rust quality` workflow runs on pushes and pull requests. Its stable require
 checks are `Rust quality / Host checks` (formatting, Clippy, and host tests) and
 `Rust quality / Cortex-M0 release build`. Each job installs the toolchain,
 components, and target from `rust-toolchain.toml`; Cargo commands use the
-tracked lockfile. Host checks also exercise the ELF/raw-payload memory-budget
-checker with boundary and negative fixtures. The target job attaches only the
-ELF and linker map as the `cortex-m0-target-report` artifact. Neither file is a
-flashable image; the bootstrap ELF is intentionally not passed to the image
-gate because it has no application memory layout.
-The map/report upload runs even if a later gate step fails, provided the target
-build completed successfully.
+tracked lockfile. Host checks exercise startup-layout and ELF/raw-payload
+memory-budget fixtures with positive and negative cases. The target job checks
+the built ELF and linker map, records their SHA-256 hashes in the workflow
+summary, and attaches only those files as the `cortex-m0-target-report`
+artifact. CI does not generate or upload raw or packed images. The bootstrap
+has not been validated on hardware and must not be treated as flashable.
 
-For any future flashable-image build, create the raw payload from the linked
-ELF and run the gate before uploading, packaging for release, or otherwise
-publishing any image:
+For local offline inspection of a candidate raw payload, create it from the
+linked ELF and run the memory gate:
 
 ```sh
 arm-none-eabi-objcopy -O binary firmware.elf firmware.bin
@@ -55,8 +58,10 @@ python3 scripts/check_memory_budget.py \
   --packed firmware.packed.bin
 ```
 
-Omit `--packed` when no packed container is produced. The required 2 KiB stack
-reservation is excluded from static RAM ranges and reserved at the top of RAM.
+Omit `--packed` when no packed container is produced. This checks an exact
+ELF/raw pair; it does not establish that an image is accepted by a bootloader
+or safe for a device. The required 2 KiB stack reservation is excluded from
+static RAM ranges and reserved at the top of RAM.
 The checker rejects missing or malformed reservations and ordinary data
 overlapping the stack. The raw payload limit is 61,440 bytes. A packed container's
 length is reported separately and is not subject to that limit. The checker
@@ -113,8 +118,9 @@ No current build or test command consumes this variable.
 ## File ownership
 
 This repository owns its Cargo and toolchain configuration, the host-testable
-Rust library in `src/lib.rs`, and the target-only entry stub in
-`src/bin/firmware.rs`. The C firmware remains the reference owner of shared
-source and remains unchanged. The Rust migration's designated integration
-owner is responsible for future Rust-side startup, linker, build/packaging, and
-ABI integration. This bootstrap does not define or publish a flashable artifact.
+Rust library in `src/lib.rs`, and the target-only entry in
+`src/bin/firmware.rs`. The target integration's single owner maintains reset
+and vectors in `src/bin/startup.S`, the memory layout in `linker/firmware.ld`,
+and the offline ELF/map and image checks in `scripts/`. There is no second
+startup path. The pinned C firmware remains the reference owner of its source
+and is unchanged. Current CI publishes no raw or packed image.

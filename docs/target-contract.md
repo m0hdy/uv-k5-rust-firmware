@@ -114,6 +114,17 @@ hard-coded vector/reset SP. Both values are confirmed in source; their intended
 relationship is **not explained** and must not be silently normalized during
 migration.
 
+The Rust bootstrap preserves the reference's `0x20003FF0` vector SP rather
+than replacing it with the linker top. Its linker map defines RAM as
+`0x20000000`–`0x20003FFF` and reserves `0x20003800`–`0x20003FFF` for the Rust
+stack budget; the linker represents those as separate 14 KiB static-RAM and
+2 KiB stack regions, with `__stack_top` at `0x20004000`. The 16-byte SP
+difference remains unexplained. The reset routine copies `.data`, clears
+`.bss`, then calls the minimal Rust entry. The 48-word table includes the 16
+core vectors and 32 peripheral slots in the order above. These are
+source/layout facts only: no bootloader handoff, vector relocation, clocks,
+peripherals, or device behavior is assumed or established.
+
 **Not established:** whether the on-device boot ROM or updater always transfers
 control to address zero, checks an image header or CRC, relocates vectors,
 changes clocks, or uses another handoff address. The C source does not document
@@ -194,11 +205,23 @@ With that explicit marker the gate excludes the reservation from static RAM
 even when it is included in a RAM `PT_LOAD`. Change the policy only with
 documented stack analysis and matching checker and fixture updates.
 
-From the repository root, run the focused fixtures with:
+With rustup and Python 3 installed, build the release ELF and linker map from
+the repository root before running the startup check and host fixtures:
 
 ```sh
+cargo rustc --locked --target thumbv6m-none-eabi --release \
+  --bin uv-k5-rust-firmware -- \
+  -C link-arg=-Map=target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
+python3 scripts/check_startup_layout.py \
+  --elf target/thumbv6m-none-eabi/release/uv-k5-rust-firmware \
+  --map target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
 python3 -m unittest discover -s tests -v
 ```
+
+The startup-layout check validates the ELF entry and Reset vector, Thumb bit,
+initial SP, vector-table size and address, allocated section and load-segment
+ranges, stack reservation, and corresponding linker-map symbols. Its positive
+and negative fixtures are in `tests/test_startup_layout.py`.
 
 For the same real-image regression CI runs, install GNU ARM binutils
 (`binutils-arm-none-eabi` on Ubuntu) and run the test command with
@@ -223,13 +246,12 @@ span or bytes, out-of-region or overlapping load/runtime ranges, XIP
 VMA/LMA disagreement, stack overlap, and either raw-flash or RAM-plus-stack
 overflow. Its report includes loadable segment ranges and used/remaining flash
 and RAM. CI runs the fixture suite; the current target build remains a
-non-flashable bootstrap and does not run the image gate against that
-non-application ELF. Any future flashable publishing job must gate the exact
-ELF/raw pair successfully before its flashable artifact-upload or release
-step. Its linker map and budget report must be uploaded on an always-run path
-after the gate so a gate failure still retains the diagnostics; the current
-target report step already runs after a successful build even if a later gate
-step fails.
+non-flashable bootstrap and does not generate a raw payload. The image gate is
+exercised by the host fixtures and can be run against any explicitly generated
+ELF/raw pair. Any future flashable publishing job must gate the exact ELF/raw
+pair successfully before its flashable artifact-upload or release step. The
+current target report upload retains the ELF and map after a successful build,
+including when startup-layout validation fails.
 
 Sources: [linker memory regions and data load/run placement](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/firmware.ld#L1-L12), [`.data`/`.bss` placement](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/firmware.ld#L34-L68), [raw image writer invocation](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/Makefile#L432-L436).
 
@@ -358,12 +380,14 @@ Before any Rust image is considered for programming:
 
 ## Validation evidence and open questions
 
-This documentation task reviewed the pinned C build inputs; no Rust firmware
-artifact, Rust build/test run, per-device result, or artifact hash is available
-to report. The current repository contains no firmware build/test workflow or
-image artifact. The active Copilot task workflow is not firmware validation.
-These checks are **not passed** by this contract document and must be recorded
-when corresponding artifacts and hardware tests exist. No device was flashed.
+Target builds and startup-layout checks validate the ELF entry, reset vector,
+initial SP, allocated sections, memory ranges, and linker map. Host tests check
+positive and negative startup-layout fixtures and the memory-budget gate. CI
+records hashes for the target ELF and linker map and retains those files for
+review; it does not produce raw or packed images. No device was flashed or
+per-device validation attempted; this work is limited to offline structural
+checks and no device-specific result is available. These checks do not
+establish bootloader acceptance, image safety, or hardware compatibility.
 
 Resolve these items before freezing the Rust startup and image interface:
 
@@ -373,8 +397,9 @@ Resolve these items before freezing the Rust startup and image interface:
    state; reconcile the C clock-source comment with the `RCHF` register setup.
 3. Confirm the peripheral register/IRQ definitions and pin multiplexing against
    authoritative DP32G030 material and the target board.
-4. Explain the `0x20003FF0` startup SP versus linker `_estack` at
-   `0x20004000`.
+4. Explain the `0x20003FF0` startup SP versus linker `_estack`/`__stack_top` at
+   `0x20004000`; the Rust layout intentionally preserves the documented
+   discrepancy pending authoritative evidence.
 5. Verify the updater's actual flash layout, reserved-tail ownership, handoff
    address, raw/packed acceptance rules, and non-destructive recovery procedure
    on the exact hardware.

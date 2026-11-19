@@ -12,7 +12,7 @@ The only Rust symbol currently exported to the linker is:
 
 | Symbol | Rust declaration | Contract |
 | --- | --- | --- |
-| `firmware_entry` | `pub extern "C" fn firmware_entry() -> !` with `#[unsafe(no_mangle)]` | ARM-only, no arguments, never returns; configured as the linker's entry point. It is not a callable C service API. |
+| `firmware_main` | `pub extern "C" fn firmware_main() -> !` with `#[unsafe(no_mangle)]` | ARM-only, no arguments, never returns; called by the assembly `Reset_Handler` after `.data` and `.bss` initialization. It is not a callable C service API. |
 
 No C-callable service functions, shared data structures, or C headers are
 implemented in the current Rust firmware. Any added boundary must be listed
@@ -72,13 +72,15 @@ that a C object and Rust object link together.
 
 ## Symbols and visibility
 
-`firmware_entry` is the only present C-ABI symbol. A future exported function
-must use the C ABI, have one deliberate unmangled symbol name, and appear in
-the symbol table in this document with its complete signature. Keep all other
-functions and statics free of C-export attributes; ordinary Rust `pub`
-visibility does not itself create a C ABI symbol. Do not export Rust-mangled
-names or C globals implicitly. C declarations must use prototypes with explicit
-argument and return types and match the Rust signature exactly.
+`firmware_main` is the only present C-ABI symbol. The linker entry is the
+assembly `Reset_Handler`, which initializes RAM before calling `firmware_main`.
+A future exported function must use the C ABI, have one deliberate unmangled
+symbol name, and appear in the symbol table in this document with its complete
+signature. Keep all other functions and statics free of C-export attributes;
+ordinary Rust `pub` visibility does not itself create a C ABI symbol. Do not
+export Rust-mangled names or C globals implicitly. C declarations must use
+prototypes with explicit argument and return types and match the Rust signature
+exactly.
 
 Do not treat the C reference's internal globals, functions, startup labels, or
 interrupt vectors as Rust service symbols. Their ownership and startup/link
