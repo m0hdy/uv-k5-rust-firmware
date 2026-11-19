@@ -1,3 +1,4 @@
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -328,8 +329,12 @@ CONNECTED_DISPATCH = """
  100c: 061b lsls r3, r3, #24
  100e: 431a orrs r2, r3
  1010: 2105 movs r1, #5
- 1012: 03ff .word 0x000003ff
- 1016: 01010000 .word 0x01010000
+ 1012: 4801 ldr r0, [pc, #4] @ (1018 <literal>)
+ 1014: 4901 ldr r1, [pc, #4] @ (101c <literal>)
+ 1016: e002 b.n 1020 <BacklightInitPlan>::from_snapshot+0x20>
+ 1018: 000003ff .word 0x000003ff
+ 101c: 01010000 .word 0x01010000
+ 1020: bd80 pop {r7, pc}
 00001100 <backlight_startup_executor::BacklightInitPlan>::writes>:
  1100: 2106 movs r1, #6
  1102: f000 f800 bl 1110 <backlight_startup_executor::BacklightWrite>::iter>
@@ -504,6 +509,53 @@ BACKLIGHT_WRONG_RMW_ORDER = CONNECTED_DISPATCH.replace(
     " 85a: 438a bics r2, r1",
 )
 
+BACKLIGHT_EXECUTOR_EARLY_RETURN = CONNECTED_DISPATCH
+_apply_header = "00000846 <backlight_startup_executor::apply_with_io>:\n"
+_apply_start = BACKLIGHT_EXECUTOR_EARLY_RETURN.index(_apply_header) + len(_apply_header)
+_apply_end = BACKLIGHT_EXECUTOR_EARLY_RETURN.index(
+    "00000900 <<backlight_startup_executor::VolatileRegisterIo as"
+)
+_shifted_apply = re.sub(
+    r"(?m)^(\s*)([0-9a-fA-F]+):",
+    lambda match: (
+        f"{match.group(1)}"
+        f"{int(match.group(2), 16) + 2:0{len(match.group(2))}x}:"
+    ),
+    BACKLIGHT_EXECUTOR_EARLY_RETURN[_apply_start:_apply_end],
+)
+BACKLIGHT_EXECUTOR_EARLY_RETURN = (
+    BACKLIGHT_EXECUTOR_EARLY_RETURN[:_apply_start]
+    + " 846: 4770 bx lr\n"
+    + _shifted_apply
+    + BACKLIGHT_EXECUTOR_EARLY_RETURN[_apply_end:]
+)
+
+BACKLIGHT_EXECUTOR_BRANCH_SKIPS_PLAN = CONNECTED_DISPATCH.replace(
+    " 846: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
+    " 846: e000 b.n 84a <backlight_startup_executor::apply_with_io+0x4>",
+)
+
+BACKLIGHT_EXECUTOR_CONDITIONAL_SKIPS_PLAN = CONNECTED_DISPATCH.replace(
+    " 846: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
+    " 846: d000 beq.n 84a <backlight_startup_executor::apply_with_io+0x4>\n"
+    " 848: 46c0 nop",
+)
+
+BACKLIGHT_EXECUTOR_UNSUPPORTED_BRANCH = CONNECTED_DISPATCH.replace(
+    " 846: f000 f800 bl 1000 <backlight_startup_executor::BacklightInitPlan>::from_snapshot>",
+    " 846: 4687 mov pc, r0",
+)
+
+BACKLIGHT_PLAN_EARLY_RETURN = CONNECTED_DISPATCH.replace(
+    " 1000: 2317 movs r3, #23",
+    " 1000: 4770 bx lr",
+)
+
+BACKLIGHT_REGISTER_READ_EARLY_RETURN = CONNECTED_DISPATCH.replace(
+    " 900: 4608 mov r0, r1",
+    " 900: 4770 bx lr",
+)
+
 
 class StartupWitnessCheckerTests(unittest.TestCase):
     def test_accepts_immediate_systick_return_at_symbol_entry(self):
@@ -676,6 +728,36 @@ class StartupWitnessCheckerTests(unittest.TestCase):
 
     def test_accepts_linked_backend_dispatch_to_matching_hardware_methods(self):
         validate_call_path(CONNECTED_DISPATCH)
+
+    def test_rejects_backlight_executor_evidence_after_address_preserving_early_return(self):
+        self.assertIn("00000846 <backlight_startup_executor::apply_with_io>", BACKLIGHT_EXECUTOR_EARLY_RETURN)
+        self.assertIn(" 846: 4770 bx lr", BACKLIGHT_EXECUTOR_EARLY_RETURN)
+        self.assertIn(" 848: f000 f800 bl 1000", BACKLIGHT_EXECUTOR_EARLY_RETURN)
+
+        with self.assertRaisesRegex(WitnessError, "backlight executor.*initialization plan"):
+            validate_call_path(BACKLIGHT_EXECUTOR_EARLY_RETURN)
+
+    def test_rejects_backlight_executor_branch_that_skips_plan_creation(self):
+        with self.assertRaisesRegex(WitnessError, "backlight executor.*initialization plan"):
+            validate_call_path(BACKLIGHT_EXECUTOR_BRANCH_SKIPS_PLAN)
+
+    def test_rejects_backlight_executor_conditional_branch_that_skips_plan_creation(self):
+        with self.assertRaisesRegex(WitnessError, "backlight executor.*initialization plan"):
+            validate_call_path(BACKLIGHT_EXECUTOR_CONDITIONAL_SKIPS_PLAN)
+
+    def test_rejects_unsupported_backlight_executor_indirect_branch(self):
+        with self.assertRaisesRegex(WitnessError, "backlight executor.*unsupported indirect branch"):
+            validate_call_path(BACKLIGHT_EXECUTOR_UNSUPPORTED_BRANCH)
+
+    def test_rejects_backlight_plan_evidence_after_early_return(self):
+        with self.assertRaisesRegex(WitnessError, "backlight plan operands"):
+            validate_call_path(BACKLIGHT_PLAN_EARLY_RETURN)
+
+    def test_rejects_register_mapping_evidence_after_early_return(self):
+        with self.assertRaisesRegex(
+            WitnessError, "backlight register read does not preserve its mapped register"
+        ):
+            validate_call_path(BACKLIGHT_REGISTER_READ_EARLY_RETURN)
 
     def test_rejects_unreachable_backlight_hardware_call(self):
         with self.assertRaisesRegex(WitnessError, "variant 4.*unexpected continuation"):

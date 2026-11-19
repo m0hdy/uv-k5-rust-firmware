@@ -152,6 +152,116 @@ def reachable_instruction_prefix(function: str) -> list[tuple[int, int, str, str
     return reachable
 
 
+def reachable_control_flow(
+    function: str, description: str
+) -> list[tuple[int, int, str, str, str]]:
+    instructions = parse_instructions(function)
+    if not instructions:
+        raise WitnessError(f"{description} has no reachable instructions")
+
+    by_address = {instruction[0]: instruction for instruction in instructions}
+    index_by_address = {
+        instruction[0]: index for index, instruction in enumerate(instructions)
+    }
+    words = {
+        int(match.group(1), 16): int(match.group(2), 16)
+        for line in function.splitlines()
+        if (
+            match := re.match(
+                r"\s*([0-9a-fA-F]+):\s+(?:[0-9a-fA-F]+\s+)+\.word\s+0x([0-9a-fA-F]+)\b",
+                line,
+            )
+        )
+    }
+
+    def indirect_targets(index: int) -> list[int]:
+        if index < 2:
+            return []
+        address, _, mnemonic, operands, _ = instructions[index]
+        previous, lookup = instructions[index - 2 : index]
+        immediate = re.fullmatch(
+            r"\s*r0,\s*pc,\s*#(\d+)(?:\s*@.*)?\s*", previous[3]
+        )
+        if not (
+            mnemonic == "mov"
+            and re.fullmatch(r"\s*pc,\s*r0\s*", operands)
+            and previous[2] == "add"
+            and immediate
+            and lookup[0] == previous[0] + previous[1]
+            and lookup[2] == "ldr"
+            and re.fullmatch(
+                r"\s*r0,\s*\[r0,\s*r1\](?:\s*@.*)?\s*", lookup[3]
+            )
+            and address == lookup[0] + lookup[1]
+        ):
+            return []
+
+        table = ((previous[0] + 4) & ~3) + int(immediate.group(1))
+        targets = []
+        while table in words:
+            targets.append(words[table] & ~1)
+            table += 4
+        if not targets or any(target not in by_address for target in targets):
+            return []
+        return targets
+
+    pending = [instructions[0][0]]
+    reachable = set()
+    while pending:
+        address = pending.pop()
+        if address in reachable:
+            continue
+        instruction = by_address.get(address)
+        if instruction is None:
+            raise WitnessError(f"{description} has an unsupported control-flow target")
+        reachable.add(address)
+        _, size, mnemonic, operands, line = instruction
+        fallthrough = address + size
+        successors = []
+
+        if mnemonic in ("bl", "blx"):
+            if not direct_call_targets(line):
+                raise WitnessError(f"{description} has an unsupported indirect call")
+            successors.append(fallthrough)
+        elif mnemonic in ("b", "b.n", "b.w"):
+            target = branch_target(instruction)
+            if target is None:
+                raise WitnessError(f"{description} has an unsupported branch")
+            successors.append(target)
+        elif re.fullmatch(
+            r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.(?:n|w))?",
+            mnemonic,
+        ):
+            target = branch_target(instruction)
+            if target is None:
+                raise WitnessError(f"{description} has an unsupported conditional branch")
+            successors.extend((target, fallthrough))
+        elif mnemonic == "bx":
+            if not re.fullmatch(r"\s*lr\s*", operands):
+                raise WitnessError(f"{description} has an unsupported indirect branch")
+        elif (mnemonic == "pop" or mnemonic.startswith("ldm")) and re.search(
+            r"\bpc\b", operands
+        ):
+            pass
+        elif mnemonic == "mov" and re.match(r"\s*pc\s*,", operands):
+            targets = indirect_targets(index_by_address[address])
+            if not targets:
+                raise WitnessError(f"{description} has an unsupported indirect branch")
+            successors.extend(targets)
+        elif is_control_transfer(mnemonic, operands, line):
+            raise WitnessError(f"{description} has an unsupported control-flow instruction")
+        else:
+            successors.append(fallthrough)
+
+        for successor in successors:
+            if successor in by_address:
+                pending.append(successor)
+            elif successor != fallthrough:
+                raise WitnessError(f"{description} has an unsupported control-flow target")
+
+    return [instruction for instruction in instructions if instruction[0] in reachable]
+
+
 def reachable_call_targets(function: str) -> list[str]:
     return [
         target
@@ -480,9 +590,15 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
     if len(address_literals) != 5 or set(address_literals) != expected_addresses:
         raise WitnessError("backlight register address evidence is missing or incorrect")
 
+    address_instructions = reachable_control_flow(
+        address_body, "backlight register address mapping"
+    )
+    address_reachable_text = "\n".join(
+        instruction[4] for instruction in address_instructions
+    )
     table_match = re.search(
         r"\badd\s+r0,\s*pc,\s*#[0-9]+\b.*?\badr\s+r0,\s*([0-9a-fA-F]+)\b",
-        address_body,
+        address_reachable_text,
     )
     if table_match is None:
         raise WitnessError("backlight register address mapping is missing")
@@ -494,7 +610,7 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
     except KeyError as error:
         raise WitnessError("backlight register address mapping is incomplete") from error
     by_address = {
-        instruction[0]: instruction for instruction in parse_instructions(address_body)
+        instruction[0]: instruction for instruction in address_instructions
     }
     mapped_addresses = []
     for target in targets:
@@ -520,9 +636,15 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
     conversion = function_block(
         disassembly, "backlight_startup_executor::RegisterAddress>::from_register"
     )
+    conversion_instructions_list = reachable_control_flow(
+        conversion, "backlight register conversion"
+    )
+    conversion_reachable_text = "\n".join(
+        instruction[4] for instruction in conversion_instructions_list
+    )
     conversion_table = re.search(
         r"\badd\s+r0,\s*pc,\s*#[0-9]+\b.*?\badr\s+r0,\s*([0-9a-fA-F]+)\b",
-        conversion,
+        conversion_reachable_text,
     )
     if conversion_table is None:
         raise WitnessError("backlight register conversion is missing")
@@ -535,7 +657,7 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
     except KeyError as error:
         raise WitnessError("backlight register conversion is incomplete") from error
     conversion_instructions = {
-        instruction[0]: instruction for instruction in parse_instructions(conversion)
+        instruction[0]: instruction for instruction in conversion_instructions_list
     }
     for register, target in enumerate(conversion_targets):
         body = [
@@ -554,12 +676,15 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
     initialize = function_block(disassembly, "initialize_backlight_hardware")
     if not any(
         "backlight_startup_executor::apply_with_io" in target
-        for target in reachable_call_targets(initialize)
+        for instruction in reachable_control_flow(
+            initialize, "backlight hardware initializer"
+        )
+        for target in direct_call_targets(instruction[4])
     ):
         raise WitnessError("backlight hardware initializer does not reach the register executor")
 
     plan = function_block(disassembly, "BacklightInitPlan>::from_snapshot")
-    plan_instructions = parse_instructions(plan)
+    plan_instructions = reachable_control_flow(plan, "backlight initialization plan")
     expected_plan_operations = (
         ("movs", r"\s*r3,\s*#23\s*"),
         ("lsls", r"\s*r3,\s*r3,\s*#17\s*"),
@@ -584,16 +709,18 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
         if found is None:
             raise WitnessError("backlight plan operands do not match the pinned register sequence")
         next_instruction = found + 1
+    plan_words = word_entries(plan)
     plan_literals = {
-        int(match.group(1), 16)
-        for line in plan.splitlines()
-        if (match := re.search(r"\.word\s+0x([0-9a-fA-F]+)\b", line))
+        plan_words[int(match.group(1), 16)]
+        for instruction in plan_instructions
+        if (match := re.search(r"@\s*\(([0-9a-fA-F]+)\b", instruction[4]))
+        and int(match.group(1), 16) in plan_words
     }
     if not {0x000003FF, 0x01010000} <= plan_literals:
         raise WitnessError("backlight plan assignments do not match the pinned register sequence")
 
     apply = function_block(disassembly, "backlight_startup_executor::apply_with_io")
-    instructions = parse_instructions(apply)
+    instructions = reachable_control_flow(apply, "backlight executor")
     apply_targets = [
         target for instruction in instructions for target in direct_call_targets(instruction[4])
     ]
@@ -612,7 +739,7 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
     writes = function_block(disassembly, "BacklightInitPlan>::writes")
     if not any(
         matches_instruction(instruction, "movs", r"\s*r1,\s*#6\s*")
-        for instruction in parse_instructions(writes)
+        for instruction in reachable_control_flow(writes, "backlight initialization writes")
     ):
         raise WitnessError("backlight initialization plan does not contain six ordered writes")
 
@@ -665,7 +792,9 @@ def validate_backlight_register_evidence(disassembly: str) -> None:
         io_body = function_block(
             disassembly, f"backlight_startup_executor::RegisterIo>::{method}"
         )
-        io_instructions = reachable_instruction_prefix(io_body)
+        io_instructions = reachable_control_flow(
+            io_body, f"backlight register {method}"
+        )
         conversion_call = next(
             (
                 index
