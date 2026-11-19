@@ -1,0 +1,218 @@
+name: Canonical C and Rust parity evidence
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/canonical-parity-evidence.yml
+      - Cargo.lock
+      - Cargo.toml
+      - docs/reference-vector-provenance.md
+      - examples/reference_vectors.rs
+      - rust-toolchain.toml
+      - src/**
+      - tests/reference-vectors/**
+      - tools/reference-vectors/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-parity:
+    name: Compare canonical reference vectors
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      C_REFERENCE_REVISION: 7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3
+      FIXTURE_SHA256: 361172955485ba9d7b6cd3b26cafc0f73cc8ed9e56ee84d79c36b8da6049c748
+      EXPECTED_RUST_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Check out exact Rust source revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: rust-source
+          persist-credentials: false
+
+      - name: Check out pinned public C reference
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: egzumer/uv-k5-firmware-custom
+          ref: 7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3
+          path: c-reference
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        working-directory: rust-source
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          import tomllib
+
+          with open("rust-toolchain.toml", "rb") as toolchain_file:
+              toolchain = tomllib.load(toolchain_file)["toolchain"]
+
+          command = [
+              "rustup",
+              "toolchain",
+              "install",
+              toolchain["channel"],
+              "--profile",
+              toolchain["profile"],
+          ]
+          for component in toolchain.get("components", []):
+              command.extend(["--component", component])
+          for target in toolchain.get("targets", []):
+              command.extend(["--target", target])
+          subprocess.run(command, check=True)
+          PY
+
+      - name: Install crcmod in runner-owned virtualenv
+        run: |
+          python3 -m venv "$RUNNER_TEMP/canonical-parity-venv"
+          "$RUNNER_TEMP/canonical-parity-venv/bin/python" -m pip install \
+            --disable-pip-version-check \
+            --no-input \
+            crcmod==1.7
+
+      - name: Run both canonical comparators and record evidence
+        id: compare
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/canonical-parity-report.txt"
+          : > "$report"
+          exec > >(tee -a "$report") 2>&1
+          failures=0
+          rust_source="$GITHUB_WORKSPACE/rust-source"
+          c_reference="$GITHUB_WORKSPACE/c-reference"
+          python="$RUNNER_TEMP/canonical-parity-venv/bin/python"
+
+          rust_revision="$(git -C "$rust_source" rev-parse HEAD)"
+          c_revision="$(git -C "$c_reference" rev-parse HEAD)"
+          fixture="$rust_source/tests/reference-vectors/golden.json"
+          fixture_before="$(sha256sum "$fixture" | cut -d ' ' -f 1)"
+
+          printf 'Expected Rust source revision: %s\n' "$EXPECTED_RUST_REVISION"
+          printf 'Rust source revision: %s\n' "$rust_revision"
+          printf 'Pinned C source revision: %s\n' "$C_REFERENCE_REVISION"
+          printf 'C source revision: %s\n' "$c_revision"
+          printf 'Fixture SHA-256 before comparisons: %s\n' "$fixture_before"
+          printf '\nTool versions:\n'
+          python3 --version
+          cc --version | head -n 1
+          "$python" -c 'from importlib.metadata import version; print("crcmod", version("crcmod"))'
+          (
+            cd "$rust_source"
+            rustc --version
+            cargo --version
+          )
+
+          if [[ "$rust_revision" != "$EXPECTED_RUST_REVISION" ]]; then
+            echo "Rust checkout does not match the requested PR/dispatch head."
+            failures=1
+          fi
+          if [[ "$c_revision" != "$C_REFERENCE_REVISION" ]]; then
+            echo "C checkout does not match the pinned public revision."
+            failures=1
+          fi
+          if [[ "$fixture_before" != "$FIXTURE_SHA256" ]]; then
+            echo "Canonical fixture does not match its pinned SHA-256."
+            failures=1
+          fi
+
+          if cc -std=gnu2x -x c -fsyntax-only /dev/null; then
+            echo "GNU C2x compiler check: passed"
+          else
+            echo "GNU C2x compiler check: failed"
+            failures=1
+          fi
+
+          c_status="$(git -C "$c_reference" status --porcelain --untracked-files=all)"
+          if [[ -z "$c_status" ]]; then
+            echo "C working tree before C comparison: clean"
+          else
+            printf 'C working tree before C comparison: dirty\n%s\n' "$c_status"
+            failures=1
+          fi
+
+          echo
+          echo "C canonical comparison:"
+          if (
+            cd "$rust_source"
+            UV_K5_C_REFERENCE="$c_reference" CC=cc \
+              "$python" tools/reference-vectors/compare.py
+          ); then
+            c_comparison_status=0
+          else
+            c_comparison_status=$?
+            failures=1
+          fi
+          printf 'C comparator exit status: %s\n' "$c_comparison_status"
+
+          c_status="$(git -C "$c_reference" status --porcelain --untracked-files=all)"
+          c_revision_after="$(git -C "$c_reference" rev-parse HEAD)"
+          if [[ -z "$c_status" && "$c_revision_after" == "$C_REFERENCE_REVISION" ]]; then
+            echo "C working tree after C comparison: clean at pinned revision"
+          else
+            printf 'C working tree after C comparison: invalid\n%s\n' "$c_status"
+            printf 'C revision after comparison: %s\n' "$c_revision_after"
+            failures=1
+          fi
+
+          echo
+          echo "Rust canonical comparison:"
+          if (
+            cd "$rust_source"
+            "$python" tools/reference-vectors/compare_rust.py
+          ); then
+            rust_comparison_status=0
+          else
+            rust_comparison_status=$?
+            failures=1
+          fi
+          printf 'Rust comparator exit status: %s\n' "$rust_comparison_status"
+
+          fixture_after="$(sha256sum "$fixture" | cut -d ' ' -f 1)"
+          printf 'Fixture SHA-256 after comparisons: %s\n' "$fixture_after"
+          if [[ "$fixture_after" != "$fixture_before" || "$fixture_after" != "$FIXTURE_SHA256" ]]; then
+            echo "Canonical fixture changed during the comparisons or has an unexpected hash."
+            failures=1
+          else
+            echo "Canonical fixture unchanged: verified"
+          fi
+
+          if [[ "$c_comparison_status" -ne 0 || "$rust_comparison_status" -ne 0 ]]; then
+            echo "At least one canonical comparator failed; this job must fail."
+            failures=1
+          fi
+          if [[ "$failures" -ne 0 ]]; then
+            exit 1
+          fi
+
+      - name: Verify report identifies this exact head and both complete comparisons
+        if: always()
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/canonical-parity-report.txt"
+          test -s "$report"
+          grep -Fqx "Rust source revision: $EXPECTED_RUST_REVISION" "$report"
+          grep -Fqx "C source revision: $C_REFERENCE_REVISION" "$report"
+          grep -Fqx "matched 39 canonical cases against pinned C reference $C_REFERENCE_REVISION" "$report"
+          grep -Fqx "Vector results: 39/39 matched (39 executed)." "$report"
+          grep -Fqx "C comparator exit status: 0" "$report"
+          grep -Fqx "Rust comparator exit status: 0" "$report"
+          grep -Fqx "C working tree before C comparison: clean" "$report"
+          grep -Fqx "C working tree after C comparison: clean at pinned revision" "$report"
+          grep -Fqx "Canonical fixture unchanged: verified" "$report"
+          grep -Fqx "Fixture SHA-256 after comparisons: $FIXTURE_SHA256" "$report"
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload short-lived canonical parity report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: canonical-parity-report
+          path: ${{ runner.temp }}/canonical-parity-report.txt
+          if-no-files-found: ignore
+          retention-days: 3

@@ -152,6 +152,33 @@ host-callable functions and inputs; they do not establish full firmware
 integration, hardware behavior, bootloader acceptance, image validity, or
 device/recovery safety.
 
+## Hosted canonical parity evidence
+
+The path-scoped
+[canonical parity workflow](../.github/workflows/canonical-parity-evidence.yml)
+runs on pull requests that touch the canonical vector tooling, fixture,
+Rust bridge or implementation, toolchain contract, or this provenance record.
+It can also be started manually with `workflow_dispatch`. The workflow checks
+out the exact pull-request head (or dispatch revision) separately from the
+pinned C revision, installs the Rust toolchain from that Rust checkout's
+`rust-toolchain.toml`, and installs `crcmod==1.7` in a runner-owned virtual
+environment. Python bytecode generation is disabled.
+
+The job verifies the C checkout revision and clean working tree before and
+after `compare.py`, verifies the fixture retains the documented SHA-256, and
+runs both existing comparators without invoking fixture regeneration. The C
+compiler must accept GNU C2x. Both comparisons must pass all 39 canonical
+cases; a nonzero comparator status is recorded, the other comparator still
+runs, and the job then fails. A separate report check requires both complete
+summaries, successful statuses, the exact Rust source revision, and the
+unchanged fixture hash.
+
+The workflow records source revisions, Python/Rust/C compiler and `crcmod`
+versions, the fixture SHA-256, clean-checkout checks, and full comparator
+output in one diagnostic report. That report is uploaded for three days only.
+This evidence is limited to the canonical corpus and does not establish full
+firmware parity or hardware results.
+
 ## Evidence and limits
 
 The reference source files used for capture were independently checked
