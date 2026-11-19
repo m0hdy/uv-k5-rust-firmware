@@ -62,7 +62,7 @@ fn one_pending_tick_dispatches_once_and_a_second_iteration_does_not_redispatch()
 }
 
 #[test]
-fn forty_nine_ticks_then_the_fiftieth_dispatch_shared_flags() {
+fn fiftieth_tick_does_not_raise_the_40ms_flag() {
     let mut composition = AppSchedulerComposition::new();
     let mut effects = MockEffects::default();
 
@@ -78,14 +78,43 @@ fn forty_nine_ticks_then_the_fiftieth_dispatch_shared_flags() {
     assert_eq!(effects.events, [Event::Update, Event::Timeslice10ms]);
     assert!(!composition.pending_10ms());
     assert!(composition.pending_40ms());
+    composition.acknowledge_40ms();
 
     composition.tick();
     assert_eq!(composition.counter(), 50);
     assert!(composition.pending_10ms());
-    assert!(composition.pending_40ms());
+    assert!(!composition.pending_40ms());
     assert!(composition.pending_500ms());
 
     effects.events.clear();
+    composition.run_iteration(&mut effects);
+    assert_eq!(
+        effects.events,
+        [Event::Update, Event::Timeslice10ms, Event::Timeslice500ms]
+    );
+    assert!(!composition.pending_10ms());
+    assert!(!composition.pending_40ms());
+    assert!(!composition.pending_500ms());
+}
+
+#[test]
+fn shared_boundary_dispatch_leaves_the_new_40ms_flag_pending() {
+    let mut composition = AppSchedulerComposition::new();
+    let mut effects = MockEffects::default();
+    for _ in 0..99 {
+        composition.tick();
+    }
+    composition.run_iteration(&mut effects);
+    composition.acknowledge_40ms();
+    assert!(!composition.pending_40ms());
+    assert!(!composition.pending_500ms());
+
+    effects.events.clear();
+    composition.tick();
+    assert_eq!(composition.counter(), 100);
+    assert!(composition.pending_40ms());
+    assert!(composition.pending_500ms());
+
     composition.run_iteration(&mut effects);
     assert_eq!(
         effects.events,

@@ -7,7 +7,8 @@ from [`scheduler.c:45–64`](https://github.com/egzumer/uv-k5-firmware-custom/bl
 with one-iteration dispatch from
 [`main.c:222–233`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/main.c#L222-L233)
 and the timeslice flag acknowledgements in
-[`app.c:1088–1090, 1259–1261`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/app/app.c#L1088-L1090).
+[`app.c:1088–1090`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/app/app.c#L1088-L1090) and
+[`app.c:1259–1261`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/app/app.c#L1259-L1261).
 The public reference is `egzumer/uv-k5-firmware-custom` at commit
 `7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3`.
 
@@ -40,7 +41,8 @@ rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
 ```
 
 The host tests cover idle update-only behavior, one pending tick and no
-redispatch on the next iteration, progression through ticks 49 and 50,
+redispatch on the next iteration, the 500 ms boundary at tick 50 and the
+shared 40 ms / 500 ms boundary at tick 100,
 coalescing of unserviced ticks, preservation of 40 ms, and a tick delivered by
 the 10 ms mock effect becoming visible to the subsequent 500 ms query without
 clearing its newly pending 10 ms flag.
