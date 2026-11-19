@@ -36,10 +36,6 @@ Budget check passed
 
 Not applicable: this offline proof makes no device changes and performs no on-device execution.
 
-## Other test coverage
-
-The full Python suite passed 87 tests; two existing real-ARM-image memory-budget fixtures were skipped because `ARM_BINUTILS_PREFIX` is not set to GNU ARM binutils. Those skipped fixtures are not counted as passes; this smoke separately runs the repository budget checker on its linked target ELF and raw payload.
-
 ## Reproduction
 
 Run `python3 -m unittest discover -s tests -p 'test_abi_smoke.py' -v` to rebuild and validate the host and target artifacts.

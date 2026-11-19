@@ -3,8 +3,17 @@
 #[path = "../../src/channel_validity.rs"]
 mod channel_validity;
 
+/// # Safety
+///
+/// `out_valid` must be non-null, properly aligned, and point to a live,
+/// writable `i32` for the duration of this call. The caller must prevent
+/// conflicting accesses while the function writes to that storage.
+///
+/// A null output pointer or any scan-list flag greater than `1` is rejected
+/// before writing. Other scalar arguments are passed to the channel-validity
+/// routine without further validation.
 #[unsafe(no_mangle)]
-pub extern "C" fn uvk5_channel_validity(
+pub unsafe extern "C" fn uvk5_channel_validity(
     channel: u16,
     band: u8,
     scan_list_1: u8,
