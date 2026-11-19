@@ -245,11 +245,34 @@ def validate_required_call_targets(disassembly: str) -> None:
             }
             if not matching_entries:
                 allowed_helpers = (
-                    ("placeholder", "StartupError>>::is_err")
+                    (
+                        (
+                            "HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::placeholder",
+                            False,
+                        ),
+                        ("StartupError>>::is_err", False),
+                    )
                     if caller == "board_sequence::Backend>::call"
                     else ()
                 )
-                if any(matches_call_symbol(helper, target) for helper in allowed_helpers):
+                matching_helpers = {
+                    function_entry(helper, suffix)
+                    for helper, suffix in allowed_helpers
+                    if matches_call_symbol(helper, target)
+                }
+                if len(matching_helpers) == 1:
+                    helper_entry = next(iter(matching_helpers))
+                    if (
+                        re.search(r"\+0x[0-9a-fA-F]+$", target)
+                        or helper_entry[0] != address
+                        or not (
+                            helper_entry[1] == target
+                            or helper_entry[1].endswith(target)
+                        )
+                    ):
+                        raise WitnessError(
+                            f"allowed helper call target {target} does not resolve to its symbol entry"
+                        )
                     continue
                 raise WitnessError(
                     f"required caller {caller} has an unexpected call target {target}"

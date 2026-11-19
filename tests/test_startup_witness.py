@@ -176,7 +176,7 @@ CONNECTED_DISPATCH = """
  650: 9902 ldr r1, [sp, #8]
  652: 9801 ldr r0, [sp, #4]
  654: 6800 ldr r0, [r0, #0]
- 656: f000 f8f3 bl 800 <Hardware as StartupIo>::placeholder>
+ 656: f000 f8f3 bl 1300 <HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::placeholder>
  65a: e709 b.n 670 <SequencerBackend as Backend>::call+0x70
  670: b004 add sp, #16
  672: bd80 pop {r7, pc}
@@ -191,7 +191,7 @@ CONNECTED_DISPATCH = """
  103a: 4601 mov r1, r0
  103c: a803 add r0, sp, #12
  103e: 7001 strb r1, [r0, #0]
- 1040: f000 f800 bl 800 <Result<(), startup_adapter_witness::board_startup_adapters::StartupError>>::is_err>
+ 1040: f000 f800 bl 1310 <Result<(), startup_adapter_witness::board_startup_adapters::StartupError>>::is_err>
  1044: 2800 cmp r0, #0
  1046: d10b bne.n 1060 <SequencerBackend as Backend>::call+0x80>
  1048: e712 b.n 670 <SequencerBackend as Backend>::call+0x70>
@@ -243,6 +243,10 @@ CONNECTED_DISPATCH = """
 00000840 <initialize_backlight_hardware>:
  840: f000 f800 bl 846 <backlight_startup_executor::apply_with_io>
  844: bd80 pop {r7, pc}
+00001300 <HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::placeholder>:
+ 1300: 4770 bx lr
+00001310 <Result<(), startup_adapter_witness::board_startup_adapters::StartupError>>::is_err>:
+ 1310: bd80 pop {r7, pc}
 00000846 <backlight_startup_executor::apply_with_io>:
  846: b580 push {r7, lr}
  848: af00 add r7, sp, #0
@@ -1276,12 +1280,19 @@ class StartupWitnessCheckerTests(unittest.TestCase):
             validate_call_path(mutated)
 
     def test_rejects_unmatched_backend_call_target(self):
-        original = " 656: f000 f8f3 bl 800 <Hardware as StartupIo>::placeholder>"
-        replacement = " 656: f000 f8f3 bl 3000 <Hardware as StartupIo>::placeholder_noop>"
+        original = (
+            " 656: f000 f8f3 bl 1300 <HardwareIo as "
+            "startup_adapter_witness::board_startup_adapters::StartupIo>::placeholder>"
+        )
+        replacement = (
+            " 656: f000 f8f3 bl 3000 <OtherIo as "
+            "startup_adapter_witness::board_startup_adapters::StartupIo>::placeholder>"
+        )
         self.assertIn(original, CONNECTED_DISPATCH)
         mutated = CONNECTED_DISPATCH.replace(original, replacement, 1)
         mutated += (
-            "\n00003000 <Hardware as StartupIo>::placeholder_noop>:\n"
+            "\n00003000 <OtherIo as "
+            "startup_adapter_witness::board_startup_adapters::StartupIo>::placeholder>:\n"
             " 3000: 4770 bx lr\n"
         )
         with self.assertRaisesRegex(
