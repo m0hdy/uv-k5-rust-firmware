@@ -1,3 +1,4 @@
+import hashlib
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -9,6 +10,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "reference-vectors"))
+sys.path.insert(0, str(ROOT / "scripts"))
 
 from runner import (  # noqa: E402
     Category,
@@ -19,6 +21,7 @@ from runner import (  # noqa: E402
     run_vectors,
 )
 from compare_rust import compare_rust, evaluate_rust  # noqa: E402
+from firmware_container import pack_payload  # noqa: E402
 
 
 class ReferenceVectorRunnerTests(unittest.TestCase):
@@ -32,17 +35,15 @@ class ReferenceVectorRunnerTests(unittest.TestCase):
             "7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3",
         )
 
-    def test_rust_bridge_executes_compatible_vectors_and_rejects_changed_expectations(self):
+    def test_rust_bridge_executes_all_vectors_and_rejects_changed_expectations(self):
         actuals = evaluate_rust(self.fixture)
         report = compare_rust(self.fixture, actuals)
 
         self.assertEqual(report.total, 39)
-        self.assertEqual(report.matched, 38)
+        self.assertEqual(report.matched, 39)
         self.assertEqual(report.mismatches, ())
-        self.assertEqual(
-            {category: len(case_ids) for category, case_ids in report.unported.items()},
-            {Category.FIRMWARE_CONTAINER_CHECKSUM: 1},
-        )
+        self.assertEqual(report.unported, {})
+        self.assertTrue(report.complete)
 
         changed = json.loads((ROOT / "tests/reference-vectors/golden.json").read_text())
         changed_case = next(case for case in changed["cases"] if case["category"] == "channel")
@@ -62,14 +63,39 @@ class ReferenceVectorRunnerTests(unittest.TestCase):
             changed_case["expected"] - 1,
         )
 
+    def test_rust_container_matches_independent_python_packer(self):
+        actuals = evaluate_rust(self.fixture)
+        case = next(
+            case for case in self.fixture.cases
+            if case.category is Category.FIRMWARE_CONTAINER_CHECKSUM
+        )
+        raw = bytes(range(256)) * 48
+        packed = pack_payload(raw, case.input["author"], case.input["version"])
+        actual = actuals[case.vector_id]
+
+        self.assertEqual(actual["raw_sha256"], hashlib.sha256(raw).hexdigest())
+        self.assertEqual(actual["packed_length"], len(packed))
+        self.assertEqual(
+            actual["packed_sha256"],
+            hashlib.sha256(packed).hexdigest(),
+        )
+        self.assertEqual(actual["appended_crc_bytes"], packed[-2:].hex())
+
     def test_rust_bridge_rejects_missing_channel_result(self):
         omitted_id = "channel/first_memory_valid"
         output = "\n".join(
-            f"{case.vector_id}\t"
-            f"{'0x0000=0000000000000000' if case.category is Category.SETTINGS else '0'}"
+            "\t".join(
+                (
+                    case.vector_id,
+                    "00\t0000"
+                    if case.category is Category.FIRMWARE_CONTAINER_CHECKSUM
+                    else "0x0000=0000000000000000"
+                    if case.category is Category.SETTINGS
+                    else "0",
+                )
+            )
             for case in self.fixture.cases
-            if case.category is not Category.FIRMWARE_CONTAINER_CHECKSUM
-            and case.vector_id != omitted_id
+            if case.vector_id != omitted_id
         )
         completed = SimpleNamespace(returncode=0, stdout=output, stderr="")
 

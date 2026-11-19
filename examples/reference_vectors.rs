@@ -3,6 +3,7 @@ use std::io::{self, Read};
 
 use uv_k5_rust_firmware::channel_codec::{SETTINGS_BLOCK_OFFSETS, Settings};
 use uv_k5_rust_firmware::channel_validity::{ChannelAttributes, is_valid_channel};
+use uv_k5_rust_firmware::firmware_container_checksum::pack_payload;
 use uv_k5_rust_firmware::tuning_signalling::{
     DcsCodeType, TxLockMode, TxPermissions, ctcss_code, dcs_code_word, decode_dcs_code,
     round_to_step, rx_frequency_check, tx_frequency_check,
@@ -114,6 +115,44 @@ fn evaluate_scalar(category: &str, input: &str) -> Result<String, Box<dyn Error>
         }
     };
     Ok(result)
+}
+
+fn evaluate_container(
+    raw_pattern: &str,
+    raw_length: &str,
+    author: &str,
+    version: &str,
+) -> Result<String, Box<dyn Error>> {
+    let repetitions = raw_pattern
+        .strip_prefix("bytes 0x00..0xff repeated ")
+        .and_then(|value| value.strip_suffix(" times"))
+        .ok_or_else(|| invalid_input("unsupported firmware-container raw pattern"))?
+        .parse::<usize>()?;
+    let raw_length = raw_length.parse::<usize>()?;
+    if repetitions.checked_mul(256) != Some(raw_length) {
+        return Err(invalid_input("raw pattern does not match raw length").into());
+    }
+
+    let raw = (0..raw_length)
+        .map(|index| (index & 0xff) as u8)
+        .collect::<Vec<_>>();
+    let packed_capacity = raw_length
+        .checked_add(18)
+        .ok_or_else(|| invalid_input("packed container length overflows"))?;
+    let mut packed = vec![0; packed_capacity];
+    let packed_length = pack_payload(&raw, author, version, &mut packed)
+        .map_err(|error| invalid_input(format!("container packing failed: {error:?}")))?;
+    let encode_hex = |bytes: &[u8]| {
+        bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    };
+    Ok(format!(
+        "{}\t{}",
+        encode_hex(&raw),
+        encode_hex(&packed[..packed_length])
+    ))
 }
 
 fn standard_settings() -> Settings {
@@ -268,7 +307,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut requests = String::new();
     io::stdin().read_to_string(&mut requests)?;
     for (line_number, line) in requests.lines().enumerate() {
-        let mut fields = line.splitn(2, '\t');
+        let mut fields = line.split('\t');
         let vector_id = fields.next().ok_or_else(|| {
             invalid_input(format!("request {} has no vector ID", line_number + 1))
         })?;
@@ -276,13 +315,35 @@ fn main() -> Result<(), Box<dyn Error>> {
             .split_once('/')
             .map(|(category, _)| category)
             .ok_or_else(|| invalid_input(format!("invalid vector ID {vector_id}")))?;
-        let input = fields
-            .next()
-            .ok_or_else(|| invalid_input(format!("request {vector_id} has no input")))?;
-        let actual = if category == "settings" {
-            encode_settings(input)?
+        let actual = if category == "firmware_container_checksum" {
+            let raw_pattern = fields
+                .next()
+                .ok_or_else(|| invalid_input(format!("request {vector_id} has no raw pattern")))?;
+            let raw_length = fields
+                .next()
+                .ok_or_else(|| invalid_input(format!("request {vector_id} has no raw length")))?;
+            let author = fields
+                .next()
+                .ok_or_else(|| invalid_input(format!("request {vector_id} has no author")))?;
+            let version = fields
+                .next()
+                .ok_or_else(|| invalid_input(format!("request {vector_id} has no version")))?;
+            if fields.next().is_some() {
+                return Err(invalid_input(format!("request {vector_id} has extra fields")).into());
+            }
+            evaluate_container(raw_pattern, raw_length, author, version)?
         } else {
-            evaluate_scalar(category, input)?
+            let input = fields
+                .next()
+                .ok_or_else(|| invalid_input(format!("request {vector_id} has no input")))?;
+            if fields.next().is_some() {
+                return Err(invalid_input(format!("request {vector_id} has extra fields")).into());
+            }
+            if category == "settings" {
+                encode_settings(input)?
+            } else {
+                evaluate_scalar(category, input)?
+            }
         };
         println!("{vector_id}\t{actual}");
     }
