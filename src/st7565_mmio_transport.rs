@@ -119,11 +119,13 @@ impl RegisterIo for VolatileRegisterIo {
 /// # Safety
 ///
 /// The caller must ensure the DP32G030 register mappings match
-/// [`RegisterAddress::address`], GPIOB bit 9 is muxed as the ST7565 A0 GPIO,
-/// and SPI0 clock and GPIOB clock are enabled. SPI0 must already be configured
-/// for the display with transmit FIFO status and interrupt flags operational.
-/// The SPI bus must be idle before entry, and the caller must have exclusive
-/// ownership of SPI0 CR, WDR, IF, FIFOST, and GPIOB DATA for the whole call.
+/// [`RegisterAddress::address`], GPIOB bit 9 is configured as an output and
+/// muxed as the ST7565 A0 GPIO, and the SPI0 pins are muxed for the display.
+/// This function does not configure pin directions or muxes. SPI0 clock and
+/// GPIOB clock must be enabled, and SPI0 must already be configured for the
+/// display with transmit FIFO status and interrupt flags operational. The SPI
+/// bus must be idle before entry, and the caller must have exclusive ownership
+/// of SPI0 CR, WDR, IF, FIFOST, and GPIOB DATA for the whole call.
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 pub unsafe fn draw_line_mmio(
     page: u16,

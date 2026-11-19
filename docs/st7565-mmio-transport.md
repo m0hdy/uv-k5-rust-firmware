@@ -21,13 +21,14 @@ with 32-bit operations, and each payload byte is zero-extended into the
 
 The generic `RegisterIo` boundary allows host tests to record all reads and
 writes. The unsafe volatile entry exists only for `arm`/`none` targets and does
-not initialize SPI, set pin mux, enable clocks, arbitrate the bus, or establish
-exclusive ownership. Before calling it, the caller must ensure:
+not configure GPIO direction or pin mux, initialize SPI, enable clocks,
+arbitrate the bus, or establish exclusive ownership. Before calling it, the
+caller must ensure:
 
 * The target is a DP32G030 with the register map listed by
   `RegisterAddress::address`.
-* GPIOB bit 9 is configured as the ST7565 A0 GPIO, and the SPI0 pins are muxed
-  for the display.
+* GPIOB bit 9 is configured as an output and muxed as the ST7565 A0 GPIO, and
+  the SPI0 pins are muxed for the display.
 * GPIOB and SPI0 peripheral clocks are enabled.
 * SPI0 has already been configured for the display, with FIFO/status flags
   active and no pending transfer; the SPI bus is idle.
