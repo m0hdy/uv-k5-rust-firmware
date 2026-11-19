@@ -32,6 +32,19 @@ class ProvisionArmBinutilsTests(unittest.TestCase):
         self.assertFalse(toolchain_available(available, old_runner))
         self.assertFalse(toolchain_available(lambda name: None if name.endswith("-nm") else available(name), runner))
 
+    def test_failed_version_probe_treats_the_toolchain_as_unavailable(self):
+        available = lambda _name: "/usr/bin/arm-none-eabi-tool"
+        failures = (
+            subprocess.CalledProcessError(
+                1, ["/usr/bin/arm-none-eabi-as", "--version"]
+            ),
+            FileNotFoundError("arm-none-eabi-as"),
+        )
+        for failure in failures:
+            with self.subTest(failure=type(failure).__name__):
+                runner = Mock(side_effect=failure)
+                self.assertFalse(toolchain_available(available, runner))
+
     def test_tool_versions_ignore_vendor_branding_and_check_every_tool(self):
         versions = {
             "as": "GNU assembler 2.42\n",

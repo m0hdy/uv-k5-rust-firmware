@@ -31,14 +31,21 @@ def toolchain_available(
     if any(path is None for path in paths):
         return False
 
-    for path in paths:
+    for tool, path in zip(REQUIRED_TOOLS, paths, strict=True):
         assert path is not None
-        result = runner(
-            [path, "--version"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        try:
+            result = runner(
+                [path, "--version"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as error:
+            print(
+                f"ARM GNU binutils {tool} version probe failed; treating it as unavailable: {error}",
+                file=sys.stderr,
+            )
+            return False
         output = re.sub(r"\([^)]*\)", " ", result.stdout + result.stderr)
         matches = re.findall(r"\b(\d+)\.(\d+)(?:\.\d+)?\b", output)
         if not matches:
