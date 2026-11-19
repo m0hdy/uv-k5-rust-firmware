@@ -249,16 +249,21 @@ def validate_required_call_targets(disassembly: str) -> None:
                         (
                             "HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::placeholder",
                             False,
+                            r"<?startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::placeholder",
                         ),
-                        ("StartupError>>::is_err", False),
+                        (
+                            "core::result::Result<(), startup_adapter_witness::board_startup_adapters::StartupError>>::is_err",
+                            False,
+                            r"<?core::result::Result<\(\), startup_adapter_witness::board_startup_adapters::StartupError>>::is_err",
+                        ),
                     )
                     if caller == "board_sequence::Backend>::call"
                     else ()
                 )
                 matching_helpers = {
                     function_entry(helper, suffix)
-                    for helper, suffix in allowed_helpers
-                    if matches_call_symbol(helper, target)
+                    for helper, suffix, identity in allowed_helpers
+                    if re.fullmatch(identity, target)
                 }
                 if len(matching_helpers) == 1:
                     helper_entry = next(iter(matching_helpers))
