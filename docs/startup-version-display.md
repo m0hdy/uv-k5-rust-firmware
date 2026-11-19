@@ -37,6 +37,13 @@ version returns a blit plan for framebuffer line 6, selecting controller page
 plan for the M0HDY version row only, not full welcome-screen parity, status-row
 rendering, display transport, or boot wiring.
 
+The renderer, framebuffer plan, and row composition are available through the
+`startup_version_display`, `st7565_display`, and `startup_version_row_plan`
+library modules. Their public signatures share the same
+`StartupVersionDisplayPlan` and `DisplayBlitPlan` types. Rendering failures
+and any invalid framebuffer plan for a visible row are returned as
+`StartupVersionRowError`; the latter is distinct from a suppressed row.
+
 The renderer trait still makes planned text and placement mockable. Golden
 tests compare the M0HDY-only and M0HDY-dev outputs against independent bytes on
 patterned pages, checking that glyph spacing, other pages, and untouched
@@ -53,6 +60,5 @@ cargo clippy --locked --test startup_version_row_plan -- -D warnings
 cargo fmt --all -- --check
 rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
   -D warnings src/startup_version_display.rs -o /tmp/startup_version_display.rlib
-rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
-  -D warnings src/startup_version_row_plan.rs -o /tmp/startup_version_row_plan.rlib
+RUSTFLAGS="-D warnings" cargo check --locked --lib --target thumbv6m-none-eabi
 ```

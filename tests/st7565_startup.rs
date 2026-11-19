@@ -1,11 +1,8 @@
-#[allow(dead_code)]
-#[path = "../src/st7565_display.rs"]
-mod st7565_display;
 #[path = "../src/st7565_startup.rs"]
 mod st7565_startup;
 
-use st7565_display::{CommandStep, DisplayBlitPlan, LCD_WIDTH};
 use st7565_startup::{ResetLevel, SpiEffect, StartupStep, startup_steps};
+use uv_k5_rust_firmware::st7565_display::{CommandStep, DisplayBlitPlan, LCD_WIDTH};
 
 #[test]
 fn startup_matches_pinned_chronological_trace() {

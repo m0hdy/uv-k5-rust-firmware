@@ -1,7 +1,4 @@
-#[path = "../src/startup_version_display.rs"]
-mod startup_version_display;
-
-use startup_version_display::{
+use uv_k5_rust_firmware::startup_version_display::{
     LCD_WIDTH, STARTUP_VERSION_LINE, StartupDisplayMode, StartupVersionDisplayPlan,
     StartupVersionError, StartupVersionRenderError, StartupVersionRenderer, StartupVersionText,
     render_small_normal_text_at, startup_version_display_plan,
