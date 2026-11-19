@@ -1,14 +1,5 @@
-#![cfg_attr(not(test), no_std)]
-
-#[allow(unused_attributes)]
-#[path = "app_timeslice_dispatch.rs"]
-mod app_timeslice_dispatch;
-#[allow(unused_attributes)]
-#[path = "periodic_scheduler_flags.rs"]
-mod periodic_scheduler_flags;
-
-use app_timeslice_dispatch::Backend;
-use periodic_scheduler_flags::PeriodicSchedulerFlags;
+use super::dispatch::{self, Backend};
+use super::flags::PeriodicSchedulerFlags;
 
 /// Application effects used by one main-loop iteration.
 pub trait ApplicationEffects {
@@ -58,7 +49,13 @@ impl AppSchedulerComposition {
             flags: &mut self.flags,
             effects,
         };
-        app_timeslice_dispatch::run(&mut backend);
+        dispatch::run(&mut backend);
+    }
+}
+
+impl Default for AppSchedulerComposition {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

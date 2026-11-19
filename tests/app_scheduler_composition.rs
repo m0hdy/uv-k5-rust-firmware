@@ -1,7 +1,4 @@
-#[path = "../src/app_scheduler_composition.rs"]
-mod app_scheduler_composition;
-
-use app_scheduler_composition::{AppSchedulerComposition, ApplicationEffects};
+use uv_k5_rust_firmware::scheduler::composition::{AppSchedulerComposition, ApplicationEffects};
 
 #[derive(Debug, PartialEq, Eq)]
 enum Event {

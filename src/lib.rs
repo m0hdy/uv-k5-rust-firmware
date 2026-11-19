@@ -4,6 +4,7 @@ pub mod channel_codec;
 pub mod channel_validity;
 pub mod firmware_container_checksum;
 pub mod scan_decisions;
+pub mod scheduler;
 pub mod tuning_signalling;
 
 pub struct ByteQueue<const CAPACITY: usize> {

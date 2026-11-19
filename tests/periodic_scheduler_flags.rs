@@ -1,8 +1,4 @@
-#[allow(unused_attributes)]
-#[path = "../src/periodic_scheduler_flags.rs"]
-mod periodic_scheduler_flags;
-
-use periodic_scheduler_flags::PeriodicSchedulerFlags;
+use uv_k5_rust_firmware::scheduler::flags::PeriodicSchedulerFlags;
 
 #[test]
 fn first_tick_sets_only_the_10ms_flag() {

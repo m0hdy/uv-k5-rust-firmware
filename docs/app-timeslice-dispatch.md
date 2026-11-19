@@ -9,7 +9,7 @@ in public `egzumer/uv-k5-firmware-custom` at commit
 
 ## Dispatch contract
 
-`src/app_timeslice_dispatch.rs` defines a typed `Backend` and a synchronous,
+[`scheduler::dispatch`](../src/scheduler/dispatch.rs) defines a typed `Backend` and a synchronous,
 allocation-free `run` for one iteration:
 
 1. Call `update` (`APP_Update`).
@@ -30,17 +30,14 @@ From the repository root, with the pinned Rust toolchain:
 ```sh
 cargo test --locked --test app_timeslice_dispatch
 cargo clippy --locked --test app_timeslice_dispatch -- -D warnings
-rustfmt --check --edition 2024 \
-  src/app_timeslice_dispatch.rs tests/app_timeslice_dispatch.rs
-rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi \
-  -D warnings src/app_timeslice_dispatch.rs \
-  -o /tmp/app_timeslice_dispatch.rlib
+cargo fmt --all -- --check
+RUSTFLAGS="-D warnings" cargo check --locked --lib --target thumbv6m-none-eabi
 ```
 
 Host tests compare complete query and call traces for all four flag
 combinations and exercise changes by both callbacks, including the 500 ms
-flag changing in both directions. The standalone target compile checks the
-isolated `no_std` module without an allocator.
+flag changing in both directions. The target check compiles the `no_std`
+library containing this module.
 
 This is dispatch-order evidence only, not an implementation of application
 effects or the SysTick tick model. It adds no ISR, MMIO, startup wiring, RF
