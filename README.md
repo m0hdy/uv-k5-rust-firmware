@@ -32,6 +32,11 @@ flowchart LR
   Battery --> Display
 ```
 
+The callable [welcome startup boundary](docs/startup-version-display.md#callable-welcome-execution)
+initializes SPI0 and the display before an optional M0HDY version-row transfer.
+The diagram above is an intended architecture: actual startup-mode acquisition
+and firmware boot wiring for that boundary remain to be implemented.
+
 ## Requirements and checks
 
 The repository pins Rust 1.99.1 and the `thumbv6m-none-eabi` target in

@@ -44,6 +44,7 @@ flowchart LR
     INIT --> HANDOFF[Restore MSR_SSN and record zero-fill handoff]
     HANDOFF --> PAGES[Bounded page selections 0 through 7]
     PAGES --> RETURN[Restore MSR_SSN and return Result]
+    RETURN --> WELCOME[Optional callable welcome row transfer]
 ```
 
 The final phase clears `MSR_SSN` once and visits pages 0 through 7 in order.
@@ -55,7 +56,9 @@ Every FIFO wait uses the supplied per-byte limit; every drain uses the
 existing `DRAIN_POLL_LIMIT = 100_001` status-read bound. Either timeout restores
 `MSR_SSN`, stops later commands/pages, and returns `LineError`. A partial
 command sequence may remain in the FIFO/panel; mode restoration is not rollback.
-The boundary sends no screen data and publishes no boot-complete state.
+The startup boundary sends no screen data and publishes no boot-complete state.
+The separate [welcome execution](startup-version-display.md#callable-welcome-execution)
+can follow it with a version-row transfer; it does not wire startup into boot.
 
 The ARM bare-metal-only unsafe `target_spi0::startup_mmio` takes
 `&mut dyn DelayMs` and the explicit nonzero poll budget. This concrete entry
