@@ -21,6 +21,7 @@ bench = false
 required-features = ["mixed-fallback"]
 
 [features]
+firmware-integration = []
 mixed-fallback = []
 mixed-fallback-c = ["mixed-fallback"]
 mixed-fallback-rust = ["mixed-fallback"]

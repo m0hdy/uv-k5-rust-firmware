@@ -9,11 +9,22 @@ use core::panic::PanicInfo;
 #[cfg(target_arch = "arm")]
 global_asm!(include_str!("startup.S"));
 
+#[cfg(all(target_arch = "arm", feature = "firmware-integration"))]
+#[path = "firmware/firmware_integration.rs"]
+mod firmware_integration;
+
 #[cfg(target_arch = "arm")]
 #[unsafe(no_mangle)]
 pub extern "C" fn firmware_main() -> ! {
-    loop {
-        core::hint::spin_loop();
+    #[cfg(feature = "firmware-integration")]
+    {
+        firmware_integration::firmware_integration_entry()
+    }
+    #[cfg(not(feature = "firmware-integration"))]
+    {
+        loop {
+            core::hint::spin_loop();
+        }
     }
 }
 

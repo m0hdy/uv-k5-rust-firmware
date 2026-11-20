@@ -1,9 +1,9 @@
 //! Callable SysTick counter-polling delays; not connected to firmware startup.
 
-use core::num::NonZeroU32;
-use uv_k5_rust_firmware::{
+use crate::{
     i2c_bitbang_flow::target_gpio::Delay1us, st7565_startup_executor::target_spi0::DelayMs,
 };
+use core::num::NonZeroU32;
 
 #[allow(dead_code)]
 #[path = "systick_timing.rs"]

@@ -1,5 +1,6 @@
 #![cfg_attr(not(test), no_std)]
 
+use crate::startup_version_display::StartupDisplayMode;
 use crate::{display_boot_defaults, settings_boot_defaults};
 
 use crate::eeprom_read_transport::execute_read;
@@ -20,6 +21,7 @@ pub struct Features {
 pub struct SettingsBoot {
     pub core: CoreSettings,
     pub display: DisplayBootDefaults,
+    pub welcome_mode: StartupDisplayMode,
 }
 
 pub trait ReadBackend {
@@ -30,6 +32,7 @@ pub trait ReadBackend {
 pub enum SettingsBootBlock {
     Core,
     Display,
+    Welcome,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -50,8 +53,14 @@ pub fn compose<B: ReadBackend>(backend: &mut B, features: Features) -> SettingsB
         display_boot_defaults::EEPROM_LEN as u8,
     ));
     let display = decode_display(display_data, features);
+    let welcome_data = backend.read(plan_read(0x0e90, 8));
+    let welcome_mode = decode_welcome_mode(welcome_data);
 
-    SettingsBoot { core, display }
+    SettingsBoot {
+        core,
+        display,
+        welcome_mode,
+    }
 }
 
 pub fn compose_with_transport<T: I2cTransport>(
@@ -88,7 +97,30 @@ pub fn compose_with_transport<T: I2cTransport>(
     })?;
     let display = decode_display(display_data, features);
 
-    Ok(SettingsBoot { core, display })
+    let mut welcome_data = [0; 8];
+    execute_read(transport, plan_read(0x0e90, 8), &mut welcome_data).map_err(|error| {
+        SettingsBootReadError {
+            block: SettingsBootBlock::Welcome,
+            error,
+        }
+    })?;
+    let welcome_mode = decode_welcome_mode(welcome_data);
+
+    Ok(SettingsBoot {
+        core,
+        display,
+        welcome_mode,
+    })
+}
+
+const fn decode_welcome_mode(data: [u8; 8]) -> StartupDisplayMode {
+    match data[7] {
+        0 => StartupDisplayMode::FullScreen,
+        1 => StartupDisplayMode::Custom,
+        2 => StartupDisplayMode::Voltage,
+        3 => StartupDisplayMode::None,
+        _ => StartupDisplayMode::Voltage,
+    }
 }
 
 fn decode_core(data: [u8; 8], features: Features) -> CoreSettings {

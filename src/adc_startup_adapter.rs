@@ -43,11 +43,6 @@ const SARADC_CFG_BOARD_BITS: u32 =
 
 const SARADC_CALIB_OFFSET_VALID_MASK: u32 = 1 << 16;
 const SARADC_CALIB_KD_VALID_MASK: u32 = 1 << 16;
-const SARADC_IE_CHX_EOC_MASK: u32 = 0xffff;
-const SARADC_IE_FIFO_FULL_MASK: u32 = 1 << 16;
-const SARADC_IE_FIFO_HFULL_MASK: u32 = 1 << 17;
-const SARADC_IE_CONFIGURATION_MASK: u32 =
-    SARADC_IE_CHX_EOC_MASK | SARADC_IE_FIFO_FULL_MASK | SARADC_IE_FIFO_HFULL_MASK;
 const SARADC_START_SOFT_RESET_MASK: u32 = 1 << 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -70,7 +65,6 @@ pub enum Interrupt {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IrqAction {
-    Enable,
     Disable,
 }
 
@@ -102,6 +96,8 @@ fn configure_clock(io: &mut impl RegisterIo) {
 }
 
 fn configure(io: &mut impl RegisterIo, exttrig_sel: u16) {
+    io.set_irq(Interrupt::Saradc, IrqAction::Disable);
+
     let device_clock_gate = io.read(Register::DeviceClockGate);
     io.write(
         Register::DeviceClockGate,
@@ -133,20 +129,7 @@ fn configure(io: &mut impl RegisterIo, exttrig_sel: u16) {
 
     io.write(Register::InterruptFlags, u32::MAX);
 
-    let interrupt_enable = io.read(Register::InterruptEnable);
-    io.write(
-        Register::InterruptEnable,
-        interrupt_enable & !SARADC_IE_CONFIGURATION_MASK,
-    );
-    let interrupt_enable_readback = io.read(Register::InterruptEnable);
-    io.set_irq(
-        Interrupt::Saradc,
-        if interrupt_enable_readback == 0 {
-            IrqAction::Disable
-        } else {
-            IrqAction::Enable
-        },
-    );
+    io.write(Register::InterruptEnable, 0);
 }
 
 pub fn apply_with_io(io: &mut impl RegisterIo, exttrig_sel: u16) {
@@ -171,8 +154,6 @@ pub fn apply_with_io(io: &mut impl RegisterIo, exttrig_sel: u16) {
 #[cfg(any(test, all(target_arch = "arm", target_os = "none")))]
 pub(crate) mod physical {
     use super::{Interrupt, IrqAction, Register, RegisterIo, apply_with_io};
-    use core::sync::atomic::{Ordering, compiler_fence};
-
     // Pinned DP32G030 syscon.h and saradc.h declare these as volatile uint32_t.
     const SYSCON_BASE: usize = 0x4000_0000;
     const SARADC_BASE: usize = 0x400b_a000;
@@ -194,7 +175,6 @@ pub(crate) mod physical {
     // Pinned bsp/dp32g030/irq.h and CMSIS core_cm0.h (one NVIC bank).
     const DP32_SARADC_IRQ: u32 = 4;
     const NVIC_BASE: usize = 0xe000_e100;
-    const NVIC_ISER: usize = NVIC_BASE;
     const NVIC_ICER: usize = NVIC_BASE + 0x80;
 
     pub(crate) trait WordIo {
@@ -219,11 +199,6 @@ pub(crate) mod physical {
                 Interrupt::Saradc => 1 << DP32_SARADC_IRQ,
             };
             match action {
-                IrqAction::Enable => {
-                    compiler_fence(Ordering::SeqCst);
-                    self.0.write_word(NVIC_ISER, mask);
-                    compiler_fence(Ordering::SeqCst);
-                }
                 IrqAction::Disable => {
                     self.0.write_word(NVIC_ICER, mask);
                     self.0.sync_irq_disable();

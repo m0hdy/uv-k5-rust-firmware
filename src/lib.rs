@@ -1,5 +1,6 @@
 #![no_std]
 
+pub mod adc_battery_register_adapter;
 pub mod bk1080_startup_adapter;
 #[allow(unused_attributes)]
 pub mod boot_coordinator;
@@ -37,6 +38,7 @@ pub mod st7565_startup_executor;
 pub mod startup_version_display;
 #[allow(unused_attributes)]
 pub mod startup_version_row_plan;
+pub mod systick_delay_adapter;
 pub mod tuning_signalling;
 #[allow(unused_attributes)]
 pub mod welcome_startup;

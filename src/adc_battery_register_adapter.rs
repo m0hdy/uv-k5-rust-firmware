@@ -1,5 +1,3 @@
-#![cfg_attr(not(test), no_std)]
-
 //! Isolated DP32G030 register adapter for composed SARADC battery sampling.
 
 #[allow(dead_code, unused_attributes)]

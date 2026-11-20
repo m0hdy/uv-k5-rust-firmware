@@ -9,13 +9,16 @@ mod crc_startup_adapter;
 
 use uv_k5_rust_firmware::boot_coordinator::{
     Acknowledgement, BatteryReadRegister, BatteryRegisterIo, BatteryWriteRegister, BoardDefines,
-    BoardStartupError, BootConfig, BootError, I2cTransport, SettingsBootBlock,
-    SettingsBootReadError, StartupIo, coordinate,
+    BoardStartupError, BootConfig, BootError, BootIo, FirmwareStartupError, I2cTransport,
+    SettingsBootBlock, SettingsBootReadError, StartupIo, coordinate, coordinate_with_welcome,
 };
 use uv_k5_rust_firmware::settings_boot_composition::{Features as SettingsFeatures, ReadError};
 use uv_k5_rust_firmware::st7565_line_transport::LineError;
 use uv_k5_rust_firmware::st7565_startup_executor::target_spi0::{
     DelayMs, RegisterIo as DisplayRegisterIo, startup_with_io,
+};
+use uv_k5_rust_firmware::startup_version_display::{
+    StartupDisplayMode, StartupVersionDisplayPlan, startup_version_display_plan,
 };
 
 const CORE_DATA: [u8; 8] = [73, 8, 10, 1, 1, 1, 9, 4];
@@ -52,6 +55,7 @@ enum Event {
     EepromRepeatedStart,
     EepromRead(usize),
     EepromStop,
+    I2cHandoff,
     BatteryRead(BatteryReadRegister),
     BatteryWrite(BatteryWriteRegister, u32),
 }
@@ -145,7 +149,7 @@ impl bk1080_startup_adapter::WordIo for FmGpio<'_> {
 struct MockIo {
     events: Vec<Event>,
     failure: Failure,
-    settings_responses: [[u8; 8]; 2],
+    settings_responses: [[u8; 8]; 3],
     settings_reads: usize,
     battery_reads: VecDeque<(BatteryReadRegister, u32)>,
     display_registers: BTreeMap<usize, u32>,
@@ -195,7 +199,7 @@ impl MockIo {
         Self {
             events: Vec::new(),
             failure,
-            settings_responses: [CORE_DATA, DISPLAY_DATA],
+            settings_responses: [CORE_DATA, DISPLAY_DATA, [0, 0, 0, 0, 0, 0, 0, 2]],
             settings_reads: 0,
             battery_reads,
             display_registers,
@@ -342,6 +346,12 @@ impl BatteryRegisterIo for MockIo {
     }
 }
 
+impl BootIo for MockIo {
+    fn i2c_handoff(&mut self) {
+        self.events.push(Event::I2cHandoff);
+    }
+}
+
 fn config() -> BootConfig {
     BootConfig {
         board: BoardDefines {
@@ -393,8 +403,14 @@ fn success_runs_board_then_fallible_settings_then_bounded_battery_sampling() {
         .iter()
         .position(|event| matches!(event, Event::BatteryRead(_)))
         .unwrap();
+    let handoff = io
+        .events
+        .iter()
+        .position(|event| *event == Event::I2cHandoff)
+        .unwrap();
     assert!(last_board < first_eeprom);
     assert!(last_eeprom < first_battery);
+    assert!(last_eeprom < handoff && handoff < first_battery);
     assert_eq!(
         io.events[..7],
         [
@@ -433,7 +449,144 @@ fn success_runs_board_then_fallible_settings_then_bounded_battery_sampling() {
             .iter()
             .filter(|event| matches!(event, Event::EepromRead(8)))
             .count(),
-        2
+        3
+    );
+}
+
+#[test]
+fn composed_startup_uses_acquired_mode_and_version_on_the_initialized_display() {
+    for (raw, mode) in [
+        (0, StartupDisplayMode::FullScreen),
+        (1, StartupDisplayMode::Custom),
+        (2, StartupDisplayMode::Voltage),
+        (3, StartupDisplayMode::None),
+    ] {
+        let mut io = MockIo::new(Failure::None);
+        io.settings_responses[2][7] = raw;
+        let mut pages = [[0; 128]; 8];
+        let startup = coordinate_with_welcome(
+            &mut io,
+            &mut DelayProbe::default(),
+            &mut DelayProbe::default(),
+            config(),
+            Some(env!("CARGO_PKG_VERSION")),
+            &mut pages,
+        )
+        .unwrap();
+
+        assert_eq!(startup.settings.welcome_mode, mode);
+        assert_eq!(
+            io.events
+                .iter()
+                .filter(|event| matches!(event, Event::St7565Init(_)))
+                .count(),
+            1
+        );
+        let display_bytes = io
+            .display_trace
+            .iter()
+            .filter_map(|event| match event {
+                DisplayEvent::Write(SPI_WDR, byte) => Some(*byte as u8),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let board_bytes = ST7565_COMMANDS
+            .into_iter()
+            .chain((0..8).flat_map(|page| [0xb0 + page, 0x10, 0x04]))
+            .collect::<Vec<_>>();
+        assert_eq!(&display_bytes[..board_bytes.len()], board_bytes);
+
+        if matches!(
+            mode,
+            StartupDisplayMode::None | StartupDisplayMode::FullScreen
+        ) {
+            assert_eq!(display_bytes.len(), board_bytes.len());
+            assert_eq!(pages[6], [0; 128]);
+        } else {
+            let plan = startup_version_display_plan(mode, Some(env!("CARGO_PKG_VERSION"))).unwrap();
+            let StartupVersionDisplayPlan::Text(text) = plan else {
+                panic!("text modes must render the brand and project version");
+            };
+            assert_eq!(
+                text.as_bytes(),
+                concat!("M0HDY ", env!("CARGO_PKG_VERSION")).as_bytes()
+            );
+            let mut expected_pages = [[0; 128]; 8];
+            plan.render_page(&mut expected_pages).unwrap();
+            assert_eq!(pages[6], expected_pages[6]);
+            let expected_row = [0x40, 0xb7, 0x10, 0x04]
+                .into_iter()
+                .chain(expected_pages[6].iter().copied())
+                .collect::<Vec<_>>();
+            assert_eq!(&display_bytes[board_bytes.len()..], expected_row);
+        }
+
+        let last_stop = io
+            .events
+            .iter()
+            .rposition(|event| *event == Event::EepromStop)
+            .unwrap();
+        let handoff = io
+            .events
+            .iter()
+            .position(|event| *event == Event::I2cHandoff)
+            .unwrap();
+        let first_battery = io
+            .events
+            .iter()
+            .position(|event| matches!(event, Event::BatteryRead(_)))
+            .unwrap();
+        assert!(last_stop < handoff && handoff < first_battery);
+    }
+}
+
+#[test]
+fn composed_failures_keep_the_first_error_and_do_not_run_later_effects() {
+    let mut io = MockIo::new(Failure::Eeprom);
+    let mut pages = [[0; 128]; 8];
+    assert!(matches!(
+        coordinate_with_welcome(
+            &mut io,
+            &mut DelayProbe::default(),
+            &mut DelayProbe::default(),
+            config(),
+            Some(env!("CARGO_PKG_VERSION")),
+            &mut pages,
+        ),
+        Err(FirmwareStartupError::Boot(BootError::Settings(_)))
+    ));
+    assert!(io.events.contains(&Event::I2cHandoff));
+    assert!(
+        !io.events
+            .iter()
+            .any(|event| matches!(event, Event::BatteryRead(_) | Event::BatteryWrite(_, _)))
+    );
+    assert_eq!(
+        io.display_trace
+            .iter()
+            .filter(|event| matches!(event, DisplayEvent::Write(SPI_WDR, _)))
+            .count(),
+        41
+    );
+
+    let mut io = MockIo::new(Failure::Battery);
+    assert!(matches!(
+        coordinate_with_welcome(
+            &mut io,
+            &mut DelayProbe::default(),
+            &mut DelayProbe::default(),
+            config(),
+            Some(env!("CARGO_PKG_VERSION")),
+            &mut pages,
+        ),
+        Err(FirmwareStartupError::Boot(BootError::Battery(_)))
+    ));
+    assert_eq!(
+        io.display_trace
+            .iter()
+            .filter(|event| matches!(event, DisplayEvent::Write(SPI_WDR, _)))
+            .count(),
+        41
     );
 }
 
@@ -624,7 +777,7 @@ fn battery_failure_returns_no_app_state_after_complete_settings_reads() {
             .iter()
             .filter(|event| matches!(event, Event::EepromRead(8)))
             .count(),
-        2
+        3
     );
     assert_eq!(
         io.events

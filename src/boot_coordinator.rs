@@ -16,6 +16,11 @@ pub use crate::settings_boot_composition::{
     SettingsBootReadError,
 };
 use crate::st7565_startup_executor::target_spi0::DelayMs;
+use crate::st7565_startup_executor::target_spi0::RegisterIo as DisplayRegisterIo;
+use crate::startup_version_display::LCD_WIDTH;
+use crate::welcome_startup::{self, WelcomeError};
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+pub use board_startup_adapters::HardwareIo as TargetBoardHardwareIo;
 pub use board_startup_adapters::{
     Call as BoardCall, Defines as BoardDefines, StartupError as BoardStartupError, StartupIo,
 };
@@ -26,9 +31,9 @@ pub use startup_battery_sampling::{
     StartupBatteryReadings, WriteRegister as BatteryWriteRegister,
 };
 
-pub trait BootIo: StartupIo + I2cTransport + BatteryRegisterIo {}
-
-impl<T> BootIo for T where T: StartupIo + I2cTransport + BatteryRegisterIo {}
+pub trait BootIo: StartupIo + I2cTransport + BatteryRegisterIo {
+    fn i2c_handoff(&mut self);
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BootConfig {
@@ -56,6 +61,12 @@ pub enum BootError<E, F> {
     Battery(StartupBatteryError),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FirmwareStartupError<E, F> {
+    Boot(BootError<E, F>),
+    Welcome(WelcomeError),
+}
+
 /// Returns application startup state only after every required stage succeeds.
 pub fn coordinate<IO: BootIo>(
     io: &mut IO,
@@ -74,11 +85,42 @@ pub fn coordinate<IO: BootIo>(
         io,
     )
     .map_err(BootError::Board)?;
-    let settings = settings_boot_composition::compose_with_transport(io, config.settings)
-        .map_err(BootError::Settings)?;
+    let settings = match settings_boot_composition::compose_with_transport(io, config.settings) {
+        Ok(settings) => settings,
+        Err(error) => {
+            io.i2c_handoff();
+            return Err(BootError::Settings(error));
+        }
+    };
+    io.i2c_handoff();
     let battery =
         sample_startup_battery(io, config.battery_poll_budget, config.battery_calibration)
             .map_err(BootError::Battery)?;
 
     Ok(ApplicationStartup { settings, battery })
+}
+
+/// Runs the concrete board/settings/battery startup and continues on its initialized display.
+pub fn coordinate_with_welcome<IO: BootIo + DisplayRegisterIo>(
+    io: &mut IO,
+    display_delay: &mut dyn DelayMs,
+    fm_delay: &mut dyn Delay1us,
+    config: BootConfig,
+    version: Option<&str>,
+    pages: &mut [[u8; LCD_WIDTH]],
+) -> Result<
+    ApplicationStartup,
+    FirmwareStartupError<<IO as I2cTransport>::Error, <IO as StartupIo>::FmError>,
+> {
+    let startup =
+        coordinate(io, display_delay, fm_delay, config).map_err(FirmwareStartupError::Boot)?;
+    welcome_startup::welcome_on_initialized_display_with_version_and_io(
+        io,
+        startup.settings.welcome_mode,
+        version,
+        pages,
+        config.st7565_fifo_poll_limit,
+    )
+    .map_err(FirmwareStartupError::Welcome)?;
+    Ok(startup)
 }

@@ -147,7 +147,7 @@ pub fn run<IO: StartupIo>(
 }
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-struct HardwareIo;
+pub struct HardwareIo;
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 impl StartupIo for HardwareIo {
