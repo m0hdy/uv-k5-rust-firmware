@@ -27,7 +27,9 @@ impl<R: RegisterIo, D: Delay1us> KeyboardGpioAdapter<R, D> {
         }
     }
 
-    /// Performs one poll. The caller supplies the cadence and application effects.
+    /// Poll once every 10 ms to reproduce pinned application key timing.
+    /// Debounce, hold, and repeat thresholds count calls, not elapsed time;
+    /// the caller owns scheduling and application effects.
     pub fn poll(&mut self, effects: &mut impl KeypadEffects) {
         self.flow.poll(&mut self.gpio, effects);
     }

@@ -9,8 +9,14 @@ backend, so STOP cannot run a second backend's `Drop` cleanup.
 
 ## Poll behavior and register access
 
-The caller retains one `KeyboardGpioAdapter` and calls `poll` at the
-application-selected cadence. The adapter delegates to the existing
+The caller retains one `KeyboardGpioAdapter` and calls `poll` once every 10 ms
+to reproduce pinned application key timing
+([`app/app.c:1022–1085`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/app/app.c#L1022-L1085);
+see also the [keyboard poll flow](keyboard-poll-flow.md)). Debounce, hold, and
+repeat thresholds count calls, not elapsed time, so missed or extra calls
+change wall-clock key timings. The 1 µs delay only settles GPIO/bus edges; it
+does not schedule polls. This adapter has no scheduler or cadence source, so
+the caller owns scheduling. It delegates to the existing
 `KeyboardPollFlow::poll`, preserving its retained debounce decisions, event
 ordering, and mapping. The existing matrix scanner is unchanged: it checks
 side keys first, then the PA10–PA13 rows; each row's select/update is a
