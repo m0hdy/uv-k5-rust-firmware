@@ -2813,7 +2813,7 @@ def validate_fm_transport(disassembly: str) -> None:
         ("bk1080_shutdown::DelayRef as startup_adapter_witness::i2c_bitbang_flow::target_gpio::Delay1us>::delay_1us", True, "a63cf72a09fe83a7d67a3f7f84d8ebf7b4d4b7868bdd8e2f610c4789f9dda8b8"),
         ("LinkOnlyDelay as startup_adapter_witness::i2c_bitbang_flow::target_gpio::Delay1us>::delay_1us", True, "1c5b5e3fb8082a3687d6ac5113fd86221edd7aa8e779e6117c17e39e0922fd2b"),
         ("LinkOnlyDelay as startup_adapter_witness::st7565_startup_executor::target_spi0::DelayMs>::delay_ms", True, "1c5b5e3fb8082a3687d6ac5113fd86221edd7aa8e779e6117c17e39e0922fd2b"),
-        ("bk1080_startup_adapter::shutdown_transaction", False, "17efd2479951531a6017fb8a90ad813059ab564199c13cc193681aaa0a4f42a9"),
+        ("bk1080_startup_adapter::shutdown_transaction", False, "0f50c96aa53bd55159b931f382174d05dc47afed106dcaf89027638d817cc8bb"),
         ("I2cTransport>::start", True, "045c3a7ec30a6aa2bfdb139f4ef03f59ac01671429de2defb4c104cd27ce52d0"),
         ("I2cTransport>::stop", True, "c92af9b0841448c9881e2e4c085308a71bd98163b3624789afe6d0a8209fbebb"),
         ("I2cTransport>::write_byte", True, "88b88856ab5801e2dcd21e7d1dfe2c8285cc6b354ee1f2307b6adc3271f23705"),

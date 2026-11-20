@@ -186,7 +186,7 @@
 1000052c:	f000 f87a 	bl	10000624 <core::ptr::drop_glue::<core::array::iter::IntoIter<u8, 4>>>
 10000530:	e7dd      	b.n	100004ee <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>+0xb2>
 10000532:	46c0      	nop			@ (mov r8, r8)
-10000534:	10003970 	.word	0x10003970
+10000534:	10003878 	.word	0x10003878
 
 
 10003030 <<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>> as startup_adapter_witness::eeprom_read_transport::I2cTransport>::start>:
@@ -1202,4 +1202,3 @@
 
 10002664 <core::hint::unreachable_unchecked::precondition_check>:
 10002664:	b580      	push	{r7, lr}
-
