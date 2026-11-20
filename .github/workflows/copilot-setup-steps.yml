@@ -89,13 +89,26 @@ jobs:
         run: |
           cargo fmt --all -- --check
           cargo clippy --locked --all-targets -- -D warnings
-      - name: Run host regression tests
+      - name: Run Rust host regression tests
+        run: cargo test --locked --all-targets
+      - name: Build link-only startup witness
+        env:
+          ARM_BINUTILS_PREFIX: arm-none-eabi-
+          RUSTFLAGS: >-
+            -D warnings
+            -C link-arg=-Tlinker/startup-witness.ld
+            -C link-arg=-Map=../target/startup-witness/startup-adapter-witness.map
+        run: |
+          cargo build --locked \
+            --manifest-path startup-witness/Cargo.toml \
+            --target thumbv6m-none-eabi \
+            --release \
+            --target-dir target/startup-witness
+      - name: Run Python regression tests
         env:
           ARM_BINUTILS_PREFIX: arm-none-eabi-
           PYTHONDONTWRITEBYTECODE: "1"
-        run: |
-          cargo test --locked --all-targets
-          python3 -m unittest discover -s tests -v
+        run: python3 -m unittest discover -s tests -v
       - name: Build Cortex-M0 release
         run: cargo build --locked --target thumbv6m-none-eabi --release
       - name: Verify setup left the checkout clean
