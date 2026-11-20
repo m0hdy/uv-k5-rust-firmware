@@ -34,6 +34,21 @@ fn zero_counters_remain_zero_and_do_not_create_effects() {
 }
 
 #[test]
+fn existing_display_refresh_stays_set_without_any_expiry() {
+    let mut value = State {
+        update_display: true,
+        ..state()
+    };
+    let before = value;
+
+    assert_eq!(
+        advance(&mut value, context(true, CenterLine::InUse, false)),
+        Effects::default()
+    );
+    assert_eq!(value, before);
+}
+
+#[test]
 fn keypad_lock_expiry_requests_display_update_and_preserves_sticky_update() {
     let mut value = State {
         keypad_locked_countdown: 2,
@@ -113,11 +128,21 @@ fn dtmf_timeout_ignores_center_line_when_rssi_bar_is_disabled() {
 fn dtmf_expiry_with_empty_text_does_not_request_display_update() {
     let mut value = State {
         dtmf_live_timeout: 1,
+        dtmf_live_text: [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+        ],
         ..state()
     };
-    advance(&mut value, context(false, CenterLine::InUse, false));
-    assert_eq!(value.dtmf_live_timeout, 0);
-    assert!(!value.update_display);
+    let expected = State {
+        dtmf_live_timeout: 0,
+        ..value
+    };
+
+    assert_eq!(
+        advance(&mut value, context(false, CenterLine::InUse, false)),
+        Effects::default()
+    );
+    assert_eq!(value, expected);
 }
 
 #[test]
