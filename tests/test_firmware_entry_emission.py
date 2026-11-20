@@ -69,6 +69,18 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
         probe.write_bytes(modified)
         return probe
 
+    def patch_halfwords(self, name, address, replacements):
+        self.assertTrue(self.text_vma <= address < self.text_vma + self.text_size)
+        modified = bytearray(self.elf.read_bytes())
+        offset = self.text_offset + address - self.text_vma
+        replacement = b"".join(
+            halfword.to_bytes(2, "little") for halfword in replacements
+        )
+        modified[offset : offset + len(replacement)] = replacement
+        probe = self.probes / name
+        probe.write_bytes(modified)
+        return probe
+
     def read_halfword(self, address):
         self.assertTrue(self.text_vma <= address < self.text_vma + self.text_size)
         offset = self.text_offset + address - self.text_vma
@@ -255,6 +267,52 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             entry_check.EntryError, "dominating stack-relative definition"
+        ):
+            self.validate(probe)
+
+    def test_actual_eeprom_result_definition_cannot_be_called_over(self):
+        _, body = self.coordinator()
+        rows = entry_check.instructions(body)
+        first_read = next(
+            index
+            for index, (_, mnemonic, operands) in enumerate(rows)
+            if mnemonic.startswith("bl")
+            and "eeprom_read_transport::execute_read::<" in operands
+            and "+0x" not in operands
+        )
+        definition = next(
+            index
+            for index in range(first_read - 1, -1, -1)
+            if rows[index][1] == "add"
+            and re.fullmatch(
+                r"r0,\s*sp,\s*#\d+",
+                rows[index][2].split("@")[0].strip(),
+            )
+        )
+        address = rows[definition - 2][0]
+        self.assertEqual(rows[definition - 1][0], address + 2)
+        self.assertEqual(rows[definition][0], address + 4)
+        target = rows[definition + 1][0]
+        displacement = target - (address + 4)
+        self.assertEqual(displacement & 1, 0)
+        value = displacement & ((1 << 25) - 1)
+        sign = (value >> 24) & 1
+        i1, i2 = (value >> 23) & 1, (value >> 22) & 1
+        j1, j2 = 1 ^ i1 ^ sign, 1 ^ i2 ^ sign
+        first = 0xF000 | (sign << 10) | ((value >> 12) & 0x3FF)
+        second = (
+            0xD000
+            | (j1 << 13)
+            | (j2 << 11)
+            | ((value >> 1) & 0x7FF)
+        )
+        probe = self.patch_halfwords(
+            "eeprom-result-definition-call-bypass.elf",
+            address,
+            (first, second),
+        )
+        with self.assertRaisesRegex(
+            entry_check.EntryError, "intra-function calls"
         ):
             self.validate(probe)
 

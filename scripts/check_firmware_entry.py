@@ -78,13 +78,21 @@ def instruction_successors(
     _, mnemonic, operands = rows[index]
     following = rows[index + 1][0] if index + 1 < len(rows) else None
     target = branch_target(operands)
-    if mnemonic in {"b", "b.n", "b.w"}:
+    addresses = {address for address, _, _ in rows}
+    if mnemonic == "bl":
+        successors = [following] if following is not None else []
+        if target in addresses:
+            successors.append(target)
+        return successors
+    if mnemonic == "blx":
+        return []
+    if mnemonic in {"b", "b.n", "b.w", "bal", "bal.n", "bal.w"}:
         return [target] if target is not None else []
     if CONDITIONAL_BRANCH.fullmatch(mnemonic) or mnemonic in {"cbz", "cbnz"}:
         return [address for address in (target, following) if address is not None]
     if mnemonic.startswith("bx") or (
         mnemonic.startswith("pop") and re.search(r"\bpc\b", operands)
-    ) or mnemonic.startswith("udf"):
+    ) or re.match(r"\s*pc\s*,", operands) or mnemonic.startswith("udf"):
         return []
     return [following] if following is not None else []
 
@@ -194,6 +202,29 @@ def preserves_result_address(mnemonic: str, operands: str) -> bool:
     return destination is not None and destination.group(1) not in {"r0", "sp"}
 
 
+def unsupported_control_transfer(mnemonic: str, operands: str) -> bool:
+    if mnemonic == "blx" or re.match(r"\s*pc\s*,", operands):
+        return True
+    return (
+        mnemonic.startswith("b")
+        and mnemonic not in {
+            "b",
+            "b.n",
+            "b.w",
+            "bal",
+            "bal.n",
+            "bal.w",
+            "bl",
+            "bx",
+            "bx.n",
+            "bkpt",
+            "bic",
+            "bics",
+        }
+        and not CONDITIONAL_BRANCH.fullmatch(mnemonic)
+    )
+
+
 def result_slot_before_call(
     rows: list[tuple[int, str, str]], call_index: int
 ) -> int:
@@ -225,6 +256,18 @@ def result_slot_before_call(
                 changed = True
 
     call_address = rows[call_index][0]
+    for address, mnemonic, operands in rows[:call_index]:
+        if address not in live:
+            continue
+        target = branch_target(operands)
+        if mnemonic == "bl" and target in indices:
+            raise EntryError(
+                "EEPROM result-address proof does not permit intra-function calls"
+            )
+        if unsupported_control_transfer(mnemonic, operands):
+            raise EntryError(
+                "EEPROM result-address proof encountered unsupported control transfer"
+            )
     ancestors = set()
     pending = [call_address]
     while pending:
