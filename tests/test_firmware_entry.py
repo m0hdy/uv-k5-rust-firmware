@@ -211,6 +211,25 @@ class FirmwareEntryTests(unittest.TestCase):
         ):
             self.inspect(broken)
 
+    def test_multi_register_load_clobbers_loaded_addresses(self):
+        mmio_body = """
+00000000 <f>:
+ 0: ldr r1, [pc, #4]
+ 2: ldmia r0!, {r1}
+ 4: str r0, [r1]
+ 6: bx lr
+ 8: .word 0x40060000
+"""
+        error_body = """
+00000000 <f>:
+ 0: add r1, sp, #0
+ 2: ldmia r0!, {r1}
+ 4: str r0, [r1]
+ 6: bx lr
+"""
+        self.assertFalse(function_has_mmio_store(mmio_body))
+        self.assertEqual(error_store_kinds(error_body)[4], "unknown")
+
     def test_unchecked_eeprom_result_is_rejected(self):
         broken = DISASSEMBLY.replace(
             "520: beq.n 526", "520: nop", 1

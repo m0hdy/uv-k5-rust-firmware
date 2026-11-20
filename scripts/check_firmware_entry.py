@@ -180,6 +180,18 @@ def written_back_registers(operands: str) -> set[int]:
     return registers
 
 
+def clobbered_address_registers(mnemonic: str, operands: str) -> set[int]:
+    registers = written_back_registers(operands)
+    if mnemonic.startswith("ldm"):
+        register_list = re.search(r"\{([^}]*)\}", operands)
+        if register_list:
+            registers.update(
+                int(match)
+                for match in re.findall(r"\br([0-7])\b", register_list.group(1))
+            )
+    return registers
+
+
 def function_has_mmio_store(body: str) -> bool:
     rows = instructions(body)
     if not rows:
@@ -211,7 +223,7 @@ def function_has_mmio_store(body: str) -> bool:
         address = pending.pop()
         state = list(states[address])
         _, mnemonic, operands = rows[indices[address]]
-        for register in written_back_registers(operands):
+        for register in clobbered_address_registers(mnemonic, operands):
             state[register] = None
         store = re.fullmatch(
             r"r[0-7],\s*\[(r[0-7])(?:,\s*#(\d+))?\]",
@@ -360,7 +372,7 @@ def error_store_kinds(body: str) -> dict[int, str]:
         memory = dict(memory_state)
         _, mnemonic, operands = rows[indices[address]]
         clean_operands = operands.split("@")[0].strip()
-        for register in written_back_registers(operands):
+        for register in clobbered_address_registers(mnemonic, operands):
             registers[register] = None
         store = re.fullmatch(
             r"r([0-7]),\s*\[(sp|r[0-7])(?:,\s*#(\d+))?\]",
