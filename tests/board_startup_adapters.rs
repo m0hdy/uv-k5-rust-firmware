@@ -16,12 +16,17 @@ mod st7565_startup;
 #[allow(dead_code)]
 mod st7565_startup_executor;
 
+use bk1080_startup_adapter::{ShutdownError, shutdown_with_io};
 use board_startup_adapters::backlight_startup_executor::{Register, RegisterIo, apply_with_io};
 use board_startup_adapters::crc_startup_adapter::{WordIo, apply_with_io as apply_crc};
-use board_startup_adapters::{Call, Defines, StartupError, StartupIo, run};
+use board_startup_adapters::{Defines, StartupError, StartupIo, run};
 use core::num::NonZeroU32;
+use i2c_bitbang_flow::target_gpio::Delay1us;
 use st7565_line_transport::LineError;
 use st7565_startup_executor::target_spi0::DelayMs;
+use std::cell::RefCell;
+use uv_k5_rust_firmware::eeprom_read_transport::{Acknowledgement, I2cTransport};
+use uv_k5_rust_firmware::{bk1080_startup_adapter, i2c_bitbang_flow};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Event {
@@ -36,7 +41,45 @@ enum Event {
     CrcWrite(usize, u32),
     BacklightRead(Register),
     BacklightWrite(Register, u32),
-    Placeholder(Call),
+    FmStart,
+    FmWrite(u8),
+    FmStop,
+    FmRead(usize),
+    FmGpioWrite(usize, u32),
+}
+
+struct FmBus<'a>(&'a RefCell<Vec<Event>>);
+impl I2cTransport for FmBus<'_> {
+    type Error = ();
+    fn start(&mut self) -> Result<(), ()> {
+        self.0.borrow_mut().push(Event::FmStart);
+        Ok(())
+    }
+    fn repeated_start(&mut self) -> Result<(), ()> {
+        unreachable!()
+    }
+    fn write_byte(&mut self, byte: u8) -> Result<Acknowledgement, ()> {
+        self.0.borrow_mut().push(Event::FmWrite(byte));
+        Ok(Acknowledgement::Ack)
+    }
+    fn read_buffer(&mut self, _: &mut [u8]) -> Result<(), ()> {
+        unreachable!()
+    }
+    fn stop(&mut self) -> Result<(), ()> {
+        self.0.borrow_mut().push(Event::FmStop);
+        Ok(())
+    }
+}
+
+struct FmGpio<'a>(&'a RefCell<Vec<Event>>);
+impl bk1080_startup_adapter::WordIo for FmGpio<'_> {
+    fn read_word(&mut self, address: usize) -> u32 {
+        self.0.borrow_mut().push(Event::FmRead(address));
+        5
+    }
+    fn write_word(&mut self, address: usize, value: u32) {
+        self.0.borrow_mut().push(Event::FmGpioWrite(address, value));
+    }
 }
 
 struct FakeIo {
@@ -58,11 +101,12 @@ impl Default for FakeIo {
 }
 
 impl StartupIo for FakeIo {
+    type FmError = ();
     fn device_clock_gates(&mut self) {
         self.events.push(Event::DeviceClockGates);
     }
 
-    fn systick(&mut self, period_ticks: u32) -> Result<(), StartupError> {
+    fn systick(&mut self, period_ticks: u32) -> Result<(), StartupError<Self::FmError>> {
         self.events.push(Event::Systick(period_ticks));
         if self.fail_systick {
             Err(StartupError::SysTick)
@@ -102,8 +146,15 @@ impl StartupIo for FakeIo {
         }
     }
 
-    fn placeholder(&mut self, call: Call) {
-        self.events.push(Event::Placeholder(call));
+    fn bk1080_shutdown(
+        &mut self,
+        delay: &mut dyn Delay1us,
+    ) -> Result<(), ShutdownError<Self::FmError>> {
+        delay.delay_1us();
+        let trace = RefCell::new(Vec::new());
+        let result = shutdown_with_io(&mut FmBus(&trace), &mut FmGpio(&trace));
+        self.events.extend(trace.into_inner());
+        result
     }
 
     fn crc_init(&mut self) {
@@ -120,6 +171,12 @@ impl WordIo for FakeIo {
 
 #[derive(Default)]
 struct DelayProbe(Vec<u16>);
+
+impl Delay1us for DelayProbe {
+    fn delay_1us(&mut self) {
+        self.0.push(1);
+    }
+}
 
 impl DelayMs for DelayProbe {
     fn delay_ms(&mut self, milliseconds: u16) {
@@ -168,6 +225,7 @@ fn sequencer_dispatches_adapters_in_pinned_order_and_keeps_other_calls_typed() {
             true,
             0x5aa5,
             &mut delay,
+            &mut DelayProbe::default(),
             NonZeroU32::new(0x1234).unwrap(),
             &mut io
         ),
@@ -193,7 +251,14 @@ fn sequencer_dispatches_adapters_in_pinned_order_and_keeps_other_calls_typed() {
             Event::BacklightWrite(Register::PwmPlus0Config, 5),
             Event::AdcInit(0x5aa5),
             Event::St7565Init(NonZeroU32::new(0x1234).unwrap()),
-            Event::Placeholder(Call::Bk1080Init0),
+            Event::FmStart,
+            Event::FmWrite(0x80),
+            Event::FmWrite(0x04),
+            Event::FmWrite(0x02),
+            Event::FmWrite(0x41),
+            Event::FmStop,
+            Event::FmRead(0x4006_0800),
+            Event::FmGpioWrite(0x4006_0800, 0x8005),
             Event::CrcInit,
             Event::CrcWrite(0x4000_3000, 0x100),
             Event::CrcWrite(0x4000_3004, 0),
@@ -216,6 +281,7 @@ fn swd_and_fm_features_are_forwarded_to_their_adapters() {
                     enable_swd,
                     0x35c7,
                     &mut delay,
+                    &mut DelayProbe::default(),
                     NonZeroU32::new(7).unwrap(),
                     &mut io
                 ),
@@ -241,6 +307,7 @@ fn invalid_systick_setup_stops_before_all_later_board_stages() {
             true,
             0x35c7,
             &mut delay,
+            &mut DelayProbe::default(),
             NonZeroU32::new(7).unwrap(),
             &mut io
         ),
@@ -266,6 +333,7 @@ fn display_error_preserves_line_cause_and_stops_optional_stages() {
             false,
             0x5aa5,
             &mut delay,
+            &mut DelayProbe::default(),
             NonZeroU32::new(19).unwrap(),
             &mut io
         ),
@@ -276,7 +344,7 @@ fn display_error_preserves_line_cause_and_stops_optional_stages() {
         Some(&Event::St7565Init(NonZeroU32::new(19).unwrap()))
     );
     assert_eq!(delay.0, [37]);
-    assert!(!io.events.contains(&Event::Placeholder(Call::Bk1080Init0)));
+    assert!(!io.events.contains(&Event::FmStart));
     assert!(!io.events.contains(&Event::CrcInit));
 }
 
@@ -293,6 +361,7 @@ fn crc_runs_once_only_when_uart_or_aircopy_is_enabled() {
                         false,
                         9,
                         &mut delay,
+                        &mut DelayProbe::default(),
                         NonZeroU32::MIN,
                         &mut io
                     ),
@@ -305,7 +374,16 @@ fn crc_runs_once_only_when_uart_or_aircopy_is_enabled() {
                     .unwrap();
                 let mut expected = Vec::new();
                 if fm {
-                    expected.push(Event::Placeholder(Call::Bk1080Init0));
+                    expected.extend([
+                        Event::FmStart,
+                        Event::FmWrite(0x80),
+                        Event::FmWrite(0x04),
+                        Event::FmWrite(0x02),
+                        Event::FmWrite(0x41),
+                        Event::FmStop,
+                        Event::FmRead(0x4006_0800),
+                        Event::FmGpioWrite(0x4006_0800, 0x8005),
+                    ]);
                 }
                 if uart || aircopy {
                     expected.extend([

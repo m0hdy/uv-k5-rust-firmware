@@ -49,8 +49,9 @@ GPIOA DATA/DIR, PORTA input-enable/open-drain, or GPIOB DATA, including
 unrelated-bit writers: these are whole-register read-modify-writes. The
 adapter does not arbitrate ownership or resume keypad scanning.
 
-This unexported callable backend is not board or firmware entry wiring, full
-FM initialization, receiver/audio parity, or hardware validation.
+The conditional board startup path calls this backend before optional CRC
+initialization. It is not firmware entry wiring, full FM initialization,
+receiver/audio parity, or hardware validation.
 
 ## Focused validation
 

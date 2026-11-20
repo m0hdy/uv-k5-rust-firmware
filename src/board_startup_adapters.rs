@@ -25,6 +25,8 @@ mod portcon_startup_adapter;
 #[allow(dead_code, unused_attributes)]
 mod systick_startup_adapter;
 
+use crate::bk1080_startup_adapter::ShutdownError;
+use crate::i2c_bitbang_flow::target_gpio::Delay1us;
 use crate::st7565_line_transport::LineError;
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 use crate::st7565_startup_executor::target_spi0;
@@ -42,14 +44,17 @@ use portcon_startup_adapter::Features as PortconFeatures;
 use systick_startup_adapter::SYS_TICK_PERIOD_TICKS;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StartupError {
+pub enum StartupError<E> {
     SysTick,
     St7565(LineError),
+    Bk1080(ShutdownError<E>),
 }
 
 pub trait StartupIo {
+    type FmError;
+
     fn device_clock_gates(&mut self);
-    fn systick(&mut self, period_ticks: u32) -> Result<(), StartupError>;
+    fn systick(&mut self, period_ticks: u32) -> Result<(), StartupError<Self::FmError>>;
     fn portcon(&mut self, enable_swd: bool);
     fn gpio(&mut self, enable_fmradio: bool);
     fn backlight_init_hardware(&mut self);
@@ -59,20 +64,24 @@ pub trait StartupIo {
         delay: &mut dyn DelayMs,
         fifo_poll_limit: NonZeroU32,
     ) -> Result<(), LineError>;
+    fn bk1080_shutdown(
+        &mut self,
+        delay: &mut dyn Delay1us,
+    ) -> Result<(), ShutdownError<Self::FmError>>;
     fn crc_init(&mut self);
-    fn placeholder(&mut self, call: Call);
 }
 
 #[repr(C)]
-struct SequencerBackend<'a, IO> {
+struct SequencerBackend<'a, IO: StartupIo> {
     io: &'a mut IO,
     enable_swd: bool,
     enable_fmradio: bool,
     exttrig_sel: u16,
     stopped: bool,
-    delay: &'a mut dyn DelayMs,
+    display_delay: &'a mut dyn DelayMs,
+    fm_delay: &'a mut dyn Delay1us,
     fifo_poll_limit: NonZeroU32,
-    result: Result<(), StartupError>,
+    result: Result<(), StartupError<IO::FmError>>,
 }
 
 impl<IO: StartupIo> board_sequence::Backend for SequencerBackend<'_, IO> {
@@ -94,32 +103,42 @@ impl<IO: StartupIo> board_sequence::Backend for SequencerBackend<'_, IO> {
             Call::BacklightInitHardware => self.io.backlight_init_hardware(),
             Call::AdcInit => self.io.adc_init(self.exttrig_sel),
             Call::St7565Init => {
-                if let Err(error) = self.io.st7565_init(self.delay, self.fifo_poll_limit) {
+                if let Err(error) = self
+                    .io
+                    .st7565_init(self.display_delay, self.fifo_poll_limit)
+                {
                     self.stopped = true;
                     self.result = Err(StartupError::St7565(error));
                 }
             }
+            Call::Bk1080Init0 => {
+                if let Err(error) = self.io.bk1080_shutdown(self.fm_delay) {
+                    self.stopped = true;
+                    self.result = Err(StartupError::Bk1080(error));
+                }
+            }
             Call::CrcInit => self.io.crc_init(),
-            other => self.io.placeholder(other),
         }
     }
 }
 
-pub fn run(
+pub fn run<IO: StartupIo>(
     defines: Defines,
     enable_swd: bool,
     exttrig_sel: u16,
-    delay: &mut dyn DelayMs,
+    display_delay: &mut dyn DelayMs,
+    fm_delay: &mut dyn Delay1us,
     fifo_poll_limit: NonZeroU32,
-    io: &mut impl StartupIo,
-) -> Result<(), StartupError> {
+    io: &mut IO,
+) -> Result<(), StartupError<IO::FmError>> {
     let mut backend = SequencerBackend {
         io,
         enable_swd,
         enable_fmradio: defines.enable_fmradio,
         exttrig_sel,
         stopped: false,
-        delay,
+        display_delay,
+        fm_delay,
         fifo_poll_limit,
         result: Ok(()),
     };
@@ -132,13 +151,15 @@ struct HardwareIo;
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 impl StartupIo for HardwareIo {
+    type FmError = core::convert::Infallible;
+
     fn device_clock_gates(&mut self) {
         // SAFETY: This witness is only linked, never executed; target integration must uphold
         // the adapter's documented DP32G030 mapping and exclusive startup ownership.
         unsafe { device_clock_gate_startup::apply_device_clock_gates() }
     }
 
-    fn systick(&mut self, period_ticks: u32) -> Result<(), StartupError> {
+    fn systick(&mut self, period_ticks: u32) -> Result<(), StartupError<Self::FmError>> {
         // SAFETY: The witness vector installs SysTick_Handler before this enable path.
         unsafe { systick_startup_adapter::apply_to_hardware(period_ticks) }
             .map_err(|_| StartupError::SysTick)
@@ -181,13 +202,25 @@ impl StartupIo for HardwareIo {
         unsafe { target_spi0::startup_mmio(delay, fifo_poll_limit) }
     }
 
+    fn bk1080_shutdown(
+        &mut self,
+        delay: &mut dyn Delay1us,
+    ) -> Result<(), ShutdownError<Self::FmError>> {
+        struct DelayRef<'a>(&'a mut dyn Delay1us);
+        impl Delay1us for DelayRef<'_> {
+            fn delay_1us(&mut self) {
+                self.0.delay_1us();
+            }
+        }
+        // SAFETY: The caller of run_hardware upholds shutdown_mmio's requirements.
+        unsafe { crate::bk1080_startup_adapter::shutdown_mmio(DelayRef(delay)) }
+    }
+
     fn crc_init(&mut self) {
         // SAFETY: The caller must uphold the CRC mapping, whole-register ownership,
         // and serialization requirements, including interrupt handlers.
         unsafe { crc_startup_adapter::apply_to_hardware() }
     }
-
-    fn placeholder(&mut self, _call: Call) {}
 }
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
@@ -206,19 +239,23 @@ impl StartupIo for HardwareIo {
 /// assignment already enables CRC bit 27. The caller must explicitly select
 /// `exttrig_sel`, provide an accurate millisecond delay,
 /// and provide a nonzero ST7565 FIFO poll budget; no values are inferred here.
+/// When FM is enabled, the caller must also satisfy all `shutdown_mmio`
+/// mapping, pin ownership, register serialization, and delay requirements.
 /// The link-only witness is deliberately not configured for hardware execution.
 pub(super) unsafe fn run_hardware(
     defines: Defines,
     enable_swd: bool,
     exttrig_sel: u16,
-    delay: &mut dyn DelayMs,
+    display_delay: &mut dyn DelayMs,
+    fm_delay: &mut dyn Delay1us,
     fifo_poll_limit: NonZeroU32,
-) -> Result<(), StartupError> {
+) -> Result<(), StartupError<core::convert::Infallible>> {
     run(
         defines,
         enable_swd,
         exttrig_sel,
-        delay,
+        display_delay,
+        fm_delay,
         fifo_poll_limit,
         &mut HardwareIo,
     )
