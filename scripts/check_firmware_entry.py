@@ -24,6 +24,7 @@ CONDITIONAL_BRANCH = re.compile(
 EEPROM_SUCCESS_TAG = 2
 PREDICATE_PRESERVING_INSTRUCTIONS = {"nop", "str", "strb", "strh"}
 MAX_ABSTRACT_VALUES = 8
+MAX_ERROR_COPY_BYTES = 64
 
 
 def function_body(disassembly: str, symbol: str) -> str:
@@ -326,7 +327,7 @@ def has_mmio_store(functions: dict[str, str], reached: set[str], start: str) -> 
     return False
 
 
-def error_store_kinds(body: str) -> dict[int, str]:
+def error_effect_kinds(body: str) -> tuple[dict[int, str], dict[int, bool]]:
     rows = instructions(body)
     live = reachable_instruction_addresses(rows)
     indices = {address: index for index, (address, _, _) in enumerate(rows)}
@@ -340,7 +341,11 @@ def error_store_kinds(body: str) -> dict[int, str]:
     }
     Value = frozenset[tuple[str, int]]
     initial_registers: tuple[Value | None, ...] = tuple(
-        frozenset({("data", register)}) if register < 4 else None
+        (
+            frozenset({("result" if register == 0 else "data", register)})
+            if register < 4
+            else None
+        )
         for register in range(8)
     )
     states: dict[
@@ -352,6 +357,7 @@ def error_store_kinds(body: str) -> dict[int, str]:
     ] = {rows[0][0]: (initial_registers, ())}
     pending = [rows[0][0]]
     stores: dict[int, str] = {}
+    copy_calls: dict[int, bool] = {}
 
     def add_offset(value: Value | None, offset: int) -> Value | None:
         if value is None:
@@ -372,6 +378,25 @@ def error_store_kinds(body: str) -> dict[int, str]:
         memory = dict(memory_state)
         _, mnemonic, operands = rows[indices[address]]
         clean_operands = operands.split("@")[0].strip()
+        target = re.search(r"<(.+)>", operands)
+        if (
+            mnemonic.startswith("bl")
+            and target
+            and "__aeabi_memcpy" in target.group(1)
+        ):
+            destination = registers[0]
+            length = registers[2]
+            copy_calls[address] = bool(
+                destination
+                and {kind for kind, _ in destination}
+                in ({"stack"}, {"result"})
+                and length
+                and {kind for kind, _ in length} == {"const"}
+                and all(
+                    0 < value <= MAX_ERROR_COPY_BYTES
+                    for _, value in length
+                )
+            )
         multiple_store = re.fullmatch(
             r"r([0-7])!?,\s*\{[^}]+\}", clean_operands
         )
@@ -385,7 +410,7 @@ def error_store_kinds(body: str) -> dict[int, str]:
                 if base and kinds == {"stack"}:
                     stores[address] = "stack"
                     memory.clear()
-                elif base and kinds == {"data"}:
+                elif base and kinds in ({"data"}, {"result"}):
                     stores[address] = "data"
                 elif base and kinds == {"const"} and all(
                     is_mmio_address(value) for _, value in base
@@ -412,7 +437,7 @@ def error_store_kinds(body: str) -> dict[int, str]:
             kinds = {kind for kind, _ in base} if base is not None else set()
             if base and kinds == {"stack"}:
                 stores[address] = "stack"
-            elif base and kinds == {"data"}:
+            elif base and kinds in ({"data"}, {"result"}):
                 stores[address] = "data"
             elif base and kinds == {"const"} and all(
                 is_mmio_address(value) for _, value in base
@@ -524,7 +549,11 @@ def error_store_kinds(body: str) -> dict[int, str]:
             if merged != current:
                 states[successor] = merged
                 pending.append(successor)
-    return stores
+    return stores, copy_calls
+
+
+def error_store_kinds(body: str) -> dict[int, str]:
+    return error_effect_kinds(body)[0]
 
 
 def has_nontrivial_instruction(body: str) -> bool:
@@ -787,6 +816,7 @@ def require_result_guards(
     ]
     if len(calls) != expected_calls:
         raise EntryError(f"selected coordinator must call {called_fragment} exactly {expected_calls} times")
+    stores, safe_copy_calls = error_effect_kinds(body)
     guarded_paths = []
     for index in calls:
         result_slot = result_slot_before_call(rows, index)
@@ -907,6 +937,13 @@ def require_result_guards(
                 raise EntryError(
                     f"{called_fragment} first-error path reaches a later effect"
                 )
+            if (
+                "__aeabi_memcpy" in target.group(1)
+                and not safe_copy_calls.get(address, False)
+            ):
+                raise EntryError(
+                    f"{called_fragment} first-error path reaches an unapproved copy effect"
+                )
         short_circuit = error_successor
         short_path = reachable_instruction_addresses(rows, [short_circuit])
         returns = {
@@ -948,7 +985,6 @@ def require_result_guards(
         *(error_path for error_path, _ in guarded_paths),
         guarded_paths[-1][1],
     )
-    stores = error_store_kinds(body)
     for error_path, _ in guarded_paths:
         for address in error_path:
             kind = stores.get(address)

@@ -261,6 +261,31 @@ class FirmwareEntryTests(unittest.TestCase):
         with self.assertRaisesRegex(EntryError, "first-error path reaches a later effect"):
             self.inspect(broken)
 
+    def test_eeprom_error_rejects_memcpy_to_unknown_destination(self):
+        replacements = (
+            "590: ldr r0, [pc, #4]\n"
+            " 592: movs r2, #4\n"
+            " 594: bl 730 <__aeabi_memcpy>\n"
+            " 598: bx lr\n"
+            " 59a: .word 0x40060000",
+            "590: ldr r0, [pc, #8]\n"
+            " 592: movs r2, #4\n"
+            " 594: bl 730 <__aeabi_memcpy>\n"
+            " 598: bx lr\n"
+            " 59c: .word 0x40060000",
+            "590: add r0, sp, #0\n"
+            " 592: movs r2, #65\n"
+            " 594: bl 730 <__aeabi_memcpy>\n"
+            " 598: bx lr",
+        )
+        for replacement in replacements:
+            with self.subTest(replacement=replacement):
+                broken = DISASSEMBLY.replace("590: bx lr", replacement, 1)
+                with self.assertRaisesRegex(
+                    EntryError, "first-error path reaches an unapproved copy effect"
+                ):
+                    self.inspect(broken)
+
     def test_eeprom_error_cannot_write_inline_mmio(self):
         broken = DISASSEMBLY.replace(
             "590: bx lr",
