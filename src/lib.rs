@@ -3,6 +3,7 @@
 pub mod adc_battery_acquisition;
 pub mod adc_battery_register_adapter;
 pub mod adc_samples;
+#[allow(dead_code)]
 mod app_vfo_resume_timer;
 pub mod bk1080_startup_adapter;
 #[allow(unused_attributes)]
