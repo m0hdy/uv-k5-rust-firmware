@@ -25,6 +25,7 @@ enum Event {
 struct State {
     values: [u32; 4],
     input_samples: VecDeque<u16>,
+    raw_samples: VecDeque<u32>,
     sample_pending: bool,
     trace: Vec<Event>,
 }
@@ -48,7 +49,9 @@ impl RegisterIo for MockRegisters {
         let index = State::index(register);
         let mut value = state.values[index];
         if register == Register::GpioAData && state.sample_pending {
-            if let Some(sample) = state.input_samples.pop_front() {
+            if let Some(sample) = state.raw_samples.pop_front() {
+                value = sample;
+            } else if let Some(sample) = state.input_samples.pop_front() {
                 value = (value & !0x78) | u32::from(sample & 0x78);
             }
             state.sample_pending = false;
@@ -301,6 +304,70 @@ fn zero_sample_three_stable_and_eight_attempt_boundaries_are_actual_reads() {
 
     let two_at_limit = [vec![0x08, 0x10, 0x18, 0x20, 0x30, 0x38, 0x70, 0x70]];
     poll(&mut adapter, &state, &two_at_limit, &[]);
+}
+
+#[test]
+fn raw_zero_gpioa_reads_stabilize_side_key_and_run_normal_cleanup() {
+    let (mut adapter, state) = adapter();
+
+    for expected_effects in [
+        vec![Event::CancelBoot],
+        vec![Event::CancelBoot],
+        vec![
+            Event::CancelBoot,
+            Event::KeyEvent(KeyEvent::Pressed(Key::Side1)),
+        ],
+    ]
+    .into_iter()
+    {
+        let start = state.borrow().trace.len();
+        state.borrow_mut().raw_samples = [0; 3].into();
+        adapter.poll(&mut Effects(Rc::clone(&state)));
+
+        let shared = state.borrow();
+        let trace = &shared.trace[start..];
+        let zero_reads: Vec<_> = trace
+            .iter()
+            .enumerate()
+            .filter_map(|(index, event)| {
+                (*event == Event::Read(Register::GpioAData, 0)).then_some(index)
+            })
+            .collect();
+        assert_eq!(zero_reads.len(), 3);
+        assert!(
+            zero_reads
+                .iter()
+                .all(|index| { *index > 0 && trace[*index - 1] == Event::Delay })
+        );
+        assert!(shared.raw_samples.is_empty());
+        assert!(shared.input_samples.is_empty());
+        assert_eq!(
+            &trace[trace.len() - expected_effects.len()..],
+            expected_effects
+        );
+
+        let data_writes: Vec<_> = trace
+            .iter()
+            .filter_map(|event| match event {
+                Event::Write(Register::GpioAData, value) => Some(*value),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            data_writes,
+            [
+                0xa5a5_ffa5,
+                0xa5a5_ffa5,
+                0xa5a5_f7a5,
+                0xa5a5_f3a5,
+                0xa5a5_f7a5,
+                0xa5a5_ffa5,
+                0xa5a5_efa5,
+                0xa5a5_efa5,
+            ]
+        );
+        assert!(data_writes.iter().all(|value| value >> 16 == 0xa5a5));
+    }
 }
 
 #[test]
