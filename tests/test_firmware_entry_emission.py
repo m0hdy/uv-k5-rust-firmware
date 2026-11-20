@@ -81,6 +81,18 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
         probe.write_bytes(modified)
         return probe
 
+    def patch_words(self, name, replacements):
+        modified = bytearray(self.elf.read_bytes())
+        for address, replacement in replacements.items():
+            self.assertTrue(
+                self.text_vma <= address <= self.text_vma + self.text_size - 4
+            )
+            offset = self.text_offset + address - self.text_vma
+            modified[offset : offset + 4] = replacement.to_bytes(4, "little")
+        probe = self.probes / name
+        probe.write_bytes(modified)
+        return probe
+
     def read_halfword(self, address):
         self.assertTrue(self.text_vma <= address < self.text_vma + self.text_size)
         offset = self.text_offset + address - self.text_vma
@@ -93,6 +105,41 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
             if "coordinate_with_welcome::<" in symbol
         )
         return name, functions[name]
+
+    def test_actual_hardware_store_requires_mmio_provenance(self):
+        functions = entry_check.function_bodies(self.disassembly)
+        name = next(
+            symbol for symbol in functions
+            if "StartupIo>::systick" in symbol
+        )
+        body = functions[name]
+        words = {
+            int(address, 16): int(value, 16)
+            for address, value in re.findall(
+                r"(?m)^\s*([0-9a-fA-F]+):\s+[0-9a-fA-F]+\s+"
+                r"\.word\s+0x([0-9a-fA-F]+)\b",
+                body,
+            )
+        }
+        literals = {}
+        for address, mnemonic, operands in entry_check.instructions(body):
+            load = re.fullmatch(
+                r"r[0-7],\s*\[pc,\s*#(\d+)\].*",
+                operands,
+            )
+            if mnemonic != "ldr" or load is None:
+                continue
+            literal = ((address + 4) & ~3) + int(load.group(1))
+            value = words.get(literal)
+            if value is not None and entry_check.is_mmio_address(value):
+                literals[literal] = 0x20000000
+        self.assertGreaterEqual(len(literals), 1)
+        probe = self.patch_words("systick-non-mmio-stores.elf", literals)
+        with self.assertRaisesRegex(
+            entry_check.EntryError,
+            "systick executor has no reachable hardware effect",
+        ):
+            self.validate(probe)
 
     def test_actual_coordinator_entry_self_loop_is_rejected(self):
         name, body = self.coordinator()

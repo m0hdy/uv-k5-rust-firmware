@@ -160,7 +160,115 @@ def require_reachable(reached: set[str], fragment: str) -> str:
     return matches[0]
 
 
-def has_store(functions: dict[str, str], reached: set[str], start: str) -> bool:
+def is_mmio_address(address: int) -> bool:
+    return 0x40000000 <= address < 0x60000000 or 0xE0000000 <= address < 0xE0100000
+
+
+def function_has_mmio_store(body: str) -> bool:
+    rows = instructions(body)
+    if not rows:
+        return False
+    live = reachable_instruction_addresses(rows)
+    indices = {address: index for index, (address, _, _) in enumerate(rows)}
+    words = {
+        int(address, 16): int(value, 16)
+        for address, value in re.findall(
+            r"(?m)^\s*([0-9a-fA-F]+):\s+(?:[0-9a-fA-F]+\s+)?"
+            r"\.word\s+0x([0-9a-fA-F]+)\b",
+            body,
+        )
+    }
+    states: dict[int, tuple[frozenset[int] | None, ...]] = {
+        rows[0][0]: (None,) * 8
+    }
+    pending = [rows[0][0]]
+    non_writing = {
+        "cmp",
+        "cpsid",
+        "nop",
+        "push",
+        "tst",
+        "udf",
+        "wfi",
+    }
+    while pending:
+        address = pending.pop()
+        state = list(states[address])
+        _, mnemonic, operands = rows[indices[address]]
+        store = re.fullmatch(
+            r"r[0-7],\s*\[(r[0-7])(?:,\s*#(\d+))?\]",
+            operands.split("@")[0].strip(),
+        )
+        if mnemonic.startswith("str") and store:
+            base = state[int(store.group(1)[1])]
+            offset = int(store.group(2) or 0)
+            if base and all(is_mmio_address(value + offset) for value in base):
+                return True
+
+        destination = re.match(r"\s*r([0-7])\s*,", operands)
+        if mnemonic == "bl":
+            state[:4] = [None] * 4
+        elif mnemonic == "pop":
+            for register in re.findall(r"\br([0-7])\b", operands):
+                state[int(register)] = None
+        elif destination:
+            register = int(destination.group(1))
+            pc_load = re.fullmatch(
+                r"r[0-7],\s*\[pc,\s*#(\d+)\]",
+                operands.split("@")[0].strip(),
+            )
+            copied = re.fullmatch(r"r[0-7],\s*r([0-7])", operands.strip())
+            added = re.fullmatch(
+                r"r[0-7],\s*r([0-7]),\s*#(\d+)",
+                operands.split("@")[0].strip(),
+            )
+            immediate = re.fullmatch(r"r[0-7],\s*#(\d+)", operands.strip())
+            if mnemonic == "ldr" and pc_load:
+                literal = ((address + 4) & ~3) + int(pc_load.group(1))
+                value = words.get(literal)
+                state[register] = (
+                    frozenset({value}) if value is not None else None
+                )
+            elif mnemonic == "mov" and copied:
+                state[register] = state[int(copied.group(1))]
+            elif mnemonic in {"add", "adds"} and added:
+                source = state[int(added.group(1))]
+                offset = int(added.group(2))
+                state[register] = (
+                    frozenset(value + offset for value in source)
+                    if source is not None
+                    else None
+                )
+            elif mnemonic == "movs" and immediate:
+                state[register] = frozenset({int(immediate.group(1))})
+            elif not (
+                mnemonic.startswith("str")
+                or mnemonic.startswith("b")
+                or mnemonic in non_writing
+            ):
+                state[register] = None
+
+        outgoing = tuple(state)
+        for successor in instruction_successors(rows, indices[address]):
+            if successor not in live:
+                continue
+            current = states.get(successor)
+            if current is None:
+                merged = outgoing
+            else:
+                merged = tuple(
+                    None
+                    if left is None or right is None
+                    else left | right
+                    for left, right in zip(current, outgoing)
+                )
+            if merged != current:
+                states[successor] = merged
+                pending.append(successor)
+    return False
+
+
+def has_mmio_store(functions: dict[str, str], reached: set[str], start: str) -> bool:
     pending = [start]
     visited = set()
     while pending:
@@ -168,12 +276,7 @@ def has_store(functions: dict[str, str], reached: set[str], start: str) -> bool:
         if current in visited:
             continue
         visited.add(current)
-        rows = instructions(functions[current])
-        live = reachable_instruction_addresses(rows)
-        if any(
-            address in live and mnemonic.startswith("str")
-            for address, mnemonic, _ in rows
-        ):
+        if function_has_mmio_store(functions[current]):
             return True
         pending.extend(
             target
@@ -448,6 +551,22 @@ def require_result_guards(
             raise EntryError(
                 f"{called_fragment} success tag does not select continuation"
             )
+        allowed_error_calls = (
+            "__aeabi_memcpy",
+            "handoff_to_keypad",
+            "i2c_handoff",
+            "I2cTransport>::stop",
+        )
+        for address, mnemonic, operands in rows:
+            if address not in error_path or not mnemonic.startswith("bl"):
+                continue
+            target = re.search(r"<(.+)>", operands)
+            if target is None or not any(
+                allowed in target.group(1) for allowed in allowed_error_calls
+            ):
+                raise EntryError(
+                    f"{called_fragment} first-error path reaches a later effect"
+                )
         short_circuit = error_successor
         short_path = reachable_instruction_addresses(rows, [short_circuit])
         returns = {
@@ -528,7 +647,7 @@ def inspect_disassembly(disassembly: str, symbols: str, vector_dump: str) -> Non
         "StartupIo>::st7565_init",
     ):
         executor = require_reachable(startup_path, stage)
-        if not has_store(functions, startup_path, executor):
+        if not has_mmio_store(functions, startup_path, executor):
             raise EntryError(f"selected {stage} executor has no reachable hardware effect")
     reads = sum(
         "eeprom_read_transport::execute_read::<" in target and target in functions

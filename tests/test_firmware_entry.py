@@ -51,21 +51,28 @@ DISASSEMBLY = """
  54e: bx lr
  590: bx lr
 00000600 <board::StartupIo>::systick>:
- 600: str r0, [r1]
- 602: bx lr
+ 600: ldr r1, [pc, #4]
+ 602: str r0, [r1]
+ 604: bx lr
+ 608: .word 0xe000e010
 00000610 <board::StartupIo>::portcon>:
  610: bl 750 <portcon_plan>
  614: bx lr
 00000620 <board::StartupIo>::gpio>:
- 620: str r0, [r1]
- 622: bx lr
+ 620: ldr r1, [pc, #4]
+ 622: str r0, [r1]
+ 624: bx lr
+ 628: .word 0x40060000
 00000630 <board::StartupIo>::backlight_init_hardware>:
- 630: str r0, [r1]
- 632: bx lr
+ 630: ldr r1, [pc, #4]
+ 632: str r0, [r1]
+ 634: bx lr
+ 638: .word 0x400b4008
 00000640 <board::StartupIo>::adc_init>:
- 640: str r0, [r1]
- 642: bx lr
- 644: .word 0xe000e180
+ 640: ldr r1, [pc, #4]
+ 642: str r0, [r1]
+ 644: bx lr
+ 648: .word 0xe000e180
 00000650 <board::StartupIo>::st7565_init>:
  650: bl 760 <display_startup>
  654: bx lr
@@ -87,12 +94,16 @@ DISASSEMBLY = """
  740: strb r0, [r1]
  742: bx lr
 00000750 <portcon_plan>:
- 750: str r0, [r1]
- 752: bx lr
+ 750: ldr r1, [pc, #4]
+ 752: str r0, [r1]
+ 754: bx lr
+ 758: .word 0x400b0000
 00000760 <display_startup>:
- 760: str r0, [r1]
- 762: bl 770 <SysTickDelay::delay_ms>
- 766: bx lr
+ 760: ldr r1, [pc, #8]
+ 762: str r0, [r1]
+ 764: bl 770 <SysTickDelay::delay_ms>
+ 768: bx lr
+ 76c: .word 0x400b8014
 00000770 <SysTickDelay<Counter>::delay_ms>:
  770: ldr r0, [r1]
  772: subs r0, #1
@@ -149,7 +160,16 @@ class FirmwareEntryTests(unittest.TestCase):
 
     def test_noop_hardware_executor_is_rejected(self):
         broken = DISASSEMBLY.replace(
-            "620: str r0, [r1]", "620: bx lr", 1
+            "620: ldr r1, [pc, #4]", "620: bx lr", 1
+        )
+        with self.assertRaisesRegex(EntryError, "gpio executor has no reachable hardware effect"):
+            self.inspect(broken)
+
+    def test_stack_only_hardware_executor_is_rejected(self):
+        broken = DISASSEMBLY.replace(
+            "620: ldr r1, [pc, #4]\n 622: str r0, [r1]",
+            "620: nop\n 622: str r0, [sp, #0]",
+            1,
         )
         with self.assertRaisesRegex(EntryError, "gpio executor has no reachable hardware effect"):
             self.inspect(broken)
@@ -166,6 +186,23 @@ class FirmwareEntryTests(unittest.TestCase):
     def test_unmasked_adc_nvic_is_rejected(self):
         broken = DISASSEMBLY.replace("0xe000e180", "0xe000e100")
         with self.assertRaisesRegex(EntryError, "SARADC must remain masked"):
+            self.inspect(broken)
+
+    def test_eeprom_error_cannot_jump_to_welcome(self):
+        broken = DISASSEMBLY.replace(
+            "522: b.n 590", "522: b.n 546", 1
+        )
+        with self.assertRaisesRegex(EntryError, "first-error path reaches a later effect"):
+            self.inspect(broken)
+
+    def test_eeprom_error_cannot_call_welcome_before_return(self):
+        broken = DISASSEMBLY.replace(
+            "590: bx lr",
+            "590: bl 730 <startup_version_display::startup_version_display_plan>\n"
+            " 594: bx lr",
+            1,
+        )
+        with self.assertRaisesRegex(EntryError, "first-error path reaches a later effect"):
             self.inspect(broken)
 
 
