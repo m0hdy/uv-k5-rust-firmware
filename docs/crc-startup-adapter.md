@@ -30,9 +30,10 @@ serialize the entire call against all other CRC users, including interrupt
 handlers. Owning individual fields is insufficient because both writes
 replace whole registers.
 
-This module is unexported and callable only by an explicit integration; it is
-not wired into the board sequencer or firmware entry. Offline checks do not
-establish physical CRC behavior.
+This module is unexported; the integrated board startup dispatcher calls it
+when `ENABLE_UART` or `ENABLED_AIRCOPY` is present. The earlier device-clock
+assignment already enables CRC bit 27. The default firmware entry does not
+invoke the dispatcher. Offline checks do not establish physical CRC behavior.
 
 ## Focused validation
 

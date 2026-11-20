@@ -4,9 +4,10 @@
 reads the core and display settings through the fallible EEPROM composition,
 then collects and calibrates four bounded battery samples. The board sequence
 executes the backlight and SARADC adapters, followed by the concrete ST7565
-SPI0/reset startup executor. `BootConfig::exttrig_sel` supplies the SARADC
-trigger selection and `st7565_fifo_poll_limit` supplies the nonzero per-byte
-display poll budget. The caller passes the `DelayMs` implementation to
+SPI0/reset startup executor and optional CRC initialization.
+`BootConfig::exttrig_sel` supplies the SARADC trigger selection and
+`st7565_fifo_poll_limit` supplies the nonzero per-byte display poll budget.
+The caller passes the `DelayMs` implementation to
 `coordinate`; no production delay or polling default is inferred. The
 coordinator returns one `ApplicationStartup` value only after all three
 stages succeed. A board, EEPROM, or battery failure returns a typed
@@ -18,7 +19,7 @@ The supported subsequence is compared with pinned
 
 | Coordinator stage | Relation to pinned C |
 | --- | --- |
-| Board adapter sequence | Models clock gates, SysTick, `BOARD_Init` calls and optional startup calls from `Main`. Target adapters execute backlight initialization through the fresh-read executor, SARADC initialization through the existing ADC executor, and ST7565 initialization through `target_spi0::startup_mmio`. `EXTTRIG_SEL`, the `DelayMs` provider, and nonzero FIFO poll budget are explicit inputs. BK1080 and CRC remain typed placeholders. |
+| Board adapter sequence | Models clock gates, SysTick, `BOARD_Init` calls and optional startup calls from `Main`. Target adapters execute backlight, SARADC, ST7565, and conditional CRC initialization using their existing executors. `EXTTRIG_SEL`, the `DelayMs` provider, and nonzero FIFO poll budget are explicit inputs. BK1080 remains a typed placeholder. |
 | Fallible settings read | Reads the existing core and display blocks corresponding to the beginning of `SETTINGS_InitEEPROM`; it does not implement the rest of that C routine, build-option writes, or calibration loading. |
 | Bounded battery sampling | Runs four bounded channel-4/channel-9 acquisitions with caller-supplied calibration, corresponding to the four-sample loop after radio setup in this region. |
 
@@ -28,7 +29,13 @@ flowchart LR
   Board --> Light["Backlight adapter"]
   Light --> ADC["SARADC adapter\nexplicit exttrig_sel"]
   ADC --> Display["ST7565 SPI0/reset/startup and zero-fill page selection"]
-  Display --> Settings["EEPROM settings"]
+  Display --> FM{"ENABLE_FMRADIO?"}
+  FM -->|yes| BK["BK1080 placeholder"]
+  FM -->|no| CRC{"ENABLE_UART or ENABLED_AIRCOPY?"}
+  BK --> CRC
+  CRC -->|yes| CRCInit["CRC adapter"]
+  CRC -->|no| Settings["EEPROM settings"]
+  CRCInit --> Settings
   Settings --> Battery["Bounded battery sampling"]
   Battery --> Ready["ApplicationStartup"]
   Board -->|SysTick failure| BoardError["Board error; stop"]
@@ -72,6 +79,9 @@ backlight/ADC behavior. For ST7565 mappings and clocks, idle SPI0, preconfigured
 display mux and A0/reset pins, PB11 reset versus live SWD conflict,
 whole-register/interrupt serialization across delays, and the page-selection
 only `FillScreen(0)` behavior, see [board startup adapters](board-startup-adapters.md).
+The same document describes the enabled CRC clock, mapping, whole-register
+ownership, and interrupt serialization prerequisites; the prior device-clock
+assignment already includes CRC bit 27.
 The EEPROM boundary must be backed by the device's initialized I2C transport.
 The battery boundary requires the SARADC clock, channels 4 and 9 configured
 for software-triggered sampling, exclusive SARADC access, a bounded poll
@@ -85,7 +95,8 @@ The host integration test exercises the actual board sequencer adapter,
 concrete ST7565 register/delay executor trace, fallible EEPROM settings
 composer, and battery sampler with shared mock event recording. It checks
 stage ordering, exact trigger and poll-budget forwarding, one display
-initialization, and short-circuit failures before settings or battery effects.
+initialization, the CRC feature truth table and exact write trace, and
+short-circuit failures before CRC, settings, or battery effects.
 Focused validation:
 
 ```sh
