@@ -4,6 +4,19 @@
 #[path = "../../src/bk4819_receive_control_adapter.rs"]
 mod adapter;
 
+pub struct CallerWordIo;
+
+impl adapter::WordIo for CallerWordIo {
+    fn read_word(&mut self, register: adapter::Register) -> u32 {
+        let _ = register.address();
+        0
+    }
+
+    fn write_word(&mut self, register: adapter::Register, value: u32) {
+        let _ = (register.address(), value);
+    }
+}
+
 unsafe extern "C" {
     fn caller_supplied_delay_1us();
 }

@@ -50,8 +50,9 @@ implement accurate, non-panicking one-microsecond delays.
 
 The focused host tests decode the complete GPIO DATA serial traces for all
 three operations, including every GPIO DATA read/write and transport delay.
-The warning-denied Cortex-M0 fixture instantiates all three volatile entries
-with an external caller-delay symbol; it is compiled only and never executed.
+The warning-denied Cortex-M0 fixture implements `WordIo` using the exported
+`Register` type and instantiates all three volatile entries with an external
+caller-delay symbol; it is compiled only and never executed.
 Host traces do not establish device, electrical, timing, receive, or RF
 behavior.
 

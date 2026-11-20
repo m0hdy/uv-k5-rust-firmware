@@ -4,9 +4,7 @@
 #[path = "bk4819_register_transport.rs"]
 mod transport;
 
-#[cfg(test)]
-pub use transport::Register;
-pub use transport::{Delay1us, WordIo};
+pub use transport::{Delay1us, Register, WordIo};
 
 const REG_30_ENABLE_VCO_CALIB: u16 = 1 << 15;
 const REG_30_ENABLE_RX_LINK: u16 = 0xF << 10;
