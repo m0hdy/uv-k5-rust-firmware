@@ -83,15 +83,15 @@ impl StartupIo for TargetBoardHardwareIo {
         self.0.crc_init();
     }
 }
-pub use board_startup_adapters::{
-    Call as BoardCall, Defines as BoardDefines, StartupError as BoardStartupError, StartupIo,
-};
-use core::num::NonZeroU32;
 use crate::startup_battery_sampling::sample_startup_battery;
 pub use crate::startup_battery_sampling::{
     ReadRegister as BatteryReadRegister, RegisterIo as BatteryRegisterIo, StartupBatteryError,
     StartupBatteryReadings, WriteRegister as BatteryWriteRegister,
 };
+pub use board_startup_adapters::{
+    Call as BoardCall, Defines as BoardDefines, StartupError as BoardStartupError, StartupIo,
+};
+use core::num::NonZeroU32;
 
 pub trait BootIo: StartupIo + I2cTransport + BatteryRegisterIo {
     fn i2c_handoff(&mut self);
@@ -153,7 +153,7 @@ pub fn coordinate<IO: BootIo>(
         }
     };
     io.i2c_handoff();
-    let battery = sample_battery(io, config)?;
+    let battery = sample_battery(io, config).map_err(BootError::Battery)?;
 
     Ok(ApplicationStartup { settings, battery })
 }
@@ -171,18 +171,17 @@ pub fn coordinate_with_welcome<IO: BootIo + DisplayRegisterIo>(
     FirmwareStartupError<<IO as I2cTransport>::Error, <IO as StartupIo>::FmError>,
 > {
     run_board(io, display_delay, fm_delay, config).map_err(FirmwareStartupError::Boot)?;
-    let settings = match settings_boot_composition::compose_with_welcome_transport(io, config.settings)
-    {
-        Ok(settings) => settings,
-        Err(error) => {
-            io.i2c_handoff();
-            return Err(FirmwareStartupError::Boot(BootError::Settings(error)));
-        }
-    };
+    let settings =
+        match settings_boot_composition::compose_with_welcome_transport(io, config.settings) {
+            Ok(settings) => settings,
+            Err(error) => {
+                io.i2c_handoff();
+                return Err(FirmwareStartupError::Boot(BootError::Settings(error)));
+            }
+        };
     io.i2c_handoff();
-    let battery = sample_battery(io, config).map_err(|error| {
-        FirmwareStartupError::Boot(BootError::Battery(error))
-    })?;
+    let battery = sample_battery(io, config)
+        .map_err(|error| FirmwareStartupError::Boot(BootError::Battery(error)))?;
     let welcome_mode = settings.welcome_mode;
     welcome_startup::welcome_on_initialized_display_with_version_and_io(
         io,

@@ -43,6 +43,11 @@ const SARADC_CFG_BOARD_BITS: u32 =
 
 const SARADC_CALIB_OFFSET_VALID_MASK: u32 = 1 << 16;
 const SARADC_CALIB_KD_VALID_MASK: u32 = 1 << 16;
+const SARADC_IE_CHX_EOC_MASK: u32 = 0xffff;
+const SARADC_IE_FIFO_FULL_MASK: u32 = 1 << 16;
+const SARADC_IE_FIFO_HFULL_MASK: u32 = 1 << 17;
+const SARADC_IE_CONFIGURATION_MASK: u32 =
+    SARADC_IE_CHX_EOC_MASK | SARADC_IE_FIFO_FULL_MASK | SARADC_IE_FIFO_HFULL_MASK;
 const SARADC_START_SOFT_RESET_MASK: u32 = 1 << 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -129,7 +134,11 @@ fn configure(io: &mut impl RegisterIo, exttrig_sel: u16) {
 
     io.write(Register::InterruptFlags, u32::MAX);
 
-    io.write(Register::InterruptEnable, 0);
+    let interrupt_enable = io.read(Register::InterruptEnable);
+    io.write(
+        Register::InterruptEnable,
+        interrupt_enable & !SARADC_IE_CONFIGURATION_MASK,
+    );
 }
 
 pub fn apply_with_io(io: &mut impl RegisterIo, exttrig_sel: u16) {
@@ -251,7 +260,8 @@ pub(crate) mod physical {
         /// NVIC line. Exclusive ownership of the ADC pins is not sufficient.
         ///
         /// This call disables the SARADC NVIC line before peripheral access
-        /// and writes zero to the interrupt-enable register. The caller must
+        /// and clears the SARADC source bits in the interrupt-enable register
+        /// while preserving unrelated bits. The caller must
         /// serialize other changes to the line throughout setup. This call
         /// does not clear NVIC pending state or install a handler.
         ///

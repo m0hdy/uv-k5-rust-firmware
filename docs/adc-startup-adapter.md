@@ -12,20 +12,21 @@ at pinned revision
 
 ## Execution order
 
-1. Read-modify-write the SARADC clock gate.
-2. Read-modify-write CFG to disable ADC.
-3. Read `SYSCON_CLK_SEL`, apply the driver's PLL/sample-clock remapping, and
+1. Disable NVIC IRQ 4 before peripheral access.
+2. Read-modify-write the SARADC clock gate.
+3. Read-modify-write CFG to disable ADC.
+4. Read `SYSCON_CLK_SEL`, apply the driver's PLL/sample-clock remapping, and
    write the selector with the board's DIV2 selector.
-4. Read-modify-write CFG with channels 4 and 9, eight-sample averaging,
+5. Read-modify-write CFG with channels 4 and 9, eight-sample averaging,
    single conversion, channel memory, internal sample clock, 15-cycle window,
    one-cycle setup, CPU trigger, and DMA disabled.
-5. Write the caller-provided `EXTTRIG_SEL` directly, zero-extended to 32 bits.
-6. Read-modify-write offset-valid and KD-valid calibration fields to valid.
-7. Write all ones directly to IF (write-one-to-clear), without reading IF.
-8. Disable NVIC's SARADC IRQ before touching the peripheral, clear the
-   interrupt-enable register, and never reenable the IRQ.
-9. Read-modify-write CFG to enable ADC.
-10. Read-modify-write START to assert soft reset, then read it again and
+6. Write the caller-provided `EXTTRIG_SEL` directly, zero-extended to 32 bits.
+7. Read-modify-write offset-valid and KD-valid calibration fields to valid.
+8. Write all ones directly to IF (write-one-to-clear), without reading IF.
+9. Clear the SARADC channel/FIFO interrupt-enable bits while preserving other
+   register fields; keep NVIC IRQ 4 disabled.
+10. Read-modify-write CFG to enable ADC.
+11. Read-modify-write START to assert soft reset, then read it again and
     read-modify-write it to deassert reset.
 
 Every read-modify-write uses a fresh read, including each CFG update and both
@@ -59,11 +60,12 @@ unresolved policy decision.
   fields in the shared clock registers. Also serialize other changes to the
   SARADC NVIC line. Exclusive ownership of the ADC pins alone does not protect
   the read-modify-write operations.
-- The adapter disables NVIC IRQ 4 before peripheral access and writes zero to
-  the interrupt-enable register. It does not enable the IRQ, clear pending
-  state, or install a handler. The caller must serialize other changes to the
-  line throughout setup; the opt-in firmware path leaves the SARADC source
-  disabled and masks interrupts before parking.
+- The adapter disables NVIC IRQ 4 before peripheral access and clears only the
+  SARADC channel/FIFO interrupt-enable bits, preserving unrelated bits. It
+  does not enable the IRQ, clear pending state, or install a handler. The
+  caller must serialize other changes to the line throughout setup; the
+  opt-in firmware path keeps delivery masked and remains globally masked
+  before parking.
 
 The adapter remains an internal module and is called by the board startup
 dispatcher at `Call::AdcInit`, after backlight and before the concrete ST7565

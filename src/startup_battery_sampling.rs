@@ -1,7 +1,9 @@
 //! Offline composition of startup battery acquisition and voltage calibration.
 
 use crate::adc_battery_acquisition::acquire_battery_samples;
-pub use crate::adc_battery_acquisition::{AcquisitionError, ReadRegister, RegisterIo, WriteRegister};
+pub use crate::adc_battery_acquisition::{
+    AcquisitionError, ReadRegister, RegisterIo, WriteRegister,
+};
 pub use crate::adc_samples::CalibrationError;
 use crate::adc_samples::calibrated_battery_voltage;
 

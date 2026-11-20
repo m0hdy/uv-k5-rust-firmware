@@ -98,7 +98,8 @@ fn address_free_register_interface_records_the_full_order_and_fresh_reads() {
             Event::Read(Register::CalibrationKd, 0x1356_9bdf),
             Event::Write(Register::CalibrationKd, 0x1357_9bdf),
             Event::Write(Register::InterruptFlags, u32::MAX),
-            Event::Write(Register::InterruptEnable, 0),
+            Event::Read(Register::InterruptEnable, 0xdead_beef),
+            Event::Write(Register::InterruptEnable, 0xdeac_0000),
             Event::Read(Register::Configuration, 0xd6ad_0000),
             Event::Write(Register::Configuration, 0xdead_0000),
             Event::Read(Register::Start, 0xa5a5_5aaf),
@@ -112,7 +113,7 @@ fn address_free_register_interface_records_the_full_order_and_fresh_reads() {
 #[test]
 fn stale_interrupt_enable_state_never_enables_saradc_irq() {
     let mut reads = empty_reads();
-    reads[7] = VecDeque::from([0, 0x8000_0000]);
+    reads[7] = VecDeque::from([0x8003_ffff]);
 
     let mut io = FakeRegisterIo::new([0; 9], reads);
     apply_with_io(&mut io, 0x1234);
@@ -129,7 +130,7 @@ fn stale_interrupt_enable_state_never_enables_saradc_irq() {
     );
     assert!(
         io.events
-            .contains(&Event::Write(Register::InterruptEnable, 0))
+            .contains(&Event::Write(Register::InterruptEnable, 0x8000_0000))
     );
 }
 
@@ -212,7 +213,8 @@ fn physical_startup_uses_word_transactions_and_only_changes_the_saradc_nvic_line
             Read32(0x400b_a0f4, 0x1356_9bdf),
             Write32(0x400b_a0f4, 0x1357_9bdf),
             Write32(0x400b_a00c, u32::MAX),
-            Write32(0x400b_a008, 0),
+            Read32(0x400b_a008, initial_ie),
+            Write32(0x400b_a008, preserved_ie),
         ];
         expected.extend([
             Read32(0x400b_a000, 0xc7c3_8210),
@@ -223,7 +225,7 @@ fn physical_startup_uses_word_transactions_and_only_changes_the_saradc_nvic_line
             Write32(0x400b_a004, 0x8000_0014),
         ]);
         assert_eq!(io.events, expected, "trigger {trigger:#06x}");
-        assert_eq!(io.registers[&0x400b_a008], 0);
+        assert_eq!(io.registers[&0x400b_a008], preserved_ie);
         assert_eq!(io.registers[&0x400b_a00c], 0);
         assert_eq!(io.registers[&0x400b_a0b0], u32::from(trigger));
         assert_eq!(io.enabled_irqs, final_nvic);

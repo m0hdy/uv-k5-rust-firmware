@@ -121,6 +121,12 @@ fn configure_firmware_integration() {
             if matches!(*input, "UVK5_ADC_EXTTRIG_SEL" | "UVK5_BATTERY_CALIBRATION") {
                 assert!(parsed <= u32::from(u16::MAX), "{input} exceeds u16");
             }
+            if *input == "UVK5_SYSTICK_TICKS_PER_MICROSECOND" {
+                assert!(
+                    parsed <= u32::MAX / 120_000,
+                    "{input} makes the 120 ms startup delay overflow u32 ticks"
+                );
+            }
         }
         println!("cargo:rustc-env={output}={value}");
     }

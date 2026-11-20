@@ -1,8 +1,8 @@
+use std::collections::VecDeque;
 use uv_k5_rust_firmware::adc_battery_acquisition::{
     AcquisitionError, BatterySamples, ReadRegister, RegisterIo, WriteRegister,
     acquire_battery_samples,
 };
-use std::collections::VecDeque;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Event {

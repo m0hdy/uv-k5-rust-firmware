@@ -1,8 +1,8 @@
+use std::collections::VecDeque;
 use uv_k5_rust_firmware::startup_battery_sampling::{
     AcquisitionError, CalibrationError, ReadRegister, RegisterIo, StartupBatteryError,
     StartupBatteryReadings, WriteRegister, sample_startup_battery,
 };
-use std::collections::VecDeque;
 
 #[derive(Debug, Eq, PartialEq)]
 enum Event {

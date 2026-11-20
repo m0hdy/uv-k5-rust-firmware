@@ -13,6 +13,11 @@ class EntryError(ValueError):
 
 
 FUNCTION = re.compile(r"^\s*[0-9a-fA-F]+\s+<(.+)>:\s*$", re.MULTILINE)
+INSTRUCTION = re.compile(
+    r"^\s*([0-9a-fA-F]+):\s+(?:(?:[0-9a-fA-F]{4,8})\s+)*"
+    r"([A-Za-z][A-Za-z0-9.]*)\s*(.*?)$",
+    re.MULTILINE,
+)
 
 
 def function_body(disassembly: str, symbol: str) -> str:
@@ -24,47 +29,224 @@ def function_body(disassembly: str, symbol: str) -> str:
     raise EntryError(f"disassembly is missing {symbol}")
 
 
-def function_body_containing(disassembly: str, symbol_fragment: str) -> str:
+def function_end_address(disassembly: str, symbol: str) -> int:
     functions = list(FUNCTION.finditer(disassembly))
-    matches = [
-        index
+    for index, match in enumerate(functions):
+        if match.group(1) == symbol:
+            if index + 1 == len(functions):
+                raise EntryError(f"disassembly is missing the end of {symbol}")
+            following = re.match(
+                r"\s*([0-9a-fA-F]+)", disassembly[functions[index + 1].start() :]
+            )
+            if following:
+                return int(following.group(1), 16)
+    raise EntryError(f"disassembly is missing {symbol}")
+
+
+def function_bodies(disassembly: str) -> dict[str, str]:
+    functions = list(FUNCTION.finditer(disassembly))
+    return {
+        match.group(1): disassembly[
+            match.end() : functions[index + 1].start()
+            if index + 1 < len(functions)
+            else len(disassembly)
+        ]
         for index, match in enumerate(functions)
-        if symbol_fragment in match.group(1)
+    }
+
+
+def instructions(body: str) -> list[tuple[int, str, str]]:
+    return [
+        (int(match.group(1), 16), match.group(2).lower(), match.group(3))
+        for match in INSTRUCTION.finditer(body)
     ]
-    if len(matches) != 1:
-        raise EntryError(
-            f"disassembly must contain exactly one function matching {symbol_fragment}"
-        )
-    index = matches[0]
-    end = functions[index + 1].start() if index + 1 < len(functions) else len(disassembly)
-    return disassembly[functions[index].end() : end]
 
 
-def require_call(body: str, target: str) -> None:
-    if not any(
-        re.search(r"\bbl(?:\.n|\.w)?\b", line) and target in line
-        for line in body.splitlines()
-    ):
+def call_targets(body: str) -> list[str]:
+    targets = []
+    for _, mnemonic, operands in instructions(body):
+        if mnemonic.startswith("bl"):
+            target = re.search(r"<(.+)>", operands)
+            if target:
+                targets.append(target.group(1))
+    return targets
+
+
+def require_call(body: str, target: str, minimum: int = 1) -> None:
+    if sum(target in called for called in call_targets(body)) < minimum:
         raise EntryError(f"entry path does not call {target}")
 
 
-def inspect_disassembly(disassembly: str, symbols: str) -> None:
-    reset = function_body(disassembly, "Reset_Handler")
-    main = function_body(disassembly, "firmware_main")
-    entry = function_body(disassembly, "firmware_integration_entry")
-    coordinator = function_body_containing(disassembly, "coordinate_with_welcome::<")
-    fail_closed = function_body(disassembly, "firmware_fail_closed")
-    systick = function_body(disassembly, "SysTick_Handler")
+def reachable_functions(functions: dict[str, str], start: str) -> set[str]:
+    if start not in functions:
+        raise EntryError(f"disassembly is missing {start}")
+    reached = set()
+    pending = [start]
+    while pending:
+        current = pending.pop()
+        if current in reached:
+            continue
+        reached.add(current)
+        for target in call_targets(functions[current]):
+            if target in functions and target not in reached:
+                pending.append(target)
+    return reached
 
+
+def matching(reached: set[str], fragment: str) -> list[str]:
+    return [name for name in reached if fragment in name]
+
+
+def require_reachable(reached: set[str], fragment: str) -> str:
+    matches = matching(reached, fragment)
+    if not matches:
+        raise EntryError(f"selected entry cannot reach {fragment}")
+    return matches[0]
+
+
+def has_store(functions: dict[str, str], reached: set[str], start: str) -> bool:
+    pending = [start]
+    visited = set()
+    while pending:
+        current = pending.pop()
+        if current in visited:
+            continue
+        visited.add(current)
+        if any(mnemonic.startswith("str") for _, mnemonic, _ in instructions(functions[current])):
+            return True
+        pending.extend(
+            target
+            for target in call_targets(functions[current])
+            if target in reached and target not in visited
+        )
+    return False
+
+
+def vector_words(vector_dump: str) -> list[int]:
+    words = []
+    for line in vector_dump.splitlines():
+        parts = line.split()
+        if not parts or not re.fullmatch(r"[0-9a-fA-F]+", parts[0]):
+            continue
+        for part in parts[1:]:
+            if re.fullmatch(r"[0-9a-fA-F]{8}", part):
+                words.append(int.from_bytes(bytes.fromhex(part), "little"))
+            else:
+                break
+    return words
+
+
+def function_address(disassembly: str, symbol: str) -> int:
+    for match in FUNCTION.finditer(disassembly):
+        if match.group(1) == symbol:
+            address = re.match(r"\s*([0-9a-fA-F]+)", disassembly[match.start() :])
+            if address:
+                return int(address.group(1), 16)
+    raise EntryError(f"disassembly is missing {symbol}")
+
+
+def require_result_guards(
+    body: str,
+    called_fragment: str,
+    expected_calls: int,
+    function_start: int,
+    function_end: int,
+) -> None:
+    rows = instructions(body)
+    calls = [
+        index
+        for index, (_, mnemonic, operands) in enumerate(rows)
+        if mnemonic.startswith("bl")
+        and (target := re.search(r"<(.+)>", operands))
+        and called_fragment in target.group(1)
+        and "+0x" not in target.group(1)
+    ]
+    if len(calls) != expected_calls:
+        raise EntryError(f"selected coordinator must call {called_fragment} exactly {expected_calls} times")
+    for index in calls:
+        following = rows[index + 1 : index + 9]
+        conditional = next(
+            (
+                offset
+                for offset, (_, mnemonic, _) in enumerate(following)
+                if re.fullmatch(r"b(?:eq|ne|cs|cc|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.n|\.w)?", mnemonic)
+            ),
+            None,
+        )
+        if conditional is None:
+            raise EntryError(f"{called_fragment} result is not conditionally checked before later effects")
+        for _, mnemonic, operands in following[: conditional + 1]:
+            if mnemonic.startswith("bl"):
+                raise EntryError(
+                    f"{called_fragment} result is not checked before the next executor"
+                )
+        branch_target = re.match(r"\s*([0-9a-fA-F]+)\b", following[conditional][2])
+        if (
+            branch_target is None
+            or not function_start <= int(branch_target.group(1), 16) < function_end
+        ):
+            raise EntryError(
+                f"{called_fragment} failure branch does not remain in the coordinator"
+            )
+
+
+def reject_entry_self_loops(disassembly: str, functions: dict[str, str]) -> None:
+    for symbol in ("firmware_main", "firmware_integration_entry"):
+        address = function_address(disassembly, symbol)
+        for _, mnemonic, operands in instructions(functions[symbol]):
+            if mnemonic in {"b", "b.n", "b.w"}:
+                target = re.match(r"\s*([0-9a-fA-F]+)\b", operands)
+                if target and int(target.group(1), 16) == address:
+                    raise EntryError(f"{symbol} contains an entry self-loop")
+
+
+def inspect_disassembly(disassembly: str, symbols: str, vector_dump: str) -> None:
+    functions = function_bodies(disassembly)
+    reset = functions.get("Reset_Handler")
+    main = functions.get("firmware_main")
+    entry = functions.get("firmware_integration_entry")
+    fail_closed = functions.get("firmware_fail_closed")
+    systick = functions.get("SysTick_Handler")
+    if any(value is None for value in (reset, main, entry, fail_closed, systick)):
+        raise EntryError("disassembly is missing a required entry or handler")
+
+    reset_instructions = instructions(reset)
+    if not reset_instructions or reset_instructions[0][1:3] != ("cpsid", "i"):
+        raise EntryError("Reset_Handler must mask interrupts before its first effect")
+    reject_entry_self_loops(disassembly, functions)
     require_call(reset, "firmware_main")
     require_call(main, "firmware_integration_entry")
-    require_call(entry, "firmware_fail_closed")
     require_call(entry, "coordinate_with_welcome::<")
+    require_call(entry, "firmware_fail_closed")
     if not re.search(r"\bbx\s+lr\b", systick):
         raise EntryError("selected vector table's SysTick_Handler is not a valid return handler")
     if not re.search(r"\bcpsid\s+i\b", fail_closed) or not re.search(r"\bwfi\b", fail_closed):
         raise EntryError("firmware_fail_closed must mask interrupts and park")
 
+    words = vector_words(vector_dump)
+    if len(words) != 48:
+        raise EntryError("selected vector table must contain exactly 48 words")
+    reset_vector = words[1]
+    if words[0] != 0x20003FF0:
+        raise EntryError("selected vector table has an invalid initial stack pointer")
+    if reset_vector & ~1 != function_address(disassembly, "Reset_Handler") or reset_vector & 1 == 0:
+        raise EntryError("selected reset vector does not target Reset_Handler in Thumb state")
+    if words[15] & ~1 != function_address(disassembly, "SysTick_Handler") or words[15] & 1 == 0:
+        raise EntryError("selected SysTick vector does not target SysTick_Handler in Thumb state")
+
+    selected = reachable_functions(functions, "Reset_Handler")
+    if not any("firmware_integration_entry" in name for name in selected):
+        raise EntryError("Reset-to-firmware_main path bypasses firmware_integration_entry")
+    coordinator = require_reachable(selected, "coordinate_with_welcome::<")
+    startup_path = reachable_functions(functions, coordinator)
+    coordinator_address = function_address(disassembly, coordinator)
+    require_result_guards(
+        functions[coordinator],
+        "eeprom_read_transport::execute_read::<",
+        3,
+        coordinator_address,
+        function_end_address(disassembly, coordinator),
+    )
     for stage in (
         "StartupIo>::systick",
         "StartupIo>::portcon",
@@ -73,8 +255,15 @@ def inspect_disassembly(disassembly: str, symbols: str) -> None:
         "StartupIo>::adc_init",
         "StartupIo>::st7565_init",
     ):
-        require_call(coordinator, stage)
-    if coordinator.count("eeprom_read_transport::execute_read::<") != 3:
+        executor = require_reachable(startup_path, stage)
+        if not has_store(functions, startup_path, executor):
+            raise EntryError(f"selected {stage} executor has no reachable hardware effect")
+    reads = sum(
+        "eeprom_read_transport::execute_read::<" in target and target in functions
+        for name in startup_path
+        for target in call_targets(functions[name])
+    )
+    if reads != 3:
         raise EntryError("firmware entry must execute the three fallible EEPROM settings reads")
     for executor in (
         "adc_samples::decode_adc_sample",
@@ -82,11 +271,44 @@ def inspect_disassembly(disassembly: str, symbols: str) -> None:
         "startup_version_display::startup_version_display_plan",
         "startup_version_row_plan::compose_startup_version_row",
     ):
-        require_call(coordinator, executor)
-    if coordinator.count("StartupIo>::st7565_init") != 1:
+        name = require_reachable(startup_path, executor)
+        if not any(
+            mnemonic not in {"bx", "pop", "push", "nop", "mov", "movs"}
+            for _, mnemonic, _ in instructions(functions[name])
+        ):
+            raise EntryError(f"selected {executor} executor is a no-op")
+    display_initializers = sum(
+        "StartupIo>::st7565_init" in target and target in functions
+        for name in startup_path
+        for target in call_targets(functions[name])
+    )
+    if display_initializers != 1:
         raise EntryError("firmware entry must initialize the board display exactly once")
     if "GpioI2cIo<" not in symbols or "systick_delay_adapter::SysTickDelay<" not in symbols:
         raise EntryError("selected entry lacks the concrete GPIO I2C/SysTick delay backend")
+    delay_functions = [
+        name
+        for name in functions
+        if "SysTickDelay<" in name and ("::delay_ms" in name or "::delay_1us" in name)
+    ]
+    if not delay_functions or any(
+        not any(
+            mnemonic not in {"bx", "pop", "push", "nop", "mov", "movs"}
+            for _, mnemonic, _ in instructions(functions[name])
+        )
+        for name in delay_functions
+    ):
+        raise EntryError("selected entry lacks emitted counter-polling delay providers")
+    entry_calls = call_targets(entry)
+    coordinate_indices = [
+        index for index, target in enumerate(entry_calls) if "coordinate_with_welcome::<" in target
+    ]
+    if not coordinate_indices or any(
+        "firmware_fail_closed" not in target for target in entry_calls[coordinate_indices[0] + 1 :]
+    ):
+        raise EntryError("startup result must terminate fail-closed without later entry effects")
+    if re.search(r"\bcpsie\s+i\b", disassembly):
+        raise EntryError("selected startup must not unmask interrupts without installed handlers")
     if "0xe000e180" not in disassembly or "0xe000e100" in disassembly:
         raise EntryError("SARADC must remain masked without an NVIC enable write")
 
@@ -107,13 +329,19 @@ def main() -> int:
             capture_output=True,
             text=True,
         ).stdout
+        vector_dump = subprocess.run(
+            [args.objdump, "-s", "-j", ".vector_table", str(args.elf)],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
         symbols = subprocess.run(
             [args.objdump, "-t", "-C", "--wide", str(args.elf)],
             check=True,
             capture_output=True,
             text=True,
         ).stdout
-        inspect_disassembly(disassembly, symbols)
+        inspect_disassembly(disassembly, symbols, vector_dump)
     except (OSError, subprocess.CalledProcessError, EntryError) as error:
         print(f"firmware entry check failed: {error}", file=sys.stderr)
         return 1

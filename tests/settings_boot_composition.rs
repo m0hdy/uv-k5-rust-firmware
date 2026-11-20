@@ -2,7 +2,8 @@ use uv_k5_rust_firmware::settings_boot_composition::CoreSettings;
 use uv_k5_rust_firmware::settings_boot_composition::{
     Acknowledgement, BacklightMinStatus, Command, DisplayBootDefaults, Features, I2cTransport,
     ReadBackend, ReadError, ReadPlan, SettingsBoot, SettingsBootBlock, SettingsBootReadError,
-    compose, compose_with_transport, plan_read,
+    compose, compose_with_transport, compose_with_welcome, compose_with_welcome_transport,
+    plan_read,
 };
 use uv_k5_rust_firmware::startup_version_display::StartupDisplayMode;
 
@@ -172,7 +173,7 @@ const STARTUP_BUS_TRACE: [BusEvent; 24] = [
 ];
 
 #[test]
-fn reads_three_ordered_blocks_and_routes_each_response_to_its_decoder() {
+fn legacy_composition_reads_only_the_core_and_display_blocks() {
     let mut fixtures = Fixtures::new([CORE_DATA, DISPLAY_DATA, WELCOME_DATA]);
 
     assert_eq!(
@@ -180,17 +181,12 @@ fn reads_three_ordered_blocks_and_routes_each_response_to_its_decoder() {
         SettingsBoot {
             core: EXPECTED_CORE,
             display: EXPECTED_DISPLAY,
-            welcome_mode: StartupDisplayMode::Voltage,
         }
     );
-    assert_eq!(fixtures.reads, 3);
+    assert_eq!(fixtures.reads, 2);
     assert_eq!(
-        fixtures.plans,
-        [
-            plan_read(0x0e70, 8),
-            plan_read(0x0e78, 8),
-            plan_read(0x0e90, 8),
-        ]
+        &fixtures.plans[..2],
+        &[plan_read(0x0e70, 8), plan_read(0x0e78, 8)]
     );
     assert_eq!(
         fixtures.plans[0].commands(),
@@ -218,23 +214,34 @@ fn reads_three_ordered_blocks_and_routes_each_response_to_its_decoder() {
             Command::Stop,
         ]
     );
+}
+
+#[test]
+fn welcome_extended_composition_reads_the_mode_after_legacy_settings() {
+    let mut fixtures = Fixtures::new([CORE_DATA, DISPLAY_DATA, WELCOME_DATA]);
     assert_eq!(
-        fixtures.plans[2].commands(),
-        &[
-            Command::Start,
-            Command::Write(0xa0),
-            Command::Write(0x0e),
-            Command::Write(0x90),
-            Command::Start,
-            Command::Write(0xa1),
-            Command::ReadBuffer(8),
-            Command::Stop,
+        compose_with_welcome(&mut fixtures, ALL_FEATURES),
+        uv_k5_rust_firmware::settings_boot_composition::SettingsBootWithWelcome {
+            settings: SettingsBoot {
+                core: EXPECTED_CORE,
+                display: EXPECTED_DISPLAY,
+            },
+            welcome_mode: StartupDisplayMode::Voltage,
+        }
+    );
+    assert_eq!(fixtures.reads, 3);
+    assert_eq!(
+        fixtures.plans,
+        [
+            plan_read(0x0e70, 8),
+            plan_read(0x0e78, 8),
+            plan_read(0x0e90, 8),
         ]
     );
 }
 
 #[test]
-fn fallible_entry_executes_three_literal_traces_and_decodes_distinct_responses() {
+fn fallible_legacy_entry_executes_only_two_literal_traces() {
     let mut bus = StartupBus::new([CORE_DATA, DISPLAY_DATA, WELCOME_DATA]);
 
     assert_eq!(
@@ -242,8 +249,26 @@ fn fallible_entry_executes_three_literal_traces_and_decodes_distinct_responses()
         Ok(SettingsBoot {
             core: EXPECTED_CORE,
             display: EXPECTED_DISPLAY,
-            welcome_mode: StartupDisplayMode::Voltage,
         })
+    );
+    assert_eq!(bus.events, STARTUP_BUS_TRACE[..16]);
+}
+
+#[test]
+fn fallible_welcome_entry_executes_the_third_trace_after_legacy_settings() {
+    let mut bus = StartupBus::new([CORE_DATA, DISPLAY_DATA, WELCOME_DATA]);
+
+    assert_eq!(
+        compose_with_welcome_transport(&mut bus, ALL_FEATURES),
+        Ok(
+            uv_k5_rust_firmware::settings_boot_composition::SettingsBootWithWelcome {
+                settings: SettingsBoot {
+                    core: EXPECTED_CORE,
+                    display: EXPECTED_DISPLAY,
+                },
+                welcome_mode: StartupDisplayMode::Voltage,
+            }
+        )
     );
     assert_eq!(bus.events, STARTUP_BUS_TRACE);
 }
@@ -270,7 +295,7 @@ fn feature_presence_controls_only_the_corresponding_assignments() {
                     result.display.backlight_min_status,
                     blmin_tmp_off_enabled.then_some(BacklightMinStatus::On)
                 );
-                assert_eq!(fixtures.reads, 3);
+                assert_eq!(fixtures.reads, 2);
             }
         }
     }
@@ -299,7 +324,7 @@ fn fallible_entry_preserves_feature_presence_gates() {
                     result.display.backlight_min_status,
                     blmin_tmp_off_enabled.then_some(BacklightMinStatus::On)
                 );
-                assert_eq!(bus.events, STARTUP_BUS_TRACE);
+                assert_eq!(bus.events, STARTUP_BUS_TRACE[..16]);
             }
         }
     }
@@ -319,7 +344,7 @@ fn welcome_mode_uses_the_pinned_eeprom_encoding_and_default() {
         welcome_data[7] = raw;
         let mut fixtures = Fixtures::new([CORE_DATA, DISPLAY_DATA, welcome_data]);
         assert_eq!(
-            compose(&mut fixtures, ALL_FEATURES).welcome_mode,
+            compose_with_welcome(&mut fixtures, ALL_FEATURES).welcome_mode,
             expected,
             "EEPROM mode {raw}"
         );
@@ -352,7 +377,6 @@ fn erased_bytes_are_decoded_data_not_a_read_error() {
             tail_tone_elimination: false,
             vfo_open: true,
         },
-        welcome_mode: StartupDisplayMode::Voltage,
     };
 
     for (responses, expected) in [
@@ -362,7 +386,6 @@ fn erased_bytes_are_decoded_data_not_a_read_error() {
             SettingsBoot {
                 core: defaults.core,
                 display: EXPECTED_DISPLAY,
-                welcome_mode: StartupDisplayMode::Voltage,
             },
         ),
         (
@@ -370,7 +393,6 @@ fn erased_bytes_are_decoded_data_not_a_read_error() {
             SettingsBoot {
                 core: EXPECTED_CORE,
                 display: defaults.display,
-                welcome_mode: StartupDisplayMode::Voltage,
             },
         ),
     ] {
@@ -380,7 +402,7 @@ fn erased_bytes_are_decoded_data_not_a_read_error() {
             expected,
             "{responses:?}"
         );
-        assert_eq!(fixtures.reads, 3);
+        assert_eq!(fixtures.reads, 2);
     }
 }
 
@@ -398,7 +420,6 @@ fn fallible_entry_decodes_erased_bytes_in_each_block_as_data() {
             SettingsBoot {
                 core: erased_defaults.core,
                 display: EXPECTED_DISPLAY,
-                welcome_mode: StartupDisplayMode::Voltage,
             },
         ),
         (
@@ -406,13 +427,12 @@ fn fallible_entry_decodes_erased_bytes_in_each_block_as_data() {
             SettingsBoot {
                 core: EXPECTED_CORE,
                 display: erased_defaults.display,
-                welcome_mode: StartupDisplayMode::Voltage,
             },
         ),
     ] {
         let mut bus = StartupBus::new(responses);
         assert_eq!(compose_with_transport(&mut bus, ALL_FEATURES), Ok(expected));
-        assert_eq!(bus.events, STARTUP_BUS_TRACE);
+        assert_eq!(bus.events, STARTUP_BUS_TRACE[..16]);
     }
 }
 
@@ -447,7 +467,7 @@ fn second_block_failure_preserves_transport_error_and_cleanup_failure() {
     bus.fail_cleanup = true;
 
     assert_eq!(
-        compose_with_transport(&mut bus, ALL_FEATURES),
+        compose_with_welcome_transport(&mut bus, ALL_FEATURES),
         Err(SettingsBootReadError {
             block: SettingsBootBlock::Display,
             error: ReadError::Transport(TransportError::Transfer(11)),
@@ -480,7 +500,7 @@ fn welcome_block_failure_preserves_error_and_stops_before_returning_settings() {
     bus.fail_cleanup = true;
 
     assert_eq!(
-        compose_with_transport(&mut bus, ALL_FEATURES),
+        compose_with_welcome_transport(&mut bus, ALL_FEATURES),
         Err(SettingsBootReadError {
             block: SettingsBootBlock::Welcome,
             error: ReadError::Transport(TransportError::Transfer(18)),

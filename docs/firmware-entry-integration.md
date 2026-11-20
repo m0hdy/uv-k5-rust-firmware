@@ -2,9 +2,9 @@
 
 `src/bin/firmware.rs::firmware_main` retains the default spin-only bootstrap.
 Enabling Cargo feature `firmware-integration` selects a target-only concrete
-path from this same entry; it does not add a second reset/vector path. That
-path calls the board sequencer, acquires core, display, and welcome settings
-over GPIO I²C, hands the bus pins back after STOP, samples four real ADC
+path calls the board sequencer, acquires core and display settings plus the
+welcome mode through a distinct welcome-extended composition over GPIO I²C,
+hands the bus pins back after STOP, samples four real ADC
 conversions with the bounded battery executor, then continues on the display
 already initialized by board startup. It uses `CARGO_PKG_VERSION`. The
 `None` and `FullScreen` welcome modes produce no version-row transfer.
@@ -36,7 +36,7 @@ values, and has no fallback values:
 | `UVK5_ST7565_FIFO_POLL_LIMIT` | Nonzero unsigned 32-bit per-byte polling budget. |
 | `UVK5_BATTERY_POLL_BUDGET` | Nonzero unsigned 32-bit per-conversion polling budget. |
 | `UVK5_BATTERY_CALIBRATION` | Nonzero unsigned 16-bit battery calibration value. |
-| `UVK5_SYSTICK_TICKS_PER_MICROSECOND` | Nonzero unsigned 32-bit calibration supplied to the existing SysTick counter delay provider. |
+| `UVK5_SYSTICK_TICKS_PER_MICROSECOND` | Caller-verified unsigned calibration from 1 through 35,791, supplied to the existing SysTick counter delay provider. The upper bound keeps the 120 ms startup delay within `u32`; it does not establish accurate timing. |
 
 These are required caller inputs, not recommended production values. Build-time
 validation proves only that their syntax and numeric ranges are acceptable.
@@ -60,14 +60,14 @@ against all other writers, including unrelated-bit read-modify-write users.
 The PA10/PA11 bus owner completes every I²C transaction with STOP, then
 explicitly restores the board's keypad pin mode before battery sampling.
 
-The vector table installs a valid returning `SysTick_Handler`, and board
-startup enables SysTick for the existing counter-poll delay provider. Its
-frequency is not inferred or measured by this path. Before ADC setup, the
-adapter disables the SARADC NVIC line and writes zero to the SARADC interrupt
-enable register. It does not enable that source, install an ADC handler, clear
+Reset masks interrupts before RAM initialization or any peripheral effect. The
+vector table installs a valid returning `SysTick_Handler`, and board startup
+enables SysTick for the existing counter-poll delay provider. Its frequency is
+not inferred or measured by this path. Before ADC setup, the adapter disables
+the SARADC NVIC line and clears only SARADC interrupt-enable source fields,
+preserving unrelated register bits. It does not install an ADC handler, clear
 NVIC pending state, or depend on an ADC ISR. The selected path never
-re-enables ADC interrupt delivery; the terminal entry masks interrupts before
-parking.
+re-enables interrupt delivery; the terminal entry remains masked and parks.
 
 ## Offline evidence and limits
 

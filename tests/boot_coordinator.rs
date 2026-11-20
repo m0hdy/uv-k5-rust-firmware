@@ -77,6 +77,7 @@ enum Failure {
     Systick,
     Display,
     Eeprom,
+    EepromWelcome,
     Battery,
     FmStart,
     FmNack(usize),
@@ -209,7 +210,9 @@ impl MockIo {
 
     fn record_eeprom(&mut self, event: Event) -> Result<(), EepromError> {
         self.events.push(event);
-        if self.failure == Failure::Eeprom && matches!(event, Event::EepromWrite(_)) {
+        if (self.failure == Failure::Eeprom && matches!(event, Event::EepromWrite(_)))
+            || (self.failure == Failure::EepromWelcome && event == Event::EepromWrite(0x90))
+        {
             Err(EepromError::Transfer)
         } else {
             Ok(())
@@ -449,7 +452,7 @@ fn success_runs_board_then_fallible_settings_then_bounded_battery_sampling() {
             .iter()
             .filter(|event| matches!(event, Event::EepromRead(8)))
             .count(),
-        3
+        2
     );
 }
 
@@ -474,7 +477,28 @@ fn composed_startup_uses_acquired_mode_and_version_on_the_initialized_display() 
         )
         .unwrap();
 
-        assert_eq!(startup.settings.welcome_mode, mode);
+        assert_eq!(startup.welcome_mode, mode);
+        assert_eq!(
+            io.events
+                .iter()
+                .filter(|event| matches!(event, Event::EepromRead(8)))
+                .count(),
+            3
+        );
+        let eeprom_writes = io
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                Event::EepromWrite(byte) => Some(*byte),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            eeprom_writes,
+            [
+                0xa0, 0x0e, 0x70, 0xa1, 0xa0, 0x0e, 0x78, 0xa1, 0xa0, 0x0e, 0x90, 0xa1,
+            ]
+        );
         assert_eq!(
             io.events
                 .iter()
@@ -555,6 +579,37 @@ fn composed_failures_keep_the_first_error_and_do_not_run_later_effects() {
         ),
         Err(FirmwareStartupError::Boot(BootError::Settings(_)))
     ));
+    assert!(io.events.contains(&Event::I2cHandoff));
+    assert!(
+        !io.events
+            .iter()
+            .any(|event| matches!(event, Event::BatteryRead(_) | Event::BatteryWrite(_, _)))
+    );
+    assert_eq!(
+        io.display_trace
+            .iter()
+            .filter(|event| matches!(event, DisplayEvent::Write(SPI_WDR, _)))
+            .count(),
+        41
+    );
+
+    let mut io = MockIo::new(Failure::EepromWelcome);
+    assert_eq!(
+        coordinate_with_welcome(
+            &mut io,
+            &mut DelayProbe::default(),
+            &mut DelayProbe::default(),
+            config(),
+            Some(env!("CARGO_PKG_VERSION")),
+            &mut pages,
+        ),
+        Err(FirmwareStartupError::Boot(BootError::Settings(
+            SettingsBootReadError {
+                block: SettingsBootBlock::Welcome,
+                error: ReadError::Transport(EepromError::Transfer),
+            }
+        )))
+    );
     assert!(io.events.contains(&Event::I2cHandoff));
     assert!(
         !io.events
@@ -777,7 +832,7 @@ fn battery_failure_returns_no_app_state_after_complete_settings_reads() {
             .iter()
             .filter(|event| matches!(event, Event::EepromRead(8)))
             .count(),
-        3
+        2
     );
     assert_eq!(
         io.events

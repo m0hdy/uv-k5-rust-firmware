@@ -101,14 +101,15 @@ welcome APIs. The already-initialized-display continuation is the distinct
 its explicit-version counterpart); it acquires the welcome mode and continues
 without reinitializing the controller.
 
-The selected firmware integration installs a valid returning SysTick handler
-before enabling the counter. SARADC setup disables the NVIC IRQ before touching
-the peripheral and writes zero to its interrupt-enable register; it never
-reenables the IRQ. No SARADC handler is installed or assumed. Serialize the
-entire SARADC operation against every writer to touched SYSCON/SARADC registers
-and the IRQ line. The opt-in `firmware-integration` feature selects this
-sequence from `firmware_main`; the default bootstrap remains unchanged and
-performs no peripheral startup.
+The selected firmware integration masks interrupts at Reset before RAM or
+peripheral effects and installs a valid returning SysTick handler before
+enabling the counter. SARADC setup disables the NVIC IRQ before touching the
+peripheral and clears only SARADC interrupt-enable source fields, preserving
+unrelated bits; it never reenables the IRQ. No SARADC handler is installed or
+assumed. Serialize the entire SARADC operation against every writer to touched
+SYSCON/SARADC registers and the IRQ line. The opt-in `firmware-integration`
+feature selects this sequence from `firmware_main`; the default bootstrap
+remains unchanged and performs no peripheral startup.
 
 The link-only witness enables synthetic FM and CRC features and uses delay
 stand-ins only to retain and inspect the concrete target call path. It does
@@ -116,10 +117,12 @@ not model elapsed time, provide production timing, or establish a timing policy;
 the witness is never executed or published. The synthetic feature configuration
 is not production policy.
 
-The SARADC adapter masks NVIC IRQ 4 before peripheral setup and writes zero to
-the interrupt-enable register, so preserved enable bits cannot activate an
-unprovided handler. It does not clear pending state; the startup path keeps the
-source and line disabled and ultimately masks interrupts before parking.
+The SARADC adapter masks NVIC IRQ 4 before peripheral setup and clears the
+configured SARADC source bits in its interrupt-enable register while
+preserving unrelated bits. The selected entry does not unmask global
+interrupts, so preserved bits cannot activate an unprovided handler. The
+adapter does not clear pending state; the startup path keeps the line disabled
+and remains globally masked before parking.
 Serialize the complete operation against every writer to the touched SYSCON
 and SARADC registers, including updates to unrelated shared clock fields, and
 against changes to the SARADC NVIC line. The opt-in firmware entry requires

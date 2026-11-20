@@ -1,17 +1,21 @@
 # Startup boot coordinator
 
 `src/boot_coordinator.rs` runs the existing board startup adapter sequence,
-reads the core, display, and welcome settings through the fallible EEPROM composition,
-then collects and calibrates four bounded battery samples. The board sequence
+reads core and display settings through the legacy two-block EEPROM composition,
+then collects and calibrates four bounded battery samples. The separate
+`coordinate_with_welcome` entry uses an explicit welcome-extended composition
+to acquire welcome mode once before handing off the bus, then continues on the
+initialized display after battery sampling. The board sequence
 executes the backlight and SARADC adapters, followed by the concrete ST7565
 SPI0/reset startup executor, conditional BK1080 shutdown and optional CRC
 initialization.
 `BootConfig::exttrig_sel` supplies the SARADC trigger selection and
 `st7565_fifo_poll_limit` supplies the nonzero per-byte display poll budget.
 The caller passes independent `DelayMs` and `Delay1us` implementations to
-`coordinate`; no production delay or polling default is inferred. The
-coordinator returns one `ApplicationStartup` value only after all three
-stages succeed. A board, EEPROM, or battery failure returns a typed
+`coordinate`; no production delay or polling default is inferred.
+`coordinate` returns one `ApplicationStartup` value only after its three
+stages succeed. The welcome entry returns its distinct startup result after
+all four stages succeed. A board, EEPROM, or battery failure returns a typed
 `BootError`; display and shutdown failures preserve their typed causes, and settings
 or battery data are not handed to the application on an error.
 
@@ -21,7 +25,7 @@ The supported subsequence is compared with pinned
 | Coordinator stage | Relation to pinned C |
 | --- | --- |
 | Board adapter sequence | Models clock gates, SysTick, `BOARD_Init` calls and optional startup calls from `Main`. Target adapters execute backlight, SARADC, ST7565, conditional BK1080 shutdown and conditional CRC initialization using their existing executors. `EXTTRIG_SEL`, the separate delay providers, and nonzero FIFO poll budget are explicit inputs. |
-| Fallible settings read | Reads the core, display, and welcome-mode blocks corresponding to part of `SETTINGS_InitEEPROM`; it does not implement the rest of that C routine, build-option writes, or calibration loading. |
+| Fallible settings read | The legacy composition reads core and display blocks only. The actual-entry welcome extension adds one read of the welcome-mode block at `0x0e90`; neither implements the rest of `SETTINGS_InitEEPROM`, build-option writes, or calibration loading. |
 | Bounded battery sampling | Runs four bounded channel-4/channel-9 acquisitions with caller-supplied calibration, corresponding to the four-sample loop after radio setup in this region. |
 
 ```mermaid
@@ -38,7 +42,8 @@ flowchart LR
   CRC -->|yes| CRCInit["CRC adapter"]
   CRC -->|no| Settings["EEPROM settings"]
   CRCInit --> Settings
-  Settings -->|STOP and I²C pin handoff| Battery["Bounded battery sampling"]
+  Settings -->|welcome extension reads 0x0e90 once| WelcomeMode["Acquired welcome mode"]
+  WelcomeMode -->|STOP and I²C pin handoff| Battery["Bounded battery sampling"]
   Battery -->|coordinate_with_welcome| Welcome["Initialized-display continuation"]
   Battery -->|coordinate only| Ready["ApplicationStartup"]
   Welcome --> Park["Entry masks interrupts and parks"]
@@ -59,7 +64,9 @@ No battery calibration value, battery poll budget, display delay,
 microsecond delay, or ST7565 FIFO poll budget is supplied by default. The board
 sequencer does not call initialize-and-show welcome. `coordinate_with_welcome`
 uses the already-initialized-display continuation after the concrete board,
-settings, and battery stages.
+settings, and battery stages. It acquires mode once; legacy `coordinate` and
+channel-selection APIs retain their original two-block settings and third
+channel transaction at `0x0e80`.
 
 The opt-in `firmware-integration` feature selects
 `coordinate_with_welcome` from the actual `firmware_main` path. It requires the
@@ -72,10 +79,11 @@ an application loop or device-completion claim.
 
 Production use requires concrete implementations of all three I/O boundaries.
 The board boundary must execute every required hardware stage with clocks,
-pin muxes, register mappings, and exclusive startup ownership. A valid
-returning SysTick vector is installed before SysTick is enabled. SARADC setup
-disables the NVIC line before peripheral access and writes zero to the
-peripheral interrupt-enable register; no ADC handler is assumed or installed.
+pin muxes, register mappings, and exclusive startup ownership. Reset masks
+interrupts before RAM initialization or peripheral access. A valid returning
+SysTick vector is installed before SysTick is enabled. SARADC setup disables
+the NVIC line before peripheral access and clears only SARADC interrupt-enable
+fields while preserving unrelated bits; no ADC handler is assumed or installed.
 Keep the line and shared registers exclusively owned throughout setup.
 Backlight execution specifically requires the PWM_PLUS0 clock gate enabled
 before the stage, DP32G030 PWM_PLUS0/PORTB mappings, B6 reserved and selected

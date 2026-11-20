@@ -17,7 +17,7 @@ external policy inputs and the limits of offline evidence.
 
 ```mermaid
 flowchart LR
-  Reset["Reset_Handler"] --> Main["firmware_main"]
+  Reset["Reset_Handler\nmask interrupts; initialize RAM"] --> Main["firmware_main"]
   Main --> Select{"firmware-integration enabled?"}
   Select -->|no, default| Bootstrap["Non-installable spin bootstrap"]
   Select -->|yes, external policy required| Board["Concrete board startup"]
@@ -32,9 +32,11 @@ flowchart LR
   Park -.-> Future["Application loop and device validation\nremain outstanding"]
 ```
 
-The selected integration reuses the [board startup sequence](docs/board-startup-adapters.md),
-reads the actual welcome setting with core/display settings, samples the
-battery through the existing bounded executor, hands PA10/PA11 back after
+The selected integration reuses the
+[board startup sequence](docs/board-startup-adapters.md), reads core/display
+settings and the welcome mode through the explicitly welcome-extended
+composition (the legacy settings API remains two-block), samples the battery
+through the existing bounded executor, hands PA10/PA11 back after
 EEPROM STOP, and uses the already-initialized display for the version row.
 `None` and `FullScreen` modes issue no welcome-row transfer. ADC interrupt
 delivery is disabled before SARADC setup and remains masked; the startup does
