@@ -24,8 +24,10 @@ Register-30 fields are from the pinned
 VCO calibration `8000`, RX link `3C00`, AF DAC `0200`, discriminator
 `0100`, PLL/VCO `00F0`, and RX DSP `0001`. Their bitwise OR is `BFF1`.
 Unknown `4000`, PA gain `0008`, MIC ADC `0004`, and TX DSP `0002` are not
-enabled. These operations perform no reads, ACKs, extra waits, retries,
-GPIO-output shadow changes, idle-mode state changes, or radio policy.
+enabled. These operations perform no BK4819 chip/register reads, ACKs, extra
+waits, retries, GPIO-output shadow changes, idle-mode state changes, or radio
+policy. GPIO register reads used by the existing transport's
+read-modify-write operations remain part of each serial write.
 
 ## Target MMIO entry points
 
