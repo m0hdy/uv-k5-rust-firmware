@@ -9,7 +9,7 @@ use crate::i2c_bitbang_flow::target_gpio::Delay1us;
 use crate::settings_boot_composition;
 pub use crate::settings_boot_composition::{
     Acknowledgement, I2cTransport, ReadError, ReadPlan, SettingsBoot, SettingsBootBlock,
-    SettingsBootReadError,
+    SettingsBootReadError, SettingsBootWithWelcome,
 };
 use crate::st7565_startup_executor::target_spi0::DelayMs;
 use crate::st7565_startup_executor::target_spi0::RegisterIo as DisplayRegisterIo;
@@ -117,6 +117,13 @@ pub struct ApplicationStartup {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApplicationStartupWithWelcome {
+    pub settings: SettingsBoot,
+    pub battery: StartupBatteryReadings,
+    pub welcome_mode: crate::startup_version_display::StartupDisplayMode,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BootError<E, F> {
     Board(BoardStartupError<F>),
     Settings(SettingsBootReadError<E>),
@@ -137,16 +144,7 @@ pub fn coordinate<IO: BootIo>(
     config: BootConfig,
 ) -> Result<ApplicationStartup, BootError<<IO as I2cTransport>::Error, <IO as StartupIo>::FmError>>
 {
-    board_startup_adapters::run(
-        config.board,
-        config.enable_swd,
-        config.exttrig_sel,
-        display_delay,
-        fm_delay,
-        config.st7565_fifo_poll_limit,
-        io,
-    )
-    .map_err(BootError::Board)?;
+    run_board(io, display_delay, fm_delay, config)?;
     let settings = match settings_boot_composition::compose_with_transport(io, config.settings) {
         Ok(settings) => settings,
         Err(error) => {
@@ -155,9 +153,7 @@ pub fn coordinate<IO: BootIo>(
         }
     };
     io.i2c_handoff();
-    let battery =
-        sample_startup_battery(io, config.battery_poll_budget, config.battery_calibration)
-            .map_err(BootError::Battery)?;
+    let battery = sample_battery(io, config)?;
 
     Ok(ApplicationStartup { settings, battery })
 }
@@ -171,18 +167,59 @@ pub fn coordinate_with_welcome<IO: BootIo + DisplayRegisterIo>(
     version: Option<&str>,
     pages: &mut [[u8; LCD_WIDTH]],
 ) -> Result<
-    ApplicationStartup,
+    ApplicationStartupWithWelcome,
     FirmwareStartupError<<IO as I2cTransport>::Error, <IO as StartupIo>::FmError>,
 > {
-    let startup =
-        coordinate(io, display_delay, fm_delay, config).map_err(FirmwareStartupError::Boot)?;
+    run_board(io, display_delay, fm_delay, config).map_err(FirmwareStartupError::Boot)?;
+    let settings = match settings_boot_composition::compose_with_welcome_transport(io, config.settings)
+    {
+        Ok(settings) => settings,
+        Err(error) => {
+            io.i2c_handoff();
+            return Err(FirmwareStartupError::Boot(BootError::Settings(error)));
+        }
+    };
+    io.i2c_handoff();
+    let battery = sample_battery(io, config).map_err(|error| {
+        FirmwareStartupError::Boot(BootError::Battery(error))
+    })?;
+    let welcome_mode = settings.welcome_mode;
     welcome_startup::welcome_on_initialized_display_with_version_and_io(
         io,
-        startup.settings.welcome_mode,
+        welcome_mode,
         version,
         pages,
         config.st7565_fifo_poll_limit,
     )
     .map_err(FirmwareStartupError::Welcome)?;
-    Ok(startup)
+    Ok(ApplicationStartupWithWelcome {
+        settings: settings.settings,
+        battery,
+        welcome_mode,
+    })
+}
+
+fn run_board<IO: BootIo>(
+    io: &mut IO,
+    display_delay: &mut dyn DelayMs,
+    fm_delay: &mut dyn Delay1us,
+    config: BootConfig,
+) -> Result<(), BootError<<IO as I2cTransport>::Error, <IO as StartupIo>::FmError>> {
+    board_startup_adapters::run(
+        config.board,
+        config.enable_swd,
+        config.exttrig_sel,
+        display_delay,
+        fm_delay,
+        config.st7565_fifo_poll_limit,
+        io,
+    )
+    .map_err(BootError::Board)
+}
+
+fn sample_battery<IO: BatteryRegisterIo>(
+    io: &mut IO,
+    config: BootConfig,
+) -> Result<StartupBatteryReadings, StartupBatteryError> {
+    sample_startup_battery(io, config.battery_poll_budget, config.battery_calibration)
 }

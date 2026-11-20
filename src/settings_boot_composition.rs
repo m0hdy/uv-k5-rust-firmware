@@ -21,6 +21,11 @@ pub struct Features {
 pub struct SettingsBoot {
     pub core: CoreSettings,
     pub display: DisplayBootDefaults,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SettingsBootWithWelcome {
+    pub settings: SettingsBoot,
     pub welcome_mode: StartupDisplayMode,
 }
 
@@ -53,13 +58,18 @@ pub fn compose<B: ReadBackend>(backend: &mut B, features: Features) -> SettingsB
         display_boot_defaults::EEPROM_LEN as u8,
     ));
     let display = decode_display(display_data, features);
-    let welcome_data = backend.read(plan_read(0x0e90, 8));
-    let welcome_mode = decode_welcome_mode(welcome_data);
+    SettingsBoot { core, display }
+}
 
-    SettingsBoot {
-        core,
-        display,
-        welcome_mode,
+pub fn compose_with_welcome<B: ReadBackend>(
+    backend: &mut B,
+    features: Features,
+) -> SettingsBootWithWelcome {
+    let settings = compose(backend, features);
+    let welcome_data = backend.read(plan_read(0x0e90, 8));
+    SettingsBootWithWelcome {
+        settings,
+        welcome_mode: decode_welcome_mode(welcome_data),
     }
 }
 
@@ -97,6 +107,14 @@ pub fn compose_with_transport<T: I2cTransport>(
     })?;
     let display = decode_display(display_data, features);
 
+    Ok(SettingsBoot { core, display })
+}
+
+pub fn compose_with_welcome_transport<T: I2cTransport>(
+    transport: &mut T,
+    features: Features,
+) -> Result<SettingsBootWithWelcome, SettingsBootReadError<T::Error>> {
+    let settings = compose_with_transport(transport, features)?;
     let mut welcome_data = [0; 8];
     execute_read(transport, plan_read(0x0e90, 8), &mut welcome_data).map_err(|error| {
         SettingsBootReadError {
@@ -104,12 +122,9 @@ pub fn compose_with_transport<T: I2cTransport>(
             error,
         }
     })?;
-    let welcome_mode = decode_welcome_mode(welcome_data);
-
-    Ok(SettingsBoot {
-        core,
-        display,
-        welcome_mode,
+    Ok(SettingsBootWithWelcome {
+        settings,
+        welcome_mode: decode_welcome_mode(welcome_data),
     })
 }
 
