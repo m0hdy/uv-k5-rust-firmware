@@ -261,6 +261,20 @@ fn zero_trigger_countdowns_do_not_create_new_flags() {
 }
 
 #[test]
+fn zero_power_save_countdowns_do_not_schedule_flags() {
+    for dual_watch_enabled in [true, false] {
+        let mut countdowns = state();
+        let mut tick = allowed_noaa_context();
+        tick.function = SchedulerFunction::PowerSave;
+        tick.dual_watch_enabled = dual_watch_enabled;
+
+        execute_countdowns(&mut countdowns, tick);
+
+        assert_eq!(countdowns, state());
+    }
+}
+
+#[test]
 fn already_pending_flags_are_sticky_while_countdowns_continue() {
     let mut countdowns = state();
     countdowns.battery_save_countdown_10ms = 2;
