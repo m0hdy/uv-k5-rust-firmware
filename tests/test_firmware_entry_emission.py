@@ -67,6 +67,11 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
         probe.write_bytes(modified)
         return probe
 
+    def read_halfword(self, address):
+        self.assertTrue(self.text_vma <= address < self.text_vma + self.text_size)
+        offset = self.text_offset + address - self.text_vma
+        return int.from_bytes(self.elf.read_bytes()[offset : offset + 2], "little")
+
     def coordinator(self):
         functions = entry_check.function_bodies(self.disassembly)
         name = next(
@@ -115,7 +120,36 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
         probe = self.patch_halfword(
             "eeprom-error-continues.elf", branch_address, encoding
         )
-        with self.assertRaisesRegex(entry_check.EntryError, "first-error"):
+        with self.assertRaisesRegex(
+            entry_check.EntryError, "first-error|success tag"
+        ):
+            self.validate(probe)
+
+    def test_actual_eeprom_success_polarity_is_checked(self):
+        _, body = self.coordinator()
+        rows = entry_check.instructions(body)
+        first_read = next(
+            index
+            for index, (_, mnemonic, operands) in enumerate(rows)
+            if mnemonic.startswith("bl")
+            and "eeprom_read_transport::execute_read::<" in operands
+            and "+0x" not in operands
+        )
+        conditional = next(
+            index
+            for index in range(first_read + 1, first_read + 9)
+            if entry_check.CONDITIONAL_BRANCH.fullmatch(rows[index][1])
+        )
+        address, mnemonic, _ = rows[conditional]
+        self.assertIn(mnemonic, {"beq", "beq.n", "beq.w"})
+        encoding = self.read_halfword(address)
+        self.assertEqual(encoding & 0xFF00, 0xD000)
+        probe = self.patch_halfword(
+            "eeprom-success-polarity.elf", address, encoding ^ 0x0100
+        )
+        with self.assertRaisesRegex(
+            entry_check.EntryError, "success tag does not select continuation"
+        ):
             self.validate(probe)
 
 

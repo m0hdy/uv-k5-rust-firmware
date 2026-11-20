@@ -21,6 +21,7 @@ INSTRUCTION = re.compile(
 CONDITIONAL_BRANCH = re.compile(
     r"b(?:eq|ne|cs|cc|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.n|\.w)?"
 )
+EEPROM_SUCCESS_TAG = 2
 
 
 def function_body(disassembly: str, symbol: str) -> str:
@@ -248,7 +249,45 @@ def require_result_guards(
                 raise EntryError(
                     f"{called_fragment} result is not checked before the next executor"
                 )
+        comparisons = [
+            (offset, re.fullmatch(r"(r[0-7]),\s*#(\d+)", operands.strip()))
+            for offset, (_, mnemonic, operands) in enumerate(following[:conditional])
+            if mnemonic == "cmp"
+        ]
+        comparisons = [
+            (offset, match) for offset, match in comparisons if match is not None
+        ]
+        if not comparisons:
+            raise EntryError(
+                f"{called_fragment} payload result tag is not compared"
+            )
+        comparison, comparison_match = comparisons[-1]
+        compared_register = comparison_match.group(1)
+        if int(comparison_match.group(2)) != EEPROM_SUCCESS_TAG:
+            raise EntryError(
+                f"{called_fragment} payload result tag does not use the success code"
+            )
+        payload_load = next(
+            (
+                (mnemonic, operands)
+                for _, mnemonic, operands in reversed(following[:comparison])
+                if re.match(rf"{compared_register}\s*,", operands)
+            ),
+            None,
+        )
+        if payload_load is None or payload_load[0] != "ldr" or not re.fullmatch(
+            rf"{compared_register},\s*\[sp,\s*#\d+\]",
+            payload_load[1].split("@")[0].strip(),
+        ):
+            raise EntryError(
+                f"{called_fragment} comparison is not loaded from its result payload"
+            )
         branch_address = following[conditional][0]
+        branch_mnemonic = following[conditional][1]
+        if not re.fullmatch(r"b(?:eq|ne)(?:\.n|\.w)?", branch_mnemonic):
+            raise EntryError(
+                f"{called_fragment} payload result tag is not checked for equality"
+            )
         target = branch_target(following[conditional][2])
         if target is None or not function_start <= target < function_end:
             raise EntryError(
@@ -274,15 +313,23 @@ def require_result_guards(
                 f"{called_fragment} result has no reachable later startup stage"
             )
         successors = instruction_successors(rows, indices[branch_address])
-        reaches_continuation = [
-            continuation in reachable_instruction_addresses(rows, [successor])
-            for successor in successors
-        ]
-        if len(successors) != 2 or reaches_continuation.count(True) != 1:
+        if len(successors) != 2:
             raise EntryError(
                 f"{called_fragment} result does not split continuation from first-error return"
             )
-        short_circuit = successors[reaches_continuation.index(False)]
+        equality_successor = (
+            successors[0] if branch_mnemonic.startswith("beq") else successors[1]
+        )
+        error_successor = (
+            successors[1] if branch_mnemonic.startswith("beq") else successors[0]
+        )
+        success_path = reachable_instruction_addresses(rows, [equality_successor])
+        error_path = reachable_instruction_addresses(rows, [error_successor])
+        if continuation not in success_path or continuation in error_path:
+            raise EntryError(
+                f"{called_fragment} success tag does not select continuation"
+            )
+        short_circuit = error_successor
         short_path = reachable_instruction_addresses(rows, [short_circuit])
         returns = {
             address

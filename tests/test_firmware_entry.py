@@ -29,14 +29,17 @@ DISASSEMBLY = """
  510: bl 640 <board::StartupIo>::adc_init>
  514: bl 650 <board::StartupIo>::st7565_init>
  518: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>
- 51c: cmp r0, #0
+ 51a: ldr r0, [sp, #0]
+ 51c: cmp r0, #2
  51e: beq.n 524 <coordinate_with_welcome::<TargetBootIo>+0x24>
  520: b.n 580 <coordinate_with_welcome::<TargetBootIo>+0x80>
  524: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>
- 528: cmp r0, #0
+ 526: ldr r0, [sp, #0]
+ 528: cmp r0, #2
  52a: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x80>
  52c: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>
- 530: cmp r0, #0
+ 52e: ldr r0, [sp, #0]
+ 530: cmp r0, #2
  532: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x80>
  534: bl 710 <adc_samples::decode_adc_sample>
  538: bl 720 <adc_samples::calibrated_battery_voltage>
