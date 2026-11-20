@@ -1,12 +1,15 @@
+use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
 use std::num::NonZeroU32;
+use uv_k5_rust_firmware::bk1080_startup_adapter::{self, ShutdownError, shutdown_with_io};
+use uv_k5_rust_firmware::i2c_bitbang_flow::target_gpio::Delay1us;
 
 #[path = "../src/crc_startup_adapter.rs"]
 mod crc_startup_adapter;
 
 use uv_k5_rust_firmware::boot_coordinator::{
-    Acknowledgement, BatteryReadRegister, BatteryRegisterIo, BatteryWriteRegister, BoardCall,
-    BoardDefines, BoardStartupError, BootConfig, BootError, I2cTransport, SettingsBootBlock,
+    Acknowledgement, BatteryReadRegister, BatteryRegisterIo, BatteryWriteRegister, BoardDefines,
+    BoardStartupError, BootConfig, BootError, I2cTransport, SettingsBootBlock,
     SettingsBootReadError, StartupIo, coordinate,
 };
 use uv_k5_rust_firmware::settings_boot_composition::{Features as SettingsFeatures, ReadError};
@@ -39,7 +42,11 @@ enum Event {
     AdcInit(u16),
     St7565Init(NonZeroU32),
     CrcWrite(usize, u32),
-    BoardPlaceholder(BoardCall),
+    FmStart,
+    FmWrite(u8),
+    FmStop,
+    FmRead(usize),
+    FmGpioWrite(usize, u32),
     EepromStart,
     EepromWrite(u8),
     EepromRepeatedStart,
@@ -67,6 +74,72 @@ enum Failure {
     Display,
     Eeprom,
     Battery,
+    FmStart,
+    FmNack(usize),
+    FmWrite(usize),
+    FmStop,
+    FmCleanupStop(usize),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FmError {
+    Start,
+    Write(usize),
+    Stop,
+}
+
+struct FmBus<'a> {
+    trace: &'a RefCell<Vec<Event>>,
+    failure: Failure,
+    writes: usize,
+}
+impl I2cTransport for FmBus<'_> {
+    type Error = FmError;
+    fn start(&mut self) -> Result<(), FmError> {
+        self.trace.borrow_mut().push(Event::FmStart);
+        if self.failure == Failure::FmStart {
+            Err(FmError::Start)
+        } else {
+            Ok(())
+        }
+    }
+    fn repeated_start(&mut self) -> Result<(), FmError> {
+        unreachable!()
+    }
+    fn write_byte(&mut self, byte: u8) -> Result<Acknowledgement, FmError> {
+        self.trace.borrow_mut().push(Event::FmWrite(byte));
+        let index = self.writes;
+        self.writes += 1;
+        match self.failure {
+            Failure::FmNack(i) if i == index => Ok(Acknowledgement::Nack),
+            Failure::FmWrite(i) | Failure::FmCleanupStop(i) if i == index => {
+                Err(FmError::Write(index))
+            }
+            _ => Ok(Acknowledgement::Ack),
+        }
+    }
+    fn read_buffer(&mut self, _: &mut [u8]) -> Result<(), FmError> {
+        unreachable!()
+    }
+    fn stop(&mut self) -> Result<(), FmError> {
+        self.trace.borrow_mut().push(Event::FmStop);
+        if matches!(self.failure, Failure::FmStop | Failure::FmCleanupStop(_)) {
+            Err(FmError::Stop)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+struct FmGpio<'a>(&'a RefCell<Vec<Event>>);
+impl bk1080_startup_adapter::WordIo for FmGpio<'_> {
+    fn read_word(&mut self, address: usize) -> u32 {
+        self.0.borrow_mut().push(Event::FmRead(address));
+        5
+    }
+    fn write_word(&mut self, address: usize, value: u32) {
+        self.0.borrow_mut().push(Event::FmGpioWrite(address, value));
+    }
 }
 
 struct MockIo {
@@ -81,6 +154,12 @@ struct MockIo {
 
 #[derive(Default)]
 struct DelayProbe(Vec<u16>);
+
+impl Delay1us for DelayProbe {
+    fn delay_1us(&mut self) {
+        self.0.push(1);
+    }
+}
 
 impl DelayMs for DelayProbe {
     fn delay_ms(&mut self, milliseconds: u16) {
@@ -135,11 +214,12 @@ impl MockIo {
 }
 
 impl StartupIo for MockIo {
+    type FmError = FmError;
     fn device_clock_gates(&mut self) {
         self.events.push(Event::DeviceClockGates);
     }
 
-    fn systick(&mut self, period_ticks: u32) -> Result<(), BoardStartupError> {
+    fn systick(&mut self, period_ticks: u32) -> Result<(), BoardStartupError<Self::FmError>> {
         self.events.push(Event::Systick(period_ticks));
         if self.failure == Failure::Systick {
             Err(BoardStartupError::SysTick)
@@ -173,8 +253,22 @@ impl StartupIo for MockIo {
         startup_with_io(self, delay, fifo_poll_limit)
     }
 
-    fn placeholder(&mut self, call: BoardCall) {
-        self.events.push(Event::BoardPlaceholder(call));
+    fn bk1080_shutdown(
+        &mut self,
+        delay: &mut dyn Delay1us,
+    ) -> Result<(), ShutdownError<Self::FmError>> {
+        delay.delay_1us();
+        let trace = RefCell::new(Vec::new());
+        let result = shutdown_with_io(
+            &mut FmBus {
+                trace: &trace,
+                failure: self.failure,
+                writes: 0,
+            },
+            &mut FmGpio(&trace),
+        );
+        self.events.extend(trace.into_inner());
+        result
     }
 
     fn crc_init(&mut self) {
@@ -272,7 +366,7 @@ fn config() -> BootConfig {
 fn success_runs_board_then_fallible_settings_then_bounded_battery_sampling() {
     let mut io = MockIo::new(Failure::None);
     let mut delay = DelayProbe::default();
-    let state = coordinate(&mut io, &mut delay, config()).unwrap();
+    let state = coordinate(&mut io, &mut delay, &mut DelayProbe::default(), config()).unwrap();
 
     assert_eq!(state.settings.core.call_channel, 73);
     assert_eq!(state.settings.display.channel_display_mode, 3);
@@ -282,7 +376,7 @@ fn success_runs_board_then_fallible_settings_then_bounded_battery_sampling() {
     let last_board = io
         .events
         .iter()
-        .rposition(|event| matches!(event, Event::St7565Init(_) | Event::BoardPlaceholder(_)))
+        .rposition(|event| matches!(event, Event::St7565Init(_) | Event::FmGpioWrite(_, _)))
         .unwrap();
     let first_eeprom = io
         .events
@@ -351,7 +445,7 @@ fn board_failure_stops_before_eeprom_and_battery_and_returns_no_app_state() {
     config.board.enabled_aircopy = true;
 
     assert_eq!(
-        coordinate(&mut io, &mut delay, config),
+        coordinate(&mut io, &mut delay, &mut DelayProbe::default(), config),
         Err(BootError::Board(BoardStartupError::SysTick))
     );
     assert_eq!(
@@ -369,7 +463,7 @@ fn display_failure_preserves_cause_and_stops_before_settings_and_battery() {
     config.board.enable_uart = true;
     config.board.enable_fmradio = true;
     assert_eq!(
-        coordinate(&mut io, &mut delay, config),
+        coordinate(&mut io, &mut delay, &mut DelayProbe::default(), config),
         Err(BootError::Board(BoardStartupError::St7565(
             LineError::FifoTimeout
         )))
@@ -394,7 +488,7 @@ fn crc_truth_table_precedes_settings_and_battery() {
             config.board.enable_fmradio = true;
             config.board.enable_uart = uart;
             config.board.enabled_aircopy = aircopy;
-            coordinate(&mut io, &mut delay, config).unwrap();
+            coordinate(&mut io, &mut delay, &mut DelayProbe::default(), config).unwrap();
             let display = io
                 .events
                 .iter()
@@ -405,7 +499,16 @@ fn crc_truth_table_precedes_settings_and_battery() {
                 .iter()
                 .position(|event| *event == Event::EepromStart)
                 .unwrap();
-            let mut expected = vec![Event::BoardPlaceholder(BoardCall::Bk1080Init0)];
+            let mut expected = vec![
+                Event::FmStart,
+                Event::FmWrite(0x80),
+                Event::FmWrite(0x04),
+                Event::FmWrite(0x02),
+                Event::FmWrite(0x41),
+                Event::FmStop,
+                Event::FmRead(GPIOB_DATA),
+                Event::FmGpioWrite(GPIOB_DATA, 0x8005),
+            ];
             if uart || aircopy {
                 expected.extend([
                     Event::CrcWrite(0x4000_3000, 0x100),
@@ -418,12 +521,83 @@ fn crc_truth_table_precedes_settings_and_battery() {
 }
 
 #[test]
+fn fm_failures_preserve_wire_cleanup_gpio_and_abort_boot() {
+    let cases = [Failure::FmStart, Failure::FmStop]
+        .into_iter()
+        .chain((0..4).flat_map(|i| {
+            [
+                Failure::FmNack(i),
+                Failure::FmWrite(i),
+                Failure::FmCleanupStop(i),
+            ]
+        }));
+    for failure in cases {
+        let mut io = MockIo::new(failure);
+        let mut display_delay = DelayProbe::default();
+        let mut fm_delay = DelayProbe::default();
+        let mut config = config();
+        config.board.enable_fmradio = true;
+        config.board.enable_uart = true;
+        let error = match failure {
+            Failure::FmStart => ShutdownError::Transport(FmError::Start),
+            Failure::FmStop => ShutdownError::Transport(FmError::Stop),
+            Failure::FmNack(_) => ShutdownError::NotAcknowledged,
+            Failure::FmWrite(i) | Failure::FmCleanupStop(i) => {
+                ShutdownError::Transport(FmError::Write(i))
+            }
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            coordinate(&mut io, &mut display_delay, &mut fm_delay, config),
+            Err(BootError::Board(BoardStartupError::Bk1080(error))),
+            "{failure:?}"
+        );
+        let mut expected = vec![Event::FmStart];
+        let count = match failure {
+            Failure::FmStart => 0,
+            Failure::FmStop => 4,
+            Failure::FmNack(i) | Failure::FmWrite(i) | Failure::FmCleanupStop(i) => i + 1,
+            _ => unreachable!(),
+        };
+        expected.extend(
+            [0x80, 0x04, 0x02, 0x41]
+                .into_iter()
+                .take(count)
+                .map(Event::FmWrite),
+        );
+        if failure != Failure::FmStart {
+            expected.push(Event::FmStop);
+        }
+        expected.extend([
+            Event::FmRead(GPIOB_DATA),
+            Event::FmGpioWrite(GPIOB_DATA, 0x8005),
+        ]);
+        assert_eq!(&io.events[7..], expected, "{failure:?}");
+        assert_eq!(fm_delay.0, [1]);
+        assert_eq!(display_delay.0, [1, 20, 120, 120, 1, 1, 40]);
+    }
+}
+
+#[test]
+fn disabled_fm_does_not_use_fm_delay_or_touch_bus_and_gpio() {
+    let mut io = MockIo::new(Failure::FmStart);
+    let mut display_delay = DelayProbe::default();
+    let mut fm_delay = DelayProbe::default();
+    coordinate(&mut io, &mut display_delay, &mut fm_delay, config()).unwrap();
+    assert!(fm_delay.0.is_empty());
+    assert!(!io.events.iter().any(|e| matches!(
+        e,
+        Event::FmStart | Event::FmRead(_) | Event::FmGpioWrite(_, _)
+    )));
+}
+
+#[test]
 fn eeprom_failure_stops_before_battery_and_returns_no_app_state() {
     let mut io = MockIo::new(Failure::Eeprom);
     let mut delay = DelayProbe::default();
 
     assert_eq!(
-        coordinate(&mut io, &mut delay, config()),
+        coordinate(&mut io, &mut delay, &mut DelayProbe::default(), config()),
         Err(BootError::Settings(SettingsBootReadError {
             block: SettingsBootBlock::Core,
             error: ReadError::Transport(EepromError::Transfer),
@@ -442,7 +616,7 @@ fn battery_failure_returns_no_app_state_after_complete_settings_reads() {
     let mut delay = DelayProbe::default();
 
     assert!(matches!(
-        coordinate(&mut io, &mut delay, config()),
+        coordinate(&mut io, &mut delay, &mut DelayProbe::default(), config()),
         Err(BootError::Battery(_))
     ));
     assert_eq!(

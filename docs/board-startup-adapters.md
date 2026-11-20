@@ -9,14 +9,17 @@ reuses `adc_startup_adapter::apply_to_hardware` after backlight. The next
 `Call::St7565Init` reuses
 `st7565_startup_executor::target_spi0::startup_mmio`. `BootConfig` supplies
 the ADC's `exttrig_sel` and a nonzero ST7565 FIFO poll budget; the caller
-supplies the millisecond `DelayMs` implementation. The pinned
+supplies independent millisecond `DelayMs` and microsecond `Delay1us`
+implementations. The pinned
 `BOARD_ADC_Init()` leaves `EXTTRIG_SEL` uninitialised, so no production value
-is selected here. After the optional BK1080 placeholder, `Call::CrcInit`
+is selected here. `Call::Bk1080Init0` uses the existing
+`bk1080_startup_adapter::shutdown_mmio` when FM is enabled. It means
+`BK1080_Init(0, 0)`, not receive initialization. After this optional shutdown,
+`Call::CrcInit`
 uses `crc_startup_adapter::apply_to_hardware` exactly once if `ENABLE_UART` or
-`ENABLED_AIRCOPY` is present. Otherwise no CRC register is accessed. BK1080
-remains a typed placeholder. SysTick or
-ST7565 failure stops all later board calls; an ST7565 failure retains its
-`LineError` cause.
+`ENABLED_AIRCOPY` is present. Otherwise no CRC register is accessed. SysTick,
+ST7565 or BK1080 failure stops all later board calls; display and FM failures
+retain their typed causes.
 
 ```mermaid
 flowchart LR
@@ -27,9 +30,10 @@ flowchart LR
   Light --> ADC["SARADC adapter\ncaller-supplied EXTTRIG_SEL"]
   ADC --> Display["ST7565 SPI0/reset/startup and zero-fill page selection"]
   Display --> FM{"ENABLE_FMRADIO?"}
-  FM -->|yes| BK["BK1080 placeholder"]
+  FM -->|yes| BK["BK1080 shutdown"]
   FM -->|no| CRC{"ENABLE_UART or ENABLED_AIRCOPY?"}
-  BK --> CRC
+  BK -->|success| CRC
+  BK -->|bus error| Stop
   CRC -->|yes| Init["CRC adapter"]
   CRC -->|no| Done["Board complete"]
   Init --> Done
@@ -40,12 +44,30 @@ The host tests check the composed call order, exact ADC trigger and display
 poll-budget forwarding, caller delay use, backlight register sequence, fresh
 read-modify-write behavior, preservation of unrelated clock and PORTB bits,
 and error short-circuiting. The boot integration test runs the existing
-`target_spi0::startup_with_io` and CRC word executors and checks their traces.
+`target_spi0::startup_with_io`, BK1080 shutdown and CRC word executors and
+checks their traces.
 Target execution requires the DP32G030 PWM_PLUS0 and PORTB register mappings,
 the PWM_PLUS0 clock gate enabled by the earlier clock-gate stage, B6 reserved
 for the backlight and selected for PWMP0_CH0 by the backlight mux update, and
 exclusive access to PWM_PLUS0 CLKSRC, PERIOD, GEN, CFG and PORTB SEL0 for the
 complete sequence.
+
+The FM shutdown sends START, `80 04 02 41`, STOP, then freshly reads GPIOB
+DATA and writes it with PB15 set. A failed START has no STOP; a failed write
+or NACK gets one best-effort cleanup STOP, and a failed final STOP is not
+retried. PB15 is asserted after cleanup even on error, and the original typed
+bus error is returned. Disabled FM performs no FM bus transaction or PB15
+access; an earlier board failure prevents the shutdown.
+
+For enabled FM, GPIOA, GPIOB and PORTCON must be mapped and clocked, PA10/11
+must be muxed and initialized for GPIO I2C, and PB15 must be a GPIO output.
+Own the shared bus exclusively and suspend keypad use through the transaction,
+cleanup and PA10/11 handoff back to keypad mode. Serialize that entire interval
+against all writers and interrupt handlers touching GPIOA DATA/DIR, PORTA
+input-enable/open-drain or GPIOB DATA, including unrelated-bit writers, because
+the operations are whole-register read-modify-writes. Supply an accurate,
+non-panicking `Delay1us` that does not access shared registers; no timing
+policy is inferred.
 
 The earlier device-clock assignment already enables CRC bit 27; no new
 clock policy is introduced. For an enabled CRC stage, the caller must ensure
@@ -88,9 +110,9 @@ nor the link-only witness supplies operational handlers. The default
 `firmware_main` path remains unchanged; this board-stage wiring does not
 invoke it or complete application startup.
 
-The link-only witness enables a synthetic CRC feature and uses a delay stand-in
-only to retain and inspect the concrete target call path. It does not model
-elapsed time, provide production timing, or establish a display timing policy;
+The link-only witness enables synthetic FM and CRC features and uses delay
+stand-ins only to retain and inspect the concrete target call path. It does
+not model elapsed time, provide production timing, or establish a timing policy;
 the witness is never executed or published. The synthetic feature configuration
 is not production policy.
 
@@ -108,9 +130,9 @@ and link-only checks do not establish any of these hardware preconditions.
 CI separately links `startup-witness/` for Cortex-M0 with a dedicated
 vector table and a returning SysTick handler. Its linker places code at
 `0x10000000` and RAM at `0x20010000`, outside the DP32G030 memory map, and
-enforces 16 KiB code/load and 4 KiB RAM limits. The inspection checks vector
-targets, the linked sequencer-to-adapter call path, reachable ADC, ST7565, and
-CRC stages, the concrete `startup_mmio` to `startup_with_io` call chain,
+enforces 16 KiB code/load and 4 KiB RAM limits. Inspection covers vector
+targets, the linked sequencer-to-adapter call path, reachable ADC, ST7565, FM,
+and CRC stages, the concrete display `startup_mmio` to `startup_with_io` call chain,
 reachable backlight register accesses and their order, retained adapter
 symbols, and section budgets. The ADC path is checked through its existing
 word adapter to `apply_with_io`; the
@@ -119,31 +141,17 @@ tests. The SysTick vector must match the exact linked handler symbol, whose
 first instruction must be `bx lr`.
 
 The backend-dispatch check is intentionally pinned to the emitted Cortex-M0
-shape. It requires the function entry to save incoming `r1` (the variant) at
-`sp+12` and the `self` pointer at `sp+8`, load the saved variant, byte-extend
-and save the index, then reload it from `sp+4`, scale it, address the literal
-nine-entry table, and branch through its entry. The
-first six backend cases are checked through their matching hardware call and
-the following continuation to the shared stack teardown; this includes the
-ADC case's forwarded trigger field. The seventh, ST7565 case pins the receiver,
-delay and FIFO-limit arguments, checks the returned error encoding, and checks
-both the success and typed-error paths through the shared stack teardown. The
-error path must set the stopped flag and preserve the error payload. The ST7565
-target entry is separately checked for calls into `startup_mmio` and
-`startup_with_io`. The backlight case must reach the real executor and preserve
-the pinned register sequence.
-The CRC case must reach the concrete hardware adapter and its two ordered
-word writes; BK1080 retains its placeholder case. The SysTick case also checks
-the `Result::is_err` split: success continues to
-teardown, while the error edge stores the stopped flag before joining that same
-teardown. The sequencer's first seven backend calls are checked for their call
-continuations and the optional FM-radio and CRC paths are checked through their
-shared return epilogue. The `run_hardware` wrapper and all seven target
-wrappers and CRC wrapper chain are checked through stack cleanup and return.
-The display entry is checked for its call into the existing MMIO startup
-executor, and that entry is checked for its call into `startup_with_io`. The
-`run_hardware` wrapper returns the board result without clobbering it; the
-backend's success and error edges reach their shared return. Reset and
+shape and the nine sequencer variants. The ST7565 case checks its arguments,
+returned error encoding and success and error continuations. The ADC case
+forwards the trigger field, the backlight path preserves the pinned register
+sequence, and the CRC path reaches its two ordered word writes. The FM case
+checks delay forwarding, typed success/error continuations, the shutdown and
+keypad handoff frames, and the PB15 read/modify/write after the transaction.
+Pinned complete emitted bodies cover the transaction, GPIO bitbang and target
+register operations. Referenced `.text` data is checked for the High/Output and
+Low/ACK comparison values, the iterator's empty sentinel, and GPIO register
+dispatch table and literals, along with the delay vtables. A change to the
+emitted bodies requires a fresh disassembly audit. Reset and
 `witness_main` retain their intentional terminal loops and are not treated as
 returning wrappers.
 Unexpected instructions, conditional branches, or changed guard inputs,
@@ -163,13 +171,14 @@ cargo clippy --locked --test board_startup_adapters --test boot_coordinator \
   --test board_startup_composition --test backlight_startup_executor \
   --test adc_startup_adapter -- -D warnings
 RUSTFLAGS='-D warnings' cargo check --locked --lib --target thumbv6m-none-eabi
-python3 -m unittest tests.test_startup_witness
+python3 -m unittest discover -s tests -p 'test_startup_witness.py' -q
 RUSTFLAGS='-D warnings -C link-arg=-Tlinker/startup-witness.ld -C link-arg=-Map=../target/startup-witness/startup-adapter-witness.map' \
   cargo build --locked \
   --manifest-path startup-witness/Cargo.toml \
   --target thumbv6m-none-eabi \
   --release \
   --target-dir target/startup-witness
+python3 -m unittest discover -s tests -p 'test_startup_witness_emission.py' -q
 python3 scripts/check_startup_witness.py \
   --elf target/startup-witness/thumbv6m-none-eabi/release/startup-adapter-witness
 ```

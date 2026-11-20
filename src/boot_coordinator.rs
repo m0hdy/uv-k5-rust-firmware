@@ -9,6 +9,7 @@ mod board_startup_adapters;
 #[path = "startup_battery_sampling.rs"]
 mod startup_battery_sampling;
 
+use crate::i2c_bitbang_flow::target_gpio::Delay1us;
 use crate::settings_boot_composition;
 pub use crate::settings_boot_composition::{
     Acknowledgement, I2cTransport, ReadError, ReadPlan, SettingsBoot, SettingsBootBlock,
@@ -49,8 +50,8 @@ pub struct ApplicationStartup {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BootError<E> {
-    Board(BoardStartupError),
+pub enum BootError<E, F> {
+    Board(BoardStartupError<F>),
     Settings(SettingsBootReadError<E>),
     Battery(StartupBatteryError),
 }
@@ -59,13 +60,16 @@ pub enum BootError<E> {
 pub fn coordinate<IO: BootIo>(
     io: &mut IO,
     display_delay: &mut dyn DelayMs,
+    fm_delay: &mut dyn Delay1us,
     config: BootConfig,
-) -> Result<ApplicationStartup, BootError<<IO as I2cTransport>::Error>> {
+) -> Result<ApplicationStartup, BootError<<IO as I2cTransport>::Error, <IO as StartupIo>::FmError>>
+{
     board_startup_adapters::run(
         config.board,
         config.enable_swd,
         config.exttrig_sel,
         display_delay,
+        fm_delay,
         config.st7565_fifo_poll_limit,
         io,
     )

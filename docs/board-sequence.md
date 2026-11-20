@@ -61,7 +61,7 @@ flowchart LR
     Gates[Device clock gates] --> Tick[SysTick] --> Port[PortCon]
     Port --> GPIO --> Backlight --> ADC --> LCD
     LCD --> FM{ENABLE_FMRADIO?}
-    FM -- yes --> Receive[BK1080_Init0]
+    FM -- yes --> Receive[BK1080_Init0 shutdown]
     FM -- no --> CRC{ENABLE_UART or ENABLED_AIRCOPY?}
     Receive --> CRC
     CRC -- yes --> Init[CRC_Init] --> Done

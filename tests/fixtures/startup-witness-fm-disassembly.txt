@@ -1,0 +1,1205 @@
+1000165e <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::new_target>:
+1000165e:	b580      	push	{r7, lr}
+10001660:	af00      	add	r7, sp, #0
+10001662:	f000 f947 	bl	100018f4 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::new>
+10001666:	bd80      	pop	{r7, pc}
+
+
+100018f4 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::new>:
+100018f4:	b580      	push	{r7, lr}
+100018f6:	af00      	add	r7, sp, #0
+100018f8:	b081      	sub	sp, #4
+100018fa:	9100      	str	r1, [sp, #0]
+100018fc:	4601      	mov	r1, r0
+100018fe:	9800      	ldr	r0, [sp, #0]
+10001900:	6008      	str	r0, [r1, #0]
+10001902:	604a      	str	r2, [r1, #4]
+10001904:	2000      	movs	r0, #0
+10001906:	7208      	strb	r0, [r1, #8]
+10001908:	b001      	add	sp, #4
+1000190a:	bd80      	pop	{r7, pc}
+
+
+100011a6 <<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>::new>:
+100011a6:	b580      	push	{r7, lr}
+100011a8:	af00      	add	r7, sp, #0
+100011aa:	bd80      	pop	{r7, pc}
+
+
+1000062e <core::ptr::drop_glue::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>:
+1000062e:	b580      	push	{r7, lr}
+10000630:	af00      	add	r7, sp, #0
+10000632:	f002 fa7d 	bl	10002b30 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as core::ops::drop::Drop>::drop>
+10000636:	bd80      	pop	{r7, pc}
+
+
+10002b30 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as core::ops::drop::Drop>::drop>:
+10002b30:	b580      	push	{r7, lr}
+10002b32:	af00      	add	r7, sp, #0
+10002b34:	b082      	sub	sp, #8
+10002b36:	9001      	str	r0, [sp, #4]
+10002b38:	7a00      	ldrb	r0, [r0, #8]
+10002b3a:	07c0      	lsls	r0, r0, #31
+10002b3c:	2800      	cmp	r0, #0
+10002b3e:	d104      	bne.n	10002b4a <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as core::ops::drop::Drop>::drop+0x1a>
+10002b40:	e7ff      	b.n	10002b42 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as core::ops::drop::Drop>::drop+0x12>
+10002b42:	9801      	ldr	r0, [sp, #4]
+10002b44:	f7fe feb7 	bl	100018b6 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::restore_keypad_mode>
+10002b48:	e7ff      	b.n	10002b4a <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as core::ops::drop::Drop>::drop+0x1a>
+10002b4a:	b002      	add	sp, #8
+10002b4c:	bd80      	pop	{r7, pc}
+
+
+100028f8 <<<startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef as startup_adapter_witness::i2c_bitbang_flow::target_gpio::Delay1us>::delay_1us>:
+100028f8:	b580      	push	{r7, lr}
+100028fa:	af00      	add	r7, sp, #0
+100028fc:	4601      	mov	r1, r0
+100028fe:	6808      	ldr	r0, [r1, #0]
+10002900:	6849      	ldr	r1, [r1, #4]
+10002902:	68c9      	ldr	r1, [r1, #12]
+10002904:	4788      	blx	r1
+10002906:	bd80      	pop	{r7, pc}
+
+
+10002ff4 <<startup_adapter_witness::LinkOnlyDelay as startup_adapter_witness::i2c_bitbang_flow::target_gpio::Delay1us>::delay_1us>:
+10002ff4:	b580      	push	{r7, lr}
+10002ff6:	af00      	add	r7, sp, #0
+10002ff8:	bd80      	pop	{r7, pc}
+
+
+1000267c <<startup_adapter_witness::LinkOnlyDelay as startup_adapter_witness::st7565_startup_executor::target_spi0::DelayMs>::delay_ms>:
+1000267c:	b580      	push	{r7, lr}
+1000267e:	af00      	add	r7, sp, #0
+10002680:	bd80      	pop	{r7, pc}
+
+
+1000043c <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>>:
+1000043c:	b580      	push	{r7, lr}
+1000043e:	af00      	add	r7, sp, #0
+10000440:	b090      	sub	sp, #64	@ 0x40
+10000442:	9002      	str	r0, [sp, #8]
+10000444:	f002 fdf4 	bl	10003030 <<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>> as startup_adapter_witness::eeprom_read_transport::I2cTransport>::start>
+10000448:	f7ff fe54 	bl	100000f4 <<core::result::Result<(), core::convert::Infallible>>::map_err::<startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>, startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>::Transport>>
+1000044c:	f002 fffe 	bl	1000344c <<core::result::Result<(), startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>> as core::ops::try_trait::Try>::branch>
+10000450:	4601      	mov	r1, r0
+10000452:	a804      	add	r0, sp, #16
+10000454:	7001      	strb	r1, [r0, #0]
+10000456:	7800      	ldrb	r0, [r0, #0]
+10000458:	07c0      	lsls	r0, r0, #31
+1000045a:	2800      	cmp	r0, #0
+1000045c:	d006      	beq.n	1000046c <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>+0x30>
+1000045e:	e7ff      	b.n	10000460 <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>+0x24>
+10000460:	4834      	ldr	r0, [pc, #208]	@ (10000534 <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>+0xf8>)
+10000462:	f003 f826 	bl	100034b2 <<core::result::Result<(), startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>> as core::ops::try_trait::FromResidual<core::result::Result<core::convert::Infallible, startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>>>>::from_residual>
+10000466:	a903      	add	r1, sp, #12
+10000468:	7008      	strb	r0, [r1, #0]
+1000046a:	e040      	b.n	100004ee <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>+0xb2>
+1000046c:	a808      	add	r0, sp, #32
+1000046e:	9001      	str	r0, [sp, #4]
+10000470:	2180      	movs	r1, #128	@ 0x80
+10000472:	7001      	strb	r1, [r0, #0]
+10000474:	2104      	movs	r1, #4
+10000476:	7041      	strb	r1, [r0, #1]
+10000478:	2102      	movs	r1, #2
+1000047a:	7081      	strb	r1, [r0, #2]
+1000047c:	2141      	movs	r1, #65	@ 0x41
+1000047e:	70c1      	strb	r1, [r0, #3]
+10000480:	7802      	ldrb	r2, [r0, #0]
+10000482:	7841      	ldrb	r1, [r0, #1]
+10000484:	0209      	lsls	r1, r1, #8
+10000486:	1889      	adds	r1, r1, r2
+10000488:	7882      	ldrb	r2, [r0, #2]
+1000048a:	0412      	lsls	r2, r2, #16
+1000048c:	78c0      	ldrb	r0, [r0, #3]
+1000048e:	0600      	lsls	r0, r0, #24
+10000490:	1880      	adds	r0, r0, r2
+10000492:	1840      	adds	r0, r0, r1
+10000494:	900f      	str	r0, [sp, #60]	@ 0x3c
+10000496:	990f      	ldr	r1, [sp, #60]	@ 0x3c
+10000498:	a805      	add	r0, sp, #20
+1000049a:	f002 fb24 	bl	10002ae6 <<[u8; 4] as core::iter::traits::collect::IntoIterator>::into_iter>
+1000049e:	9807      	ldr	r0, [sp, #28]
+100004a0:	900b      	str	r0, [sp, #44]	@ 0x2c
+100004a2:	9806      	ldr	r0, [sp, #24]
+100004a4:	900a      	str	r0, [sp, #40]	@ 0x28
+100004a6:	9805      	ldr	r0, [sp, #20]
+100004a8:	9009      	str	r0, [sp, #36]	@ 0x24
+100004aa:	e7ff      	b.n	100004ac <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>+0x70>
+100004ac:	a809      	add	r0, sp, #36	@ 0x24
+100004ae:	f002 fcf2 	bl	10002e96 <<core::array::iter::IntoIter<u8, 4> as core::iter::traits::iterator::Iterator>::next>
+100004b2:	4602      	mov	r2, r0
+100004b4:	2001      	movs	r0, #1
+100004b6:	4002      	ands	r2, r0
+100004b8:	a80c      	add	r0, sp, #48	@ 0x30
+100004ba:	7002      	strb	r2, [r0, #0]
+100004bc:	7041      	strb	r1, [r0, #1]
+100004be:	7800      	ldrb	r0, [r0, #0]
+100004c0:	07c0      	lsls	r0, r0, #31
+100004c2:	2800      	cmp	r0, #0
+100004c4:	d008      	beq.n	100004d8 <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>+0x9c>
+100004c6:	e7ff      	b.n	100004c8 <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>+0x8c>
+100004c8:	9802      	ldr	r0, [sp, #8]
+100004ca:	a90c      	add	r1, sp, #48	@ 0x30
+100004cc:	7849      	ldrb	r1, [r1, #1]
+100004ce:	f002 fd94 	bl	10002ffa <<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>> as startup_adapter_witness::eeprom_read_transport::I2cTransport>::write_byte>
+100004d2:	a90e      	add	r1, sp, #56	@ 0x38
+100004d4:	7008      	strb	r0, [r1, #0]
+100004d6:	e00e      	b.n	100004f6 <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>+0xba>
+100004d8:	a809      	add	r0, sp, #36	@ 0x24
+100004da:	f000 f8a3 	bl	10000624 <core::ptr::drop_glue::<core::array::iter::IntoIter<u8, 4>>>
+100004de:	9802      	ldr	r0, [sp, #8]
+100004e0:	f002 fda0 	bl	10003024 <<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>> as startup_adapter_witness::eeprom_read_transport::I2cTransport>::stop>
+100004e4:	f7ff fe06 	bl	100000f4 <<core::result::Result<(), core::convert::Infallible>>::map_err::<startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>, startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>::Transport>>
+100004e8:	a903      	add	r1, sp, #12
+100004ea:	7008      	strb	r0, [r1, #0]
+100004ec:	e7ff      	b.n	100004ee <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>+0xb2>
+100004ee:	a803      	add	r0, sp, #12
+100004f0:	7800      	ldrb	r0, [r0, #0]
+100004f2:	b010      	add	sp, #64	@ 0x40
+100004f4:	bd80      	pop	{r7, pc}
+100004f6:	a80e      	add	r0, sp, #56	@ 0x38
+100004f8:	7800      	ldrb	r0, [r0, #0]
+100004fa:	07c0      	lsls	r0, r0, #31
+100004fc:	2800      	cmp	r0, #0
+100004fe:	d004      	beq.n	1000050a <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>+0xce>
+10000500:	e7ff      	b.n	10000502 <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>+0xc6>
+10000502:	a90d      	add	r1, sp, #52	@ 0x34
+10000504:	2001      	movs	r0, #1
+10000506:	7008      	strb	r0, [r1, #0]
+10000508:	e003      	b.n	10000512 <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>+0xd6>
+1000050a:	a90d      	add	r1, sp, #52	@ 0x34
+1000050c:	2000      	movs	r0, #0
+1000050e:	7008      	strb	r0, [r1, #0]
+10000510:	e7ff      	b.n	10000512 <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>+0xd6>
+10000512:	a80d      	add	r0, sp, #52	@ 0x34
+10000514:	7800      	ldrb	r0, [r0, #0]
+10000516:	07c0      	lsls	r0, r0, #31
+10000518:	2800      	cmp	r0, #0
+1000051a:	d0c7      	beq.n	100004ac <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>+0x70>
+1000051c:	e7ff      	b.n	1000051e <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>+0xe2>
+1000051e:	9802      	ldr	r0, [sp, #8]
+10000520:	f002 fd80 	bl	10003024 <<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>> as startup_adapter_witness::eeprom_read_transport::I2cTransport>::stop>
+10000524:	a903      	add	r1, sp, #12
+10000526:	2001      	movs	r0, #1
+10000528:	7008      	strb	r0, [r1, #0]
+1000052a:	a809      	add	r0, sp, #36	@ 0x24
+1000052c:	f000 f87a 	bl	10000624 <core::ptr::drop_glue::<core::array::iter::IntoIter<u8, 4>>>
+10000530:	e7dd      	b.n	100004ee <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>+0xb2>
+10000532:	46c0      	nop			@ (mov r8, r8)
+10000534:	10003970 	.word	0x10003970
+
+
+10003030 <<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>> as startup_adapter_witness::eeprom_read_transport::I2cTransport>::start>:
+10003030:	b580      	push	{r7, lr}
+10003032:	af00      	add	r7, sp, #0
+10003034:	6800      	ldr	r0, [r0, #0]
+10003036:	f7fd f944 	bl	100002c2 <startup_adapter_witness::i2c_bitbang_flow::start::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>
+1000303a:	bd80      	pop	{r7, pc}
+
+
+10003024 <<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>> as startup_adapter_witness::eeprom_read_transport::I2cTransport>::stop>:
+10003024:	b580      	push	{r7, lr}
+10003026:	af00      	add	r7, sp, #0
+10003028:	6800      	ldr	r0, [r0, #0]
+1000302a:	f7fd f915 	bl	10000258 <startup_adapter_witness::i2c_bitbang_flow::stop::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>
+1000302e:	bd80      	pop	{r7, pc}
+
+
+10002ffa <<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>> as startup_adapter_witness::eeprom_read_transport::I2cTransport>::write_byte>:
+10002ffa:	b580      	push	{r7, lr}
+10002ffc:	af00      	add	r7, sp, #0
+10002ffe:	b082      	sub	sp, #8
+10003000:	6800      	ldr	r0, [r0, #0]
+10003002:	f7fd f89b 	bl	1000013c <startup_adapter_witness::i2c_bitbang_flow::write_byte::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>
+10003006:	2800      	cmp	r0, #0
+10003008:	d004      	beq.n	10003014 <<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>> as startup_adapter_witness::eeprom_read_transport::I2cTransport>::write_byte+0x1a>
+1000300a:	e7ff      	b.n	1000300c <<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>> as startup_adapter_witness::eeprom_read_transport::I2cTransport>::write_byte+0x12>
+1000300c:	a901      	add	r1, sp, #4
+1000300e:	2001      	movs	r0, #1
+10003010:	7008      	strb	r0, [r1, #0]
+10003012:	e003      	b.n	1000301c <<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>> as startup_adapter_witness::eeprom_read_transport::I2cTransport>::write_byte+0x22>
+10003014:	a901      	add	r1, sp, #4
+10003016:	2000      	movs	r0, #0
+10003018:	7008      	strb	r0, [r1, #0]
+1000301a:	e7ff      	b.n	1000301c <<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>> as startup_adapter_witness::eeprom_read_transport::I2cTransport>::write_byte+0x22>
+1000301c:	a801      	add	r0, sp, #4
+1000301e:	7800      	ldrb	r0, [r0, #0]
+10003020:	b002      	add	sp, #8
+10003022:	bd80      	pop	{r7, pc}
+
+
+100002c2 <startup_adapter_witness::i2c_bitbang_flow::start::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>:
+100002c2:	b580      	push	{r7, lr}
+100002c4:	af00      	add	r7, sp, #0
+100002c6:	b084      	sub	sp, #16
+100002c8:	9003      	str	r0, [sp, #12]
+100002ca:	2101      	movs	r1, #1
+100002cc:	9101      	str	r1, [sp, #4]
+100002ce:	f002 fb46 	bl	1000295e <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::sda>
+100002d2:	9803      	ldr	r0, [sp, #12]
+100002d4:	f002 fb5f 	bl	10002996 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::delay_1us>
+100002d8:	9901      	ldr	r1, [sp, #4]
+100002da:	9803      	ldr	r0, [sp, #12]
+100002dc:	f002 fb3a 	bl	10002954 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::scl>
+100002e0:	9803      	ldr	r0, [sp, #12]
+100002e2:	f002 fb58 	bl	10002996 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::delay_1us>
+100002e6:	9803      	ldr	r0, [sp, #12]
+100002e8:	2100      	movs	r1, #0
+100002ea:	9102      	str	r1, [sp, #8]
+100002ec:	f002 fb37 	bl	1000295e <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::sda>
+100002f0:	9803      	ldr	r0, [sp, #12]
+100002f2:	f002 fb50 	bl	10002996 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::delay_1us>
+100002f6:	9902      	ldr	r1, [sp, #8]
+100002f8:	9803      	ldr	r0, [sp, #12]
+100002fa:	f002 fb2b 	bl	10002954 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::scl>
+100002fe:	9803      	ldr	r0, [sp, #12]
+10000300:	f002 fb49 	bl	10002996 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::delay_1us>
+10000304:	b004      	add	sp, #16
+10000306:	bd80      	pop	{r7, pc}
+
+
+10000258 <startup_adapter_witness::i2c_bitbang_flow::stop::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>:
+10000258:	b580      	push	{r7, lr}
+1000025a:	af00      	add	r7, sp, #0
+1000025c:	b084      	sub	sp, #16
+1000025e:	9003      	str	r0, [sp, #12]
+10000260:	2100      	movs	r1, #0
+10000262:	9101      	str	r1, [sp, #4]
+10000264:	f002 fb7b 	bl	1000295e <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::sda>
+10000268:	9803      	ldr	r0, [sp, #12]
+1000026a:	f002 fb94 	bl	10002996 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::delay_1us>
+1000026e:	9901      	ldr	r1, [sp, #4]
+10000270:	9803      	ldr	r0, [sp, #12]
+10000272:	f002 fb6f 	bl	10002954 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::scl>
+10000276:	9803      	ldr	r0, [sp, #12]
+10000278:	f002 fb8d 	bl	10002996 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::delay_1us>
+1000027c:	9803      	ldr	r0, [sp, #12]
+1000027e:	2101      	movs	r1, #1
+10000280:	9102      	str	r1, [sp, #8]
+10000282:	f002 fb67 	bl	10002954 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::scl>
+10000286:	9803      	ldr	r0, [sp, #12]
+10000288:	f002 fb85 	bl	10002996 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::delay_1us>
+1000028c:	9902      	ldr	r1, [sp, #8]
+1000028e:	9803      	ldr	r0, [sp, #12]
+10000290:	f002 fb65 	bl	1000295e <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::sda>
+10000294:	9803      	ldr	r0, [sp, #12]
+10000296:	f002 fb7e 	bl	10002996 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::delay_1us>
+1000029a:	b004      	add	sp, #16
+1000029c:	bd80      	pop	{r7, pc}
+
+
+1000013c <startup_adapter_witness::i2c_bitbang_flow::write_byte::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>:
+1000013c:	b580      	push	{r7, lr}
+1000013e:	af00      	add	r7, sp, #0
+10000140:	b08e      	sub	sp, #56	@ 0x38
+10000142:	9003      	str	r0, [sp, #12]
+10000144:	9102      	str	r1, [sp, #8]
+10000146:	2100      	movs	r1, #0
+10000148:	9104      	str	r1, [sp, #16]
+1000014a:	f002 fc03 	bl	10002954 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::scl>
+1000014e:	9803      	ldr	r0, [sp, #12]
+10000150:	f002 fc21 	bl	10002996 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::delay_1us>
+10000154:	9804      	ldr	r0, [sp, #16]
+10000156:	2108      	movs	r1, #8
+10000158:	f003 f9c7 	bl	100034ea <<core::ops::range::Range<i32> as core::iter::traits::iterator::Iterator>::rev>
+1000015c:	f002 fb92 	bl	10002884 <<core::iter::adapters::rev::Rev<core::ops::range::Range<i32>> as core::iter::traits::collect::IntoIterator>::into_iter>
+10000160:	9005      	str	r0, [sp, #20]
+10000162:	9106      	str	r1, [sp, #24]
+10000164:	e7ff      	b.n	10000166 <startup_adapter_witness::i2c_bitbang_flow::write_byte::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>+0x2a>
+10000166:	a805      	add	r0, sp, #20
+10000168:	f003 f86b 	bl	10003242 <<core::iter::adapters::rev::Rev<core::ops::range::Range<i32>> as core::iter::traits::iterator::Iterator>::next>
+1000016c:	9007      	str	r0, [sp, #28]
+1000016e:	9108      	str	r1, [sp, #32]
+10000170:	9807      	ldr	r0, [sp, #28]
+10000172:	2801      	cmp	r0, #1
+10000174:	d10a      	bne.n	1000018c <startup_adapter_witness::i2c_bitbang_flow::write_byte::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>+0x50>
+10000176:	e7ff      	b.n	10000178 <startup_adapter_witness::i2c_bitbang_flow::write_byte::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>+0x3c>
+10000178:	9802      	ldr	r0, [sp, #8]
+1000017a:	9908      	ldr	r1, [sp, #32]
+1000017c:	2207      	movs	r2, #7
+1000017e:	4011      	ands	r1, r2
+10000180:	b2c0      	uxtb	r0, r0
+10000182:	40c8      	lsrs	r0, r1
+10000184:	07c0      	lsls	r0, r0, #31
+10000186:	2800      	cmp	r0, #0
+10000188:	d048      	beq.n	1000021c <startup_adapter_witness::i2c_bitbang_flow::write_byte::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>+0xe0>
+1000018a:	e043      	b.n	10000214 <startup_adapter_witness::i2c_bitbang_flow::write_byte::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>+0xd8>
+1000018c:	9803      	ldr	r0, [sp, #12]
+1000018e:	f000 f886 	bl	1000029e <startup_adapter_witness::i2c_bitbang_flow::input::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>
+10000192:	9803      	ldr	r0, [sp, #12]
+10000194:	2101      	movs	r1, #1
+10000196:	9101      	str	r1, [sp, #4]
+10000198:	f002 fbe1 	bl	1000295e <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::sda>
+1000019c:	9803      	ldr	r0, [sp, #12]
+1000019e:	f002 fbfa 	bl	10002996 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::delay_1us>
+100001a2:	9803      	ldr	r0, [sp, #12]
+100001a4:	9901      	ldr	r1, [sp, #4]
+100001a6:	f002 fbd5 	bl	10002954 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::scl>
+100001aa:	9803      	ldr	r0, [sp, #12]
+100001ac:	f002 fbf3 	bl	10002996 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::delay_1us>
+100001b0:	9801      	ldr	r0, [sp, #4]
+100001b2:	a90a      	add	r1, sp, #40	@ 0x28
+100001b4:	7008      	strb	r0, [r1, #0]
+100001b6:	2000      	movs	r0, #0
+100001b8:	21ff      	movs	r1, #255	@ 0xff
+100001ba:	f002 fb82 	bl	100028c2 <<core::ops::range::Range<i32> as core::iter::traits::collect::IntoIterator>::into_iter>
+100001be:	900b      	str	r0, [sp, #44]	@ 0x2c
+100001c0:	910c      	str	r1, [sp, #48]	@ 0x30
+100001c2:	e7ff      	b.n	100001c4 <startup_adapter_witness::i2c_bitbang_flow::write_byte::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>+0x88>
+100001c4:	a80b      	add	r0, sp, #44	@ 0x2c
+100001c6:	f002 fe79 	bl	10002ebc <<core::ops::range::Range<i32> as core::iter::traits::iterator::Iterator>::next>
+100001ca:	2801      	cmp	r0, #1
+100001cc:	d10c      	bne.n	100001e8 <startup_adapter_witness::i2c_bitbang_flow::write_byte::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>+0xac>
+100001ce:	e7ff      	b.n	100001d0 <startup_adapter_witness::i2c_bitbang_flow::write_byte::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>+0x94>
+100001d0:	9803      	ldr	r0, [sp, #12]
+100001d2:	f002 fbc9 	bl	10002968 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::read_sda>
+100001d6:	4601      	mov	r1, r0
+100001d8:	a80d      	add	r0, sp, #52	@ 0x34
+100001da:	7001      	strb	r1, [r0, #0]
+100001dc:	491d      	ldr	r1, [pc, #116]	@ (10000254 <startup_adapter_witness::i2c_bitbang_flow::write_byte::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>+0x118>)
+100001de:	f002 fe60 	bl	10002ea2 <<startup_adapter_witness::i2c_bitbang_flow::Level as core::cmp::PartialEq>::eq>
+100001e2:	2800      	cmp	r0, #0
+100001e4:	d112      	bne.n	1000020c <startup_adapter_witness::i2c_bitbang_flow::write_byte::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>+0xd0>
+100001e6:	e7ed      	b.n	100001c4 <startup_adapter_witness::i2c_bitbang_flow::write_byte::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>+0x88>
+100001e8:	9803      	ldr	r0, [sp, #12]
+100001ea:	2100      	movs	r1, #0
+100001ec:	f002 fbb2 	bl	10002954 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::scl>
+100001f0:	9803      	ldr	r0, [sp, #12]
+100001f2:	f002 fbd0 	bl	10002996 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::delay_1us>
+100001f6:	9803      	ldr	r0, [sp, #12]
+100001f8:	f000 f886 	bl	10000308 <startup_adapter_witness::i2c_bitbang_flow::output::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>
+100001fc:	9803      	ldr	r0, [sp, #12]
+100001fe:	2101      	movs	r1, #1
+10000200:	f002 fbad 	bl	1000295e <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::sda>
+10000204:	a80a      	add	r0, sp, #40	@ 0x28
+10000206:	7800      	ldrb	r0, [r0, #0]
+10000208:	b00e      	add	sp, #56	@ 0x38
+1000020a:	bd80      	pop	{r7, pc}
+1000020c:	a90a      	add	r1, sp, #40	@ 0x28
+1000020e:	2000      	movs	r0, #0
+10000210:	7008      	strb	r0, [r1, #0]
+10000212:	e7e9      	b.n	100001e8 <startup_adapter_witness::i2c_bitbang_flow::write_byte::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>+0xac>
+10000214:	a909      	add	r1, sp, #36	@ 0x24
+10000216:	2001      	movs	r0, #1
+10000218:	7008      	strb	r0, [r1, #0]
+1000021a:	e003      	b.n	10000224 <startup_adapter_witness::i2c_bitbang_flow::write_byte::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>+0xe8>
+1000021c:	a909      	add	r1, sp, #36	@ 0x24
+1000021e:	2000      	movs	r0, #0
+10000220:	7008      	strb	r0, [r1, #0]
+10000222:	e7ff      	b.n	10000224 <startup_adapter_witness::i2c_bitbang_flow::write_byte::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>+0xe8>
+10000224:	9803      	ldr	r0, [sp, #12]
+10000226:	a909      	add	r1, sp, #36	@ 0x24
+10000228:	7809      	ldrb	r1, [r1, #0]
+1000022a:	f002 fb98 	bl	1000295e <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::sda>
+1000022e:	9803      	ldr	r0, [sp, #12]
+10000230:	f002 fbb1 	bl	10002996 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::delay_1us>
+10000234:	9803      	ldr	r0, [sp, #12]
+10000236:	2101      	movs	r1, #1
+10000238:	f002 fb8c 	bl	10002954 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::scl>
+1000023c:	9803      	ldr	r0, [sp, #12]
+1000023e:	f002 fbaa 	bl	10002996 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::delay_1us>
+10000242:	9803      	ldr	r0, [sp, #12]
+10000244:	2100      	movs	r1, #0
+10000246:	f002 fb85 	bl	10002954 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::scl>
+1000024a:	9803      	ldr	r0, [sp, #12]
+1000024c:	f002 fba3 	bl	10002996 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::delay_1us>
+10000250:	e789      	b.n	10000166 <startup_adapter_witness::i2c_bitbang_flow::write_byte::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>+0x2a>
+10000252:	46c0      	nop			@ (mov r8, r8)
+10000254:	100038e8 	.word	0x100038e8
+
+
+1000029e <startup_adapter_witness::i2c_bitbang_flow::input::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>:
+1000029e:	b580      	push	{r7, lr}
+100002a0:	af00      	add	r7, sp, #0
+100002a2:	b082      	sub	sp, #8
+100002a4:	9000      	str	r0, [sp, #0]
+100002a6:	2101      	movs	r1, #1
+100002a8:	f002 fb4b 	bl	10002942 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::sda_input_enable>
+100002ac:	9800      	ldr	r0, [sp, #0]
+100002ae:	2100      	movs	r1, #0
+100002b0:	9101      	str	r1, [sp, #4]
+100002b2:	f002 fb3d 	bl	10002930 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::sda_open_drain>
+100002b6:	9800      	ldr	r0, [sp, #0]
+100002b8:	9901      	ldr	r1, [sp, #4]
+100002ba:	f002 fb25 	bl	10002908 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::sda_direction>
+100002be:	b002      	add	sp, #8
+100002c0:	bd80      	pop	{r7, pc}
+
+
+10000308 <startup_adapter_witness::i2c_bitbang_flow::output::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>:
+10000308:	b580      	push	{r7, lr}
+1000030a:	af00      	add	r7, sp, #0
+1000030c:	b082      	sub	sp, #8
+1000030e:	9000      	str	r0, [sp, #0]
+10000310:	2100      	movs	r1, #0
+10000312:	f002 fb16 	bl	10002942 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::sda_input_enable>
+10000316:	9800      	ldr	r0, [sp, #0]
+10000318:	2101      	movs	r1, #1
+1000031a:	9101      	str	r1, [sp, #4]
+1000031c:	f002 fb08 	bl	10002930 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::sda_open_drain>
+10000320:	9800      	ldr	r0, [sp, #0]
+10000322:	9901      	ldr	r1, [sp, #4]
+10000324:	f002 faf0 	bl	10002908 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::sda_direction>
+10000328:	b002      	add	sp, #8
+1000032a:	bd80      	pop	{r7, pc}
+
+
+1000295e <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::sda>:
+1000295e:	b580      	push	{r7, lr}
+10002960:	af00      	add	r7, sp, #0
+10002962:	f7ff f809 	bl	10001978 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::set_sda>
+10002966:	bd80      	pop	{r7, pc}
+
+
+10002954 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::scl>:
+10002954:	b580      	push	{r7, lr}
+10002956:	af00      	add	r7, sp, #0
+10002958:	f7fe fffa 	bl	10001950 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::set_scl>
+1000295c:	bd80      	pop	{r7, pc}
+
+
+10002942 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::sda_input_enable>:
+10002942:	b580      	push	{r7, lr}
+10002944:	af00      	add	r7, sp, #0
+10002946:	460b      	mov	r3, r1
+10002948:	2101      	movs	r1, #1
+1000294a:	02ca      	lsls	r2, r1, #11
+1000294c:	2102      	movs	r1, #2
+1000294e:	f7fe ffdd 	bl	1000190c <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::update>
+10002952:	bd80      	pop	{r7, pc}
+
+
+10002930 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::sda_open_drain>:
+10002930:	b580      	push	{r7, lr}
+10002932:	af00      	add	r7, sp, #0
+10002934:	460b      	mov	r3, r1
+10002936:	2101      	movs	r1, #1
+10002938:	02ca      	lsls	r2, r1, #11
+1000293a:	2103      	movs	r1, #3
+1000293c:	f7fe ffe6 	bl	1000190c <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::update>
+10002940:	bd80      	pop	{r7, pc}
+
+
+10002908 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::sda_direction>:
+10002908:	b580      	push	{r7, lr}
+1000290a:	af00      	add	r7, sp, #0
+1000290c:	b082      	sub	sp, #8
+1000290e:	9000      	str	r0, [sp, #0]
+10002910:	a801      	add	r0, sp, #4
+10002912:	7001      	strb	r1, [r0, #0]
+10002914:	4905      	ldr	r1, [pc, #20]	@ (1000292c <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::sda_direction+0x24>)
+10002916:	f000 fd5a 	bl	100033ce <<startup_adapter_witness::i2c_bitbang_flow::Direction as core::cmp::PartialEq>::eq>
+1000291a:	4603      	mov	r3, r0
+1000291c:	9800      	ldr	r0, [sp, #0]
+1000291e:	2101      	movs	r1, #1
+10002920:	02ca      	lsls	r2, r1, #11
+10002922:	f7fe fff3 	bl	1000190c <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::update>
+10002926:	b002      	add	sp, #8
+10002928:	bd80      	pop	{r7, pc}
+1000292a:	46c0      	nop			@ (mov r8, r8)
+1000292c:	100039f8 	.word	0x100039f8
+
+
+10002968 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::read_sda>:
+10002968:	b580      	push	{r7, lr}
+1000296a:	af00      	add	r7, sp, #0
+1000296c:	b082      	sub	sp, #8
+1000296e:	3009      	adds	r0, #9
+10002970:	2100      	movs	r1, #0
+10002972:	f000 f99d 	bl	10002cb0 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters as startup_adapter_witness::i2c_bitbang_flow::target_gpio::RegisterIo>::read>
+10002976:	0500      	lsls	r0, r0, #20
+10002978:	2800      	cmp	r0, #0
+1000297a:	d504      	bpl.n	10002986 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::read_sda+0x1e>
+1000297c:	e7ff      	b.n	1000297e <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::read_sda+0x16>
+1000297e:	a901      	add	r1, sp, #4
+10002980:	2001      	movs	r0, #1
+10002982:	7008      	strb	r0, [r1, #0]
+10002984:	e003      	b.n	1000298e <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::read_sda+0x26>
+10002986:	a901      	add	r1, sp, #4
+10002988:	2000      	movs	r0, #0
+1000298a:	7008      	strb	r0, [r1, #0]
+1000298c:	e7ff      	b.n	1000298e <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::read_sda+0x26>
+1000298e:	a801      	add	r0, sp, #4
+10002990:	7800      	ldrb	r0, [r0, #0]
+10002992:	b002      	add	sp, #8
+10002994:	bd80      	pop	{r7, pc}
+
+
+10002996 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef> as startup_adapter_witness::i2c_bitbang_flow::I2cIo>::delay_1us>:
+10002996:	b580      	push	{r7, lr}
+10002998:	af00      	add	r7, sp, #0
+1000299a:	f7ff ffad 	bl	100028f8 <<<startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef as startup_adapter_witness::i2c_bitbang_flow::target_gpio::Delay1us>::delay_1us>
+1000299e:	bd80      	pop	{r7, pc}
+
+
+10001978 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::set_sda>:
+10001978:	b580      	push	{r7, lr}
+1000197a:	af00      	add	r7, sp, #0
+1000197c:	b084      	sub	sp, #16
+1000197e:	9101      	str	r1, [sp, #4]
+10001980:	9000      	str	r0, [sp, #0]
+10001982:	3009      	adds	r0, #9
+10001984:	2100      	movs	r1, #0
+10001986:	f001 f993 	bl	10002cb0 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters as startup_adapter_witness::i2c_bitbang_flow::target_gpio::RegisterIo>::read>
+1000198a:	9901      	ldr	r1, [sp, #4]
+1000198c:	9002      	str	r0, [sp, #8]
+1000198e:	2900      	cmp	r1, #0
+10001990:	d006      	beq.n	100019a0 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::set_sda+0x28>
+10001992:	e7ff      	b.n	10001994 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::set_sda+0x1c>
+10001994:	9802      	ldr	r0, [sp, #8]
+10001996:	2101      	movs	r1, #1
+10001998:	02c9      	lsls	r1, r1, #11
+1000199a:	4308      	orrs	r0, r1
+1000199c:	9003      	str	r0, [sp, #12]
+1000199e:	e005      	b.n	100019ac <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::set_sda+0x34>
+100019a0:	9802      	ldr	r0, [sp, #8]
+100019a2:	2101      	movs	r1, #1
+100019a4:	02c9      	lsls	r1, r1, #11
+100019a6:	4388      	bics	r0, r1
+100019a8:	9003      	str	r0, [sp, #12]
+100019aa:	e7ff      	b.n	100019ac <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::set_sda+0x34>
+100019ac:	9800      	ldr	r0, [sp, #0]
+100019ae:	3009      	adds	r0, #9
+100019b0:	9a03      	ldr	r2, [sp, #12]
+100019b2:	2100      	movs	r1, #0
+100019b4:	f001 f983 	bl	10002cbe <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters as startup_adapter_witness::i2c_bitbang_flow::target_gpio::RegisterIo>::write>
+100019b8:	b004      	add	sp, #16
+100019ba:	bd80      	pop	{r7, pc}
+
+
+10001950 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::set_scl>:
+10001950:	b580      	push	{r7, lr}
+10001952:	af00      	add	r7, sp, #0
+10001954:	b082      	sub	sp, #8
+10001956:	9000      	str	r0, [sp, #0]
+10001958:	a801      	add	r0, sp, #4
+1000195a:	7001      	strb	r1, [r0, #0]
+1000195c:	4905      	ldr	r1, [pc, #20]	@ (10001974 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::set_scl+0x24>)
+1000195e:	f001 faa0 	bl	10002ea2 <<startup_adapter_witness::i2c_bitbang_flow::Level as core::cmp::PartialEq>::eq>
+10001962:	4603      	mov	r3, r0
+10001964:	9800      	ldr	r0, [sp, #0]
+10001966:	2101      	movs	r1, #1
+10001968:	028a      	lsls	r2, r1, #10
+1000196a:	2100      	movs	r1, #0
+1000196c:	f7ff ffce 	bl	1000190c <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::update>
+10001970:	b002      	add	sp, #8
+10001972:	bd80      	pop	{r7, pc}
+10001974:	100039f8 	.word	0x100039f8
+
+
+1000190c <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::update>:
+1000190c:	b580      	push	{r7, lr}
+1000190e:	af00      	add	r7, sp, #0
+10001910:	b086      	sub	sp, #24
+10001912:	9303      	str	r3, [sp, #12]
+10001914:	9200      	str	r2, [sp, #0]
+10001916:	9001      	str	r0, [sp, #4]
+10001918:	460a      	mov	r2, r1
+1000191a:	9202      	str	r2, [sp, #8]
+1000191c:	3009      	adds	r0, #9
+1000191e:	f001 f9c7 	bl	10002cb0 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters as startup_adapter_witness::i2c_bitbang_flow::target_gpio::RegisterIo>::read>
+10001922:	9b03      	ldr	r3, [sp, #12]
+10001924:	9004      	str	r0, [sp, #16]
+10001926:	2b00      	cmp	r3, #0
+10001928:	d105      	bne.n	10001936 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::update+0x2a>
+1000192a:	e7ff      	b.n	1000192c <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::update+0x20>
+1000192c:	9900      	ldr	r1, [sp, #0]
+1000192e:	9804      	ldr	r0, [sp, #16]
+10001930:	4388      	bics	r0, r1
+10001932:	9005      	str	r0, [sp, #20]
+10001934:	e004      	b.n	10001940 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::update+0x34>
+10001936:	9900      	ldr	r1, [sp, #0]
+10001938:	9804      	ldr	r0, [sp, #16]
+1000193a:	4308      	orrs	r0, r1
+1000193c:	9005      	str	r0, [sp, #20]
+1000193e:	e7ff      	b.n	10001940 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::update+0x34>
+10001940:	9902      	ldr	r1, [sp, #8]
+10001942:	9801      	ldr	r0, [sp, #4]
+10001944:	3009      	adds	r0, #9
+10001946:	9a05      	ldr	r2, [sp, #20]
+10001948:	f001 f9b9 	bl	10002cbe <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters as startup_adapter_witness::i2c_bitbang_flow::target_gpio::RegisterIo>::write>
+1000194c:	b006      	add	sp, #24
+1000194e:	bd80      	pop	{r7, pc}
+
+
+10001254 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::Register>::address>:
+10001254:	b580      	push	{r7, lr}
+10001256:	af00      	add	r7, sp, #0
+10001258:	b082      	sub	sp, #8
+1000125a:	b2c0      	uxtb	r0, r0
+1000125c:	9000      	str	r0, [sp, #0]
+1000125e:	9800      	ldr	r0, [sp, #0]
+10001260:	0081      	lsls	r1, r0, #2
+10001262:	a001      	add	r0, pc, #4	@ (adr r0, 10001268 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::Register>::address+0x14>)
+10001264:	5840      	ldr	r0, [r0, r1]
+10001266:	4687      	mov	pc, r0
+10001268:	1000127b 	.word	0x1000127b
+1000126c:	10001281 	.word	0x10001281
+10001270:	10001287 	.word	0x10001287
+10001274:	1000128d 	.word	0x1000128d
+10001278:	defe      	udf	#254	@ 0xfe
+1000127a:	480a      	ldr	r0, [pc, #40]	@ (100012a4 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::Register>::address+0x50>)
+1000127c:	9001      	str	r0, [sp, #4]
+1000127e:	e008      	b.n	10001292 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::Register>::address+0x3e>
+10001280:	4807      	ldr	r0, [pc, #28]	@ (100012a0 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::Register>::address+0x4c>)
+10001282:	9001      	str	r0, [sp, #4]
+10001284:	e005      	b.n	10001292 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::Register>::address+0x3e>
+10001286:	4805      	ldr	r0, [pc, #20]	@ (1000129c <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::Register>::address+0x48>)
+10001288:	9001      	str	r0, [sp, #4]
+1000128a:	e002      	b.n	10001292 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::Register>::address+0x3e>
+1000128c:	4802      	ldr	r0, [pc, #8]	@ (10001298 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::Register>::address+0x44>)
+1000128e:	9001      	str	r0, [sp, #4]
+10001290:	e7ff      	b.n	10001292 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::Register>::address+0x3e>
+10001292:	9801      	ldr	r0, [sp, #4]
+10001294:	b002      	add	sp, #8
+10001296:	bd80      	pop	{r7, pc}
+10001298:	400b0400 	.word	0x400b0400
+1000129c:	400b0100 	.word	0x400b0100
+100012a0:	40060004 	.word	0x40060004
+100012a4:	40060000 	.word	0x40060000
+
+
+100000f4 <<core::result::Result<(), core::convert::Infallible>>::map_err::<startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>, startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>::Transport>>:
+100000f4:	b580      	push	{r7, lr}
+100000f6:	af00      	add	r7, sp, #0
+100000f8:	b082      	sub	sp, #8
+100000fa:	e7ff      	b.n	100000fc <<core::result::Result<(), core::convert::Infallible>>::map_err::<startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>, startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>::Transport>+0x8>
+100000fc:	a901      	add	r1, sp, #4
+100000fe:	2000      	movs	r0, #0
+10000100:	7008      	strb	r0, [r1, #0]
+10000102:	e7ff      	b.n	10000104 <<core::result::Result<(), core::convert::Infallible>>::map_err::<startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>, startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>::Transport>+0x10>
+10000104:	a801      	add	r0, sp, #4
+10000106:	7800      	ldrb	r0, [r0, #0]
+10000108:	b002      	add	sp, #8
+1000010a:	bd80      	pop	{r7, pc}
+
+
+1000344c <<core::result::Result<(), startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>> as core::ops::try_trait::Try>::branch>:
+1000344c:	b580      	push	{r7, lr}
+1000344e:	af00      	add	r7, sp, #0
+10003450:	b082      	sub	sp, #8
+10003452:	4601      	mov	r1, r0
+10003454:	4668      	mov	r0, sp
+10003456:	7001      	strb	r1, [r0, #0]
+10003458:	7800      	ldrb	r0, [r0, #0]
+1000345a:	07c0      	lsls	r0, r0, #31
+1000345c:	2800      	cmp	r0, #0
+1000345e:	d004      	beq.n	1000346a <<core::result::Result<(), startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>> as core::ops::try_trait::Try>::branch+0x1e>
+10003460:	e7ff      	b.n	10003462 <<core::result::Result<(), startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>> as core::ops::try_trait::Try>::branch+0x16>
+10003462:	a901      	add	r1, sp, #4
+10003464:	2001      	movs	r0, #1
+10003466:	7008      	strb	r0, [r1, #0]
+10003468:	e003      	b.n	10003472 <<core::result::Result<(), startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>> as core::ops::try_trait::Try>::branch+0x26>
+1000346a:	a901      	add	r1, sp, #4
+1000346c:	2000      	movs	r0, #0
+1000346e:	7008      	strb	r0, [r1, #0]
+10003470:	e7ff      	b.n	10003472 <<core::result::Result<(), startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>> as core::ops::try_trait::Try>::branch+0x26>
+10003472:	a801      	add	r0, sp, #4
+10003474:	7800      	ldrb	r0, [r0, #0]
+10003476:	b002      	add	sp, #8
+10003478:	bd80      	pop	{r7, pc}
+
+
+100034b2 <<core::result::Result<(), startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>> as core::ops::try_trait::FromResidual<core::result::Result<core::convert::Infallible, startup_adapter_witness::bk1080_startup_adapter::ShutdownError<core::convert::Infallible>>>>::from_residual>:
+100034b2:	b580      	push	{r7, lr}
+100034b4:	af00      	add	r7, sp, #0
+100034b6:	2001      	movs	r0, #1
+100034b8:	bd80      	pop	{r7, pc}
+
+
+10002ae6 <<[u8; 4] as core::iter::traits::collect::IntoIterator>::into_iter>:
+10002ae6:	b580      	push	{r7, lr}
+10002ae8:	af00      	add	r7, sp, #0
+10002aea:	b08d      	sub	sp, #52	@ 0x34
+10002aec:	9100      	str	r1, [sp, #0]
+10002aee:	4601      	mov	r1, r0
+10002af0:	9800      	ldr	r0, [sp, #0]
+10002af2:	9002      	str	r0, [sp, #8]
+10002af4:	9802      	ldr	r0, [sp, #8]
+10002af6:	9001      	str	r0, [sp, #4]
+10002af8:	9801      	ldr	r0, [sp, #4]
+10002afa:	9003      	str	r0, [sp, #12]
+10002afc:	2000      	movs	r0, #0
+10002afe:	9004      	str	r0, [sp, #16]
+10002b00:	2004      	movs	r0, #4
+10002b02:	9005      	str	r0, [sp, #20]
+10002b04:	9803      	ldr	r0, [sp, #12]
+10002b06:	9006      	str	r0, [sp, #24]
+10002b08:	9806      	ldr	r0, [sp, #24]
+10002b0a:	900c      	str	r0, [sp, #48]	@ 0x30
+10002b0c:	9805      	ldr	r0, [sp, #20]
+10002b0e:	900b      	str	r0, [sp, #44]	@ 0x2c
+10002b10:	9804      	ldr	r0, [sp, #16]
+10002b12:	900a      	str	r0, [sp, #40]	@ 0x28
+10002b14:	980c      	ldr	r0, [sp, #48]	@ 0x30
+10002b16:	9009      	str	r0, [sp, #36]	@ 0x24
+10002b18:	980b      	ldr	r0, [sp, #44]	@ 0x2c
+10002b1a:	9008      	str	r0, [sp, #32]
+10002b1c:	980a      	ldr	r0, [sp, #40]	@ 0x28
+10002b1e:	9007      	str	r0, [sp, #28]
+10002b20:	9809      	ldr	r0, [sp, #36]	@ 0x24
+10002b22:	6088      	str	r0, [r1, #8]
+10002b24:	9808      	ldr	r0, [sp, #32]
+10002b26:	6048      	str	r0, [r1, #4]
+10002b28:	9807      	ldr	r0, [sp, #28]
+10002b2a:	6008      	str	r0, [r1, #0]
+10002b2c:	b00d      	add	sp, #52	@ 0x34
+10002b2e:	bd80      	pop	{r7, pc}
+
+
+10002e96 <<core::array::iter::IntoIter<u8, 4> as core::iter::traits::iterator::Iterator>::next>:
+10002e96:	b580      	push	{r7, lr}
+10002e98:	af00      	add	r7, sp, #0
+10002e9a:	2104      	movs	r1, #4
+10002e9c:	f7fe fcba 	bl	10001814 <<core::array::iter::iter_inner::PolymorphicIter<[core::mem::maybe_uninit::MaybeUninit<u8>]>>::next>
+10002ea0:	bd80      	pop	{r7, pc}
+
+
+10000624 <core::ptr::drop_glue::<core::array::iter::IntoIter<u8, 4>>>:
+10000624:	b580      	push	{r7, lr}
+10000626:	af00      	add	r7, sp, #0
+10000628:	f002 fc63 	bl	10002ef2 <<core::array::iter::IntoIter<u8, 4> as core::ops::drop::Drop>::drop>
+1000062c:	bd80      	pop	{r7, pc}
+
+
+100034ea <<core::ops::range::Range<i32> as core::iter::traits::iterator::Iterator>::rev>:
+100034ea:	b580      	push	{r7, lr}
+100034ec:	af00      	add	r7, sp, #0
+100034ee:	bd80      	pop	{r7, pc}
+
+
+10002884 <<core::iter::adapters::rev::Rev<core::ops::range::Range<i32>> as core::iter::traits::collect::IntoIterator>::into_iter>:
+10002884:	b580      	push	{r7, lr}
+10002886:	af00      	add	r7, sp, #0
+10002888:	bd80      	pop	{r7, pc}
+
+
+10003242 <<core::iter::adapters::rev::Rev<core::ops::range::Range<i32>> as core::iter::traits::iterator::Iterator>::next>:
+10003242:	b580      	push	{r7, lr}
+10003244:	af00      	add	r7, sp, #0
+10003246:	f7ff fe43 	bl	10002ed0 <<core::ops::range::Range<i32> as core::iter::traits::double_ended::DoubleEndedIterator>::next_back>
+1000324a:	bd80      	pop	{r7, pc}
+
+
+100028c2 <<core::ops::range::Range<i32> as core::iter::traits::collect::IntoIterator>::into_iter>:
+100028c2:	b580      	push	{r7, lr}
+100028c4:	af00      	add	r7, sp, #0
+100028c6:	bd80      	pop	{r7, pc}
+
+
+10002ebc <<core::ops::range::Range<i32> as core::iter::traits::iterator::Iterator>::next>:
+10002ebc:	b580      	push	{r7, lr}
+10002ebe:	af00      	add	r7, sp, #0
+10002ec0:	f7ff ff8d 	bl	10002dde <<core::ops::range::Range<i32> as core::iter::range::RangeIteratorImpl>::spec_next>
+10002ec4:	bd80      	pop	{r7, pc}
+
+
+10001814 <<core::array::iter::iter_inner::PolymorphicIter<[core::mem::maybe_uninit::MaybeUninit<u8>]>>::next>:
+10001814:	b580      	push	{r7, lr}
+10001816:	af00      	add	r7, sp, #0
+10001818:	b08b      	sub	sp, #44	@ 0x2c
+1000181a:	9102      	str	r1, [sp, #8]
+1000181c:	4601      	mov	r1, r0
+1000181e:	9103      	str	r1, [sp, #12]
+10001820:	6848      	ldr	r0, [r1, #4]
+10001822:	6809      	ldr	r1, [r1, #0]
+10001824:	1a40      	subs	r0, r0, r1
+10001826:	2800      	cmp	r0, #0
+10001828:	d112      	bne.n	10001850 <<core::array::iter::iter_inner::PolymorphicIter<[core::mem::maybe_uninit::MaybeUninit<u8>]>>::next+0x3c>
+1000182a:	e7ff      	b.n	1000182c <<core::array::iter::iter_inner::PolymorphicIter<[core::mem::maybe_uninit::MaybeUninit<u8>]>>::next+0x18>
+1000182c:	9802      	ldr	r0, [sp, #8]
+1000182e:	9903      	ldr	r1, [sp, #12]
+10001830:	4a19      	ldr	r2, [pc, #100]	@ (10001898 <<core::array::iter::iter_inner::PolymorphicIter<[core::mem::maybe_uninit::MaybeUninit<u8>]>>::next+0x84>)
+10001832:	6813      	ldr	r3, [r2, #0]
+10001834:	6852      	ldr	r2, [r2, #4]
+10001836:	9305      	str	r3, [sp, #20]
+10001838:	9206      	str	r2, [sp, #24]
+1000183a:	3108      	adds	r1, #8
+1000183c:	9107      	str	r1, [sp, #28]
+1000183e:	9008      	str	r0, [sp, #32]
+10001840:	9907      	ldr	r1, [sp, #28]
+10001842:	9808      	ldr	r0, [sp, #32]
+10001844:	9109      	str	r1, [sp, #36]	@ 0x24
+10001846:	900a      	str	r0, [sp, #40]	@ 0x28
+10001848:	a904      	add	r1, sp, #16
+1000184a:	2000      	movs	r0, #0
+1000184c:	7008      	strb	r0, [r1, #0]
+1000184e:	e003      	b.n	10001858 <<core::array::iter::iter_inner::PolymorphicIter<[core::mem::maybe_uninit::MaybeUninit<u8>]>>::next+0x44>
+10001850:	9803      	ldr	r0, [sp, #12]
+10001852:	6800      	ldr	r0, [r0, #0]
+10001854:	9001      	str	r0, [sp, #4]
+10001856:	e004      	b.n	10001862 <<core::array::iter::iter_inner::PolymorphicIter<[core::mem::maybe_uninit::MaybeUninit<u8>]>>::next+0x4e>
+10001858:	a804      	add	r0, sp, #16
+1000185a:	7841      	ldrb	r1, [r0, #1]
+1000185c:	9804      	ldr	r0, [sp, #16]
+1000185e:	b00b      	add	sp, #44	@ 0x2c
+10001860:	bd80      	pop	{r7, pc}
+10001862:	9802      	ldr	r0, [sp, #8]
+10001864:	9903      	ldr	r1, [sp, #12]
+10001866:	9a01      	ldr	r2, [sp, #4]
+10001868:	1c53      	adds	r3, r2, #1
+1000186a:	600b      	str	r3, [r1, #0]
+1000186c:	9206      	str	r2, [sp, #24]
+1000186e:	2201      	movs	r2, #1
+10001870:	9205      	str	r2, [sp, #20]
+10001872:	3108      	adds	r1, #8
+10001874:	9107      	str	r1, [sp, #28]
+10001876:	9008      	str	r0, [sp, #32]
+10001878:	9907      	ldr	r1, [sp, #28]
+1000187a:	9808      	ldr	r0, [sp, #32]
+1000187c:	9109      	str	r1, [sp, #36]	@ 0x24
+1000187e:	900a      	str	r0, [sp, #40]	@ 0x28
+10001880:	9806      	ldr	r0, [sp, #24]
+10001882:	9000      	str	r0, [sp, #0]
+10001884:	e7ff      	b.n	10001886 <<core::array::iter::iter_inner::PolymorphicIter<[core::mem::maybe_uninit::MaybeUninit<u8>]>>::next+0x72>
+10001886:	9900      	ldr	r1, [sp, #0]
+10001888:	9807      	ldr	r0, [sp, #28]
+1000188a:	5c40      	ldrb	r0, [r0, r1]
+1000188c:	a904      	add	r1, sp, #16
+1000188e:	7048      	strb	r0, [r1, #1]
+10001890:	2001      	movs	r0, #1
+10001892:	7008      	strb	r0, [r1, #0]
+10001894:	e7e0      	b.n	10001858 <<core::array::iter::iter_inner::PolymorphicIter<[core::mem::maybe_uninit::MaybeUninit<u8>]>>::next+0x44>
+10001896:	46c0      	nop			@ (mov r8, r8)
+10001898:	100039f0 	.word	0x100039f0
+
+
+10002ef2 <<core::array::iter::IntoIter<u8, 4> as core::ops::drop::Drop>::drop>:
+10002ef2:	b580      	push	{r7, lr}
+10002ef4:	af00      	add	r7, sp, #0
+10002ef6:	e7ff      	b.n	10002ef8 <<core::array::iter::IntoIter<u8, 4> as core::ops::drop::Drop>::drop+0x6>
+10002ef8:	bd80      	pop	{r7, pc}
+
+
+10002ed0 <<core::ops::range::Range<i32> as core::iter::traits::double_ended::DoubleEndedIterator>::next_back>:
+10002ed0:	b580      	push	{r7, lr}
+10002ed2:	af00      	add	r7, sp, #0
+10002ed4:	f7ff ff64 	bl	10002da0 <<core::ops::range::Range<i32> as core::iter::range::RangeIteratorImpl>::spec_next_back>
+10002ed8:	bd80      	pop	{r7, pc}
+
+
+10002dde <<core::ops::range::Range<i32> as core::iter::range::RangeIteratorImpl>::spec_next>:
+10002dde:	b580      	push	{r7, lr}
+10002de0:	af00      	add	r7, sp, #0
+10002de2:	b086      	sub	sp, #24
+10002de4:	4601      	mov	r1, r0
+10002de6:	9103      	str	r1, [sp, #12]
+10002de8:	6808      	ldr	r0, [r1, #0]
+10002dea:	6849      	ldr	r1, [r1, #4]
+10002dec:	4288      	cmp	r0, r1
+10002dee:	db03      	blt.n	10002df8 <<core::ops::range::Range<i32> as core::iter::range::RangeIteratorImpl>::spec_next+0x1a>
+10002df0:	e7ff      	b.n	10002df2 <<core::ops::range::Range<i32> as core::iter::range::RangeIteratorImpl>::spec_next+0x14>
+10002df2:	2000      	movs	r0, #0
+10002df4:	9004      	str	r0, [sp, #16]
+10002df6:	e00e      	b.n	10002e16 <<core::ops::range::Range<i32> as core::iter::range::RangeIteratorImpl>::spec_next+0x38>
+10002df8:	9803      	ldr	r0, [sp, #12]
+10002dfa:	6800      	ldr	r0, [r0, #0]
+10002dfc:	9001      	str	r0, [sp, #4]
+10002dfe:	2101      	movs	r1, #1
+10002e00:	9102      	str	r1, [sp, #8]
+10002e02:	f000 f8a1 	bl	10002f48 <<i32 as core::iter::range::Step>::forward_unchecked>
+10002e06:	9b03      	ldr	r3, [sp, #12]
+10002e08:	9901      	ldr	r1, [sp, #4]
+10002e0a:	4602      	mov	r2, r0
+10002e0c:	9802      	ldr	r0, [sp, #8]
+10002e0e:	601a      	str	r2, [r3, #0]
+10002e10:	9105      	str	r1, [sp, #20]
+10002e12:	9004      	str	r0, [sp, #16]
+10002e14:	e7ff      	b.n	10002e16 <<core::ops::range::Range<i32> as core::iter::range::RangeIteratorImpl>::spec_next+0x38>
+10002e16:	9804      	ldr	r0, [sp, #16]
+10002e18:	9905      	ldr	r1, [sp, #20]
+10002e1a:	b006      	add	sp, #24
+10002e1c:	bd80      	pop	{r7, pc}
+
+
+10002da0 <<core::ops::range::Range<i32> as core::iter::range::RangeIteratorImpl>::spec_next_back>:
+10002da0:	b580      	push	{r7, lr}
+10002da2:	af00      	add	r7, sp, #0
+10002da4:	b084      	sub	sp, #16
+10002da6:	4601      	mov	r1, r0
+10002da8:	9101      	str	r1, [sp, #4]
+10002daa:	6808      	ldr	r0, [r1, #0]
+10002dac:	6849      	ldr	r1, [r1, #4]
+10002dae:	4288      	cmp	r0, r1
+10002db0:	db03      	blt.n	10002dba <<core::ops::range::Range<i32> as core::iter::range::RangeIteratorImpl>::spec_next_back+0x1a>
+10002db2:	e7ff      	b.n	10002db4 <<core::ops::range::Range<i32> as core::iter::range::RangeIteratorImpl>::spec_next_back+0x14>
+10002db4:	2000      	movs	r0, #0
+10002db6:	9002      	str	r0, [sp, #8]
+10002db8:	e00d      	b.n	10002dd6 <<core::ops::range::Range<i32> as core::iter::range::RangeIteratorImpl>::spec_next_back+0x36>
+10002dba:	9801      	ldr	r0, [sp, #4]
+10002dbc:	6840      	ldr	r0, [r0, #4]
+10002dbe:	2101      	movs	r1, #1
+10002dc0:	9100      	str	r1, [sp, #0]
+10002dc2:	f000 f8eb 	bl	10002f9c <<i32 as core::iter::range::Step>::backward_unchecked>
+10002dc6:	9901      	ldr	r1, [sp, #4]
+10002dc8:	4602      	mov	r2, r0
+10002dca:	9800      	ldr	r0, [sp, #0]
+10002dcc:	604a      	str	r2, [r1, #4]
+10002dce:	6849      	ldr	r1, [r1, #4]
+10002dd0:	9103      	str	r1, [sp, #12]
+10002dd2:	9002      	str	r0, [sp, #8]
+10002dd4:	e7ff      	b.n	10002dd6 <<core::ops::range::Range<i32> as core::iter::range::RangeIteratorImpl>::spec_next_back+0x36>
+10002dd6:	9802      	ldr	r0, [sp, #8]
+10002dd8:	9903      	ldr	r1, [sp, #12]
+10002dda:	b004      	add	sp, #16
+10002ddc:	bd80      	pop	{r7, pc}
+
+
+10002f48 <<i32 as core::iter::range::Step>::forward_unchecked>:
+10002f48:	b580      	push	{r7, lr}
+10002f4a:	af00      	add	r7, sp, #0
+10002f4c:	b086      	sub	sp, #24
+10002f4e:	9100      	str	r1, [sp, #0]
+10002f50:	4602      	mov	r2, r0
+10002f52:	1851      	adds	r1, r2, r1
+10002f54:	9101      	str	r1, [sp, #4]
+10002f56:	2001      	movs	r0, #1
+10002f58:	9002      	str	r0, [sp, #8]
+10002f5a:	2000      	movs	r0, #0
+10002f5c:	4291      	cmp	r1, r2
+10002f5e:	9003      	str	r0, [sp, #12]
+10002f60:	d701      	bvc.n	10002f66 <<i32 as core::iter::range::Step>::forward_unchecked+0x1e>
+10002f62:	9802      	ldr	r0, [sp, #8]
+10002f64:	9003      	str	r0, [sp, #12]
+10002f66:	9900      	ldr	r1, [sp, #0]
+10002f68:	9803      	ldr	r0, [sp, #12]
+10002f6a:	0fc9      	lsrs	r1, r1, #31
+10002f6c:	4048      	eors	r0, r1
+10002f6e:	2800      	cmp	r0, #0
+10002f70:	d107      	bne.n	10002f82 <<i32 as core::iter::range::Step>::forward_unchecked+0x3a>
+10002f72:	e7ff      	b.n	10002f74 <<i32 as core::iter::range::Step>::forward_unchecked+0x2c>
+10002f74:	9801      	ldr	r0, [sp, #4]
+10002f76:	9005      	str	r0, [sp, #20]
+10002f78:	2001      	movs	r0, #1
+10002f7a:	9004      	str	r0, [sp, #16]
+10002f7c:	9805      	ldr	r0, [sp, #20]
+10002f7e:	b006      	add	sp, #24
+10002f80:	bd80      	pop	{r7, pc}
+10002f82:	4804      	ldr	r0, [pc, #16]	@ (10002f94 <<i32 as core::iter::range::Step>::forward_unchecked+0x4c>)
+10002f84:	6801      	ldr	r1, [r0, #0]
+10002f86:	6840      	ldr	r0, [r0, #4]
+10002f88:	9104      	str	r1, [sp, #16]
+10002f8a:	9005      	str	r0, [sp, #20]
+10002f8c:	4802      	ldr	r0, [pc, #8]	@ (10002f98 <<i32 as core::iter::range::Step>::forward_unchecked+0x50>)
+10002f8e:	f7ff fb69 	bl	10002664 <core::hint::unreachable_unchecked::precondition_check>
+10002f92:	defe      	udf	#254	@ 0xfe
+10002f94:	100039f0 	.word	0x100039f0
+10002f98:	10003b10 	.word	0x10003b10
+
+
+10002f9c <<i32 as core::iter::range::Step>::backward_unchecked>:
+10002f9c:	b580      	push	{r7, lr}
+10002f9e:	af00      	add	r7, sp, #0
+10002fa0:	b086      	sub	sp, #24
+10002fa2:	460a      	mov	r2, r1
+10002fa4:	9200      	str	r2, [sp, #0]
+10002fa6:	4601      	mov	r1, r0
+10002fa8:	1a88      	subs	r0, r1, r2
+10002faa:	9001      	str	r0, [sp, #4]
+10002fac:	2001      	movs	r0, #1
+10002fae:	9002      	str	r0, [sp, #8]
+10002fb0:	2000      	movs	r0, #0
+10002fb2:	4291      	cmp	r1, r2
+10002fb4:	9003      	str	r0, [sp, #12]
+10002fb6:	d701      	bvc.n	10002fbc <<i32 as core::iter::range::Step>::backward_unchecked+0x20>
+10002fb8:	9802      	ldr	r0, [sp, #8]
+10002fba:	9003      	str	r0, [sp, #12]
+10002fbc:	9900      	ldr	r1, [sp, #0]
+10002fbe:	9803      	ldr	r0, [sp, #12]
+10002fc0:	0fc9      	lsrs	r1, r1, #31
+10002fc2:	4048      	eors	r0, r1
+10002fc4:	2800      	cmp	r0, #0
+10002fc6:	d107      	bne.n	10002fd8 <<i32 as core::iter::range::Step>::backward_unchecked+0x3c>
+10002fc8:	e7ff      	b.n	10002fca <<i32 as core::iter::range::Step>::backward_unchecked+0x2e>
+10002fca:	9801      	ldr	r0, [sp, #4]
+10002fcc:	9005      	str	r0, [sp, #20]
+10002fce:	2001      	movs	r0, #1
+10002fd0:	9004      	str	r0, [sp, #16]
+10002fd2:	9805      	ldr	r0, [sp, #20]
+10002fd4:	b006      	add	sp, #24
+10002fd6:	bd80      	pop	{r7, pc}
+10002fd8:	4804      	ldr	r0, [pc, #16]	@ (10002fec <<i32 as core::iter::range::Step>::backward_unchecked+0x50>)
+10002fda:	6801      	ldr	r1, [r0, #0]
+10002fdc:	6840      	ldr	r0, [r0, #4]
+10002fde:	9104      	str	r1, [sp, #16]
+10002fe0:	9005      	str	r0, [sp, #20]
+10002fe2:	4803      	ldr	r0, [pc, #12]	@ (10002ff0 <<i32 as core::iter::range::Step>::backward_unchecked+0x54>)
+10002fe4:	f7ff fb3e 	bl	10002664 <core::hint::unreachable_unchecked::precondition_check>
+10002fe8:	defe      	udf	#254	@ 0xfe
+10002fea:	46c0      	nop			@ (mov r8, r8)
+10002fec:	100039f0 	.word	0x100039f0
+10002ff0:	10003b10 	.word	0x10003b10
+
+
+10002ea2 <<startup_adapter_witness::i2c_bitbang_flow::Level as core::cmp::PartialEq>::eq>:
+10002ea2:	b580      	push	{r7, lr}
+10002ea4:	af00      	add	r7, sp, #0
+10002ea6:	7800      	ldrb	r0, [r0, #0]
+10002ea8:	7809      	ldrb	r1, [r1, #0]
+10002eaa:	1a40      	subs	r0, r0, r1
+10002eac:	4241      	negs	r1, r0
+10002eae:	4148      	adcs	r0, r1
+10002eb0:	bd80      	pop	{r7, pc}
+
+
+100033ce <<startup_adapter_witness::i2c_bitbang_flow::Direction as core::cmp::PartialEq>::eq>:
+100033ce:	b580      	push	{r7, lr}
+100033d0:	af00      	add	r7, sp, #0
+100033d2:	7800      	ldrb	r0, [r0, #0]
+100033d4:	7809      	ldrb	r1, [r1, #0]
+100033d6:	1a40      	subs	r0, r0, r1
+100033d8:	4241      	negs	r1, r0
+100033da:	4148      	adcs	r0, r1
+100033dc:	bd80      	pop	{r7, pc}
+
+
+10003118 <<startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown>:
+10003118:	b580      	push	{r7, lr}
+1000311a:	af00      	add	r7, sp, #0
+1000311c:	b082      	sub	sp, #8
+1000311e:	9201      	str	r2, [sp, #4]
+10003120:	4608      	mov	r0, r1
+10003122:	9901      	ldr	r1, [sp, #4]
+10003124:	f7fd f952 	bl	100003cc <startup_adapter_witness::bk1080_startup_adapter::shutdown_mmio::<<startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>
+10003128:	b002      	add	sp, #8
+1000312a:	bd80      	pop	{r7, pc}
+
+
+100003cc <startup_adapter_witness::bk1080_startup_adapter::shutdown_mmio::<<startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>:
+100003cc:	b580      	push	{r7, lr}
+100003ce:	af00      	add	r7, sp, #0
+100003d0:	b08a      	sub	sp, #40	@ 0x28
+100003d2:	460a      	mov	r2, r1
+100003d4:	4601      	mov	r1, r0
+100003d6:	a802      	add	r0, sp, #8
+100003d8:	9000      	str	r0, [sp, #0]
+100003da:	f001 f940 	bl	1000165e <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::new_target>
+100003de:	9800      	ldr	r0, [sp, #0]
+100003e0:	f000 fee1 	bl	100011a6 <<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>::new>
+100003e4:	9005      	str	r0, [sp, #20]
+100003e6:	a805      	add	r0, sp, #20
+100003e8:	a906      	add	r1, sp, #24
+100003ea:	f000 f80d 	bl	10000408 <startup_adapter_witness::bk1080_startup_adapter::shutdown_with_io::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>, startup_adapter_witness::bk1080_startup_adapter::TargetWords>>
+100003ee:	9001      	str	r0, [sp, #4]
+100003f0:	9804      	ldr	r0, [sp, #16]
+100003f2:	9009      	str	r0, [sp, #36]	@ 0x24
+100003f4:	9803      	ldr	r0, [sp, #12]
+100003f6:	9008      	str	r0, [sp, #32]
+100003f8:	9802      	ldr	r0, [sp, #8]
+100003fa:	9007      	str	r0, [sp, #28]
+100003fc:	a807      	add	r0, sp, #28
+100003fe:	f001 fa4d 	bl	1000189c <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::handoff_to_keypad>
+10000402:	9801      	ldr	r0, [sp, #4]
+10000404:	b00a      	add	sp, #40	@ 0x28
+10000406:	bd80      	pop	{r7, pc}
+
+
+10000408 <startup_adapter_witness::bk1080_startup_adapter::shutdown_with_io::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>, startup_adapter_witness::bk1080_startup_adapter::TargetWords>>:
+10000408:	b580      	push	{r7, lr}
+1000040a:	af00      	add	r7, sp, #0
+1000040c:	b084      	sub	sp, #16
+1000040e:	9102      	str	r1, [sp, #8]
+10000410:	f000 f814 	bl	1000043c <startup_adapter_witness::bk1080_startup_adapter::shutdown_transaction::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>>
+10000414:	4601      	mov	r1, r0
+10000416:	9802      	ldr	r0, [sp, #8]
+10000418:	9103      	str	r1, [sp, #12]
+1000041a:	4907      	ldr	r1, [pc, #28]	@ (10000438 <startup_adapter_witness::bk1080_startup_adapter::shutdown_with_io::<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>, startup_adapter_witness::bk1080_startup_adapter::TargetWords>+0x30>)
+1000041c:	9101      	str	r1, [sp, #4]
+1000041e:	f002 f934 	bl	1000268a <<startup_adapter_witness::bk1080_startup_adapter::TargetWords as startup_adapter_witness::bk1080_startup_adapter::WordIo>::read_word>
+10000422:	9901      	ldr	r1, [sp, #4]
+10000424:	4602      	mov	r2, r0
+10000426:	9802      	ldr	r0, [sp, #8]
+10000428:	2301      	movs	r3, #1
+1000042a:	03db      	lsls	r3, r3, #15
+1000042c:	431a      	orrs	r2, r3
+1000042e:	f002 f928 	bl	10002682 <<startup_adapter_witness::bk1080_startup_adapter::TargetWords as startup_adapter_witness::bk1080_startup_adapter::WordIo>::write_word>
+10000432:	9803      	ldr	r0, [sp, #12]
+10000434:	b004      	add	sp, #16
+10000436:	bd80      	pop	{r7, pc}
+10000438:	40060800 	.word	0x40060800
+
+
+1000268a <<startup_adapter_witness::bk1080_startup_adapter::TargetWords as startup_adapter_witness::bk1080_startup_adapter::WordIo>::read_word>:
+1000268a:	b580      	push	{r7, lr}
+1000268c:	af00      	add	r7, sp, #0
+1000268e:	6808      	ldr	r0, [r1, #0]
+10002690:	bd80      	pop	{r7, pc}
+10002692:	d4d4      	bmi.n	1000263e <startup_adapter_witness::board_startup_adapters::systick_startup_adapter::systick_timing::reload_value+0x26>
+
+
+10002682 <<startup_adapter_witness::bk1080_startup_adapter::TargetWords as startup_adapter_witness::bk1080_startup_adapter::WordIo>::write_word>:
+10002682:	b580      	push	{r7, lr}
+10002684:	af00      	add	r7, sp, #0
+10002686:	600a      	str	r2, [r1, #0]
+10002688:	bd80      	pop	{r7, pc}
+
+
+1000189c <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::handoff_to_keypad>:
+1000189c:	b580      	push	{r7, lr}
+1000189e:	af00      	add	r7, sp, #0
+100018a0:	b082      	sub	sp, #8
+100018a2:	9001      	str	r0, [sp, #4]
+100018a4:	f000 f807 	bl	100018b6 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::restore_keypad_mode>
+100018a8:	9801      	ldr	r0, [sp, #4]
+100018aa:	2101      	movs	r1, #1
+100018ac:	7201      	strb	r1, [r0, #8]
+100018ae:	f7fe febe 	bl	1000062e <core::ptr::drop_glue::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>>
+100018b2:	b002      	add	sp, #8
+100018b4:	bd80      	pop	{r7, pc}
+
+
+100018b6 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::restore_keypad_mode>:
+100018b6:	b580      	push	{r7, lr}
+100018b8:	af00      	add	r7, sp, #0
+100018ba:	b084      	sub	sp, #16
+100018bc:	9001      	str	r0, [sp, #4]
+100018be:	2101      	movs	r1, #1
+100018c0:	9103      	str	r1, [sp, #12]
+100018c2:	f000 f859 	bl	10001978 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::set_sda>
+100018c6:	9801      	ldr	r0, [sp, #4]
+100018c8:	9903      	ldr	r1, [sp, #12]
+100018ca:	02ca      	lsls	r2, r1, #11
+100018cc:	9202      	str	r2, [sp, #8]
+100018ce:	2102      	movs	r1, #2
+100018d0:	2300      	movs	r3, #0
+100018d2:	9300      	str	r3, [sp, #0]
+100018d4:	f000 f81a 	bl	1000190c <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::update>
+100018d8:	9b00      	ldr	r3, [sp, #0]
+100018da:	9801      	ldr	r0, [sp, #4]
+100018dc:	9a02      	ldr	r2, [sp, #8]
+100018de:	2103      	movs	r1, #3
+100018e0:	f000 f814 	bl	1000190c <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::update>
+100018e4:	9801      	ldr	r0, [sp, #4]
+100018e6:	9a02      	ldr	r2, [sp, #8]
+100018e8:	9b03      	ldr	r3, [sp, #12]
+100018ea:	4619      	mov	r1, r3
+100018ec:	f000 f80e 	bl	1000190c <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, <startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::bk1080_shutdown::DelayRef>>::update>
+100018f0:	b004      	add	sp, #16
+100018f2:	bd80      	pop	{r7, pc}
+
+
+10002cb0 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters as startup_adapter_witness::i2c_bitbang_flow::target_gpio::RegisterIo>::read>:
+10002cb0:	b580      	push	{r7, lr}
+10002cb2:	af00      	add	r7, sp, #0
+10002cb4:	4608      	mov	r0, r1
+10002cb6:	f7fe facd 	bl	10001254 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::Register>::address>
+10002cba:	6800      	ldr	r0, [r0, #0]
+10002cbc:	bd80      	pop	{r7, pc}
+
+
+10002cbe <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters as startup_adapter_witness::i2c_bitbang_flow::target_gpio::RegisterIo>::write>:
+10002cbe:	b580      	push	{r7, lr}
+10002cc0:	af00      	add	r7, sp, #0
+10002cc2:	b082      	sub	sp, #8
+10002cc4:	9201      	str	r2, [sp, #4]
+10002cc6:	4608      	mov	r0, r1
+10002cc8:	f7fe fac4 	bl	10001254 <<startup_adapter_witness::i2c_bitbang_flow::target_gpio::Register>::address>
+10002ccc:	9a01      	ldr	r2, [sp, #4]
+10002cce:	6002      	str	r2, [r0, #0]
+10002cd0:	b002      	add	sp, #8
+10002cd2:	bd80      	pop	{r7, pc}
+
+
+10002664 <core::hint::unreachable_unchecked::precondition_check>:
+10002664:	b580      	push	{r7, lr}
+

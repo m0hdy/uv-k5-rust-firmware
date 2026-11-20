@@ -1,5 +1,6 @@
 #![no_std]
 
+pub mod bk1080_startup_adapter;
 #[allow(unused_attributes)]
 pub mod boot_coordinator;
 pub mod channel_codec;
