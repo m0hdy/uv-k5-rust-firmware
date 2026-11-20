@@ -240,6 +240,62 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(entry_check.EntryError, "canonical order"):
             self.validate(probe)
 
+    def test_actual_systick_failure_cannot_bypass_later_startup(self):
+        _, body = self.coordinator()
+        rows = entry_check.instructions(body)
+        systick = next(
+            index
+            for index, (_, mnemonic, operands) in enumerate(rows)
+            if mnemonic == "bl" and "StartupIo>::systick" in operands
+        )
+        portcon = next(
+            address
+            for address, mnemonic, operands in rows
+            if mnemonic == "bl" and "StartupIo>::portcon" in operands
+        )
+        conditional = next(
+            index
+            for index in range(systick + 1, systick + 9)
+            if entry_check.CONDITIONAL_BRANCH.fullmatch(rows[index][1])
+        )
+        successors = entry_check.instruction_successors(rows, conditional)
+        failure = next(
+            successor
+            for successor in successors
+            if portcon
+            not in entry_check.reachable_instruction_addresses(
+                rows, [successor]
+            )
+        )
+        failure_path = entry_check.reachable_instruction_addresses(
+            rows, [failure]
+        )
+        branch_address = next(
+            address
+            for address, mnemonic, _ in rows
+            if address in failure_path and mnemonic in {"b", "b.n", "b.w"}
+        )
+        battery = next(
+            address
+            for address, mnemonic, operands in rows
+            if mnemonic == "bl"
+            and "adc_samples::decode_adc_sample" in operands
+        )
+        displacement = battery - (branch_address + 4)
+        self.assertEqual(displacement & 1, 0)
+        self.assertTrue(-2048 <= displacement <= 2046)
+        encoding = 0xE000 | ((displacement >> 1) & 0x7FF)
+        probe = self.patch_halfword(
+            "systick-error-bypasses-startup.elf",
+            branch_address,
+            encoding,
+        )
+        with self.assertRaisesRegex(
+            entry_check.EntryError,
+            "systick failure path reaches later startup effects",
+        ):
+            self.validate(probe)
+
     def test_actual_coordinator_entry_self_loop_is_rejected(self):
         name, body = self.coordinator()
         address = entry_check.function_address(self.disassembly, name)

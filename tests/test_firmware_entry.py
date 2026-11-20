@@ -31,11 +31,13 @@ DISASSEMBLY = """
  4fa: ldr r1, [pc, #164]
  4fc: str r1, [r0]
  500: bl 600 <board::StartupIo>::systick>
+ 501: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x88>
  504: bl 610 <board::StartupIo>::portcon>
  508: bl 620 <board::StartupIo>::gpio>
  50c: bl 630 <board::StartupIo>::backlight_init_hardware>
  510: bl 640 <board::StartupIo>::adc_init>
  514: bl 650 <board::StartupIo>::st7565_init>
+ 515: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x88>
  516: add r0, sp, #0
  518: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>
  51c: ldr r0, [sp, #0]
@@ -57,6 +59,7 @@ DISASSEMBLY = """
  546: bl 730 <startup_version_display::startup_version_display_plan>
  54a: bl 740 <startup_version_row_plan::compose_startup_version_row>
  54e: bx lr
+ 580: bx lr
  590: bx lr
  59c: .word 0x40000008
  5a0: .word 0x1a100487
@@ -166,12 +169,14 @@ class FirmwareEntryTests(unittest.TestCase):
     def test_display_initialization_requires_canonical_prerequisite_order(self):
         broken = DISASSEMBLY.replace(
             "500: bl 600 <board::StartupIo>::systick>\n"
+            " 501: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x88>\n"
             " 504: bl 610 <board::StartupIo>::portcon>\n"
             " 508: bl 620 <board::StartupIo>::gpio>\n"
             " 50c: bl 630 <board::StartupIo>::backlight_init_hardware>\n"
             " 510: bl 640 <board::StartupIo>::adc_init>\n"
             " 514: bl 650 <board::StartupIo>::st7565_init>",
             "500: bl 600 <board::StartupIo>::systick>\n"
+            " 501: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x88>\n"
             " 504: bl 650 <board::StartupIo>::st7565_init>\n"
             " 508: bl 610 <board::StartupIo>::portcon>\n"
             " 50c: bl 620 <board::StartupIo>::gpio>\n"
@@ -180,6 +185,33 @@ class FirmwareEntryTests(unittest.TestCase):
             1,
         )
         with self.assertRaisesRegex(EntryError, "canonical order"):
+            self.inspect(broken)
+
+    def test_fallible_board_stage_errors_cannot_reach_later_effects(self):
+        for branch in ("501: bne.n 580", "515: bne.n 580"):
+            with self.subTest(branch=branch):
+                broken = DISASSEMBLY.replace(
+                    branch, branch.replace("580", "53e"), 1
+                )
+                with self.assertRaisesRegex(
+                    EntryError, "failure path reaches later startup effects"
+                ):
+                    self.inspect(broken)
+
+    def test_eeprom_reads_cannot_be_bypassed_before_battery_sampling(self):
+        broken = DISASSEMBLY.replace(
+            "515: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x88>\n"
+            " 516: add r0, sp, #0\n"
+            " 518: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>",
+            "515: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x88>\n"
+            " 515a: cbz r1, 53e <coordinate_with_welcome::<TargetBootIo>+0x46>\n"
+            " 516: add r0, sp, #0\n"
+            " 518: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>",
+            1,
+        )
+        with self.assertRaisesRegex(
+            EntryError, "can be bypassed before later startup effects"
+        ):
             self.inspect(broken)
 
     def test_reset_entry_self_loop_is_rejected(self):

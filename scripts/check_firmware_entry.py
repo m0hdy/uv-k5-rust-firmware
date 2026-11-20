@@ -72,7 +72,9 @@ def instructions(body: str) -> list[tuple[int, str, str]]:
 
 
 def branch_target(operands: str) -> int | None:
-    target = re.match(r"\s*([0-9a-fA-F]+)\b", operands)
+    target = re.match(
+        r"\s*(?:r[0-7]\s*,\s*)?([0-9a-fA-F]+)\b", operands
+    )
     return int(target.group(1), 16) if target else None
 
 
@@ -218,6 +220,36 @@ def require_reachable_call_sequence(body: str, fragments: tuple[str, ...]) -> No
             raise EntryError(
                 "selected startup top-level hardware stages form an ordering cycle"
             )
+
+
+def instruction_dominators(
+    rows: list[tuple[int, str, str]], live: set[int]
+) -> dict[int, set[int]]:
+    indices = {address: index for index, (address, _, _) in enumerate(rows)}
+    predecessors = {address: set() for address in live}
+    for address in live:
+        for successor in instruction_successors(rows, indices[address]):
+            if successor in live:
+                predecessors[successor].add(address)
+    entry = rows[0][0]
+    dominators = {
+        address: {address} if address == entry else set(live)
+        for address in live
+    }
+    changed = True
+    while changed:
+        changed = False
+        for address in live - {entry}:
+            incoming = predecessors[address]
+            updated = {address} | (
+                set.intersection(*(dominators[item] for item in incoming))
+                if incoming
+                else set()
+            )
+            if updated != dominators[address]:
+                dominators[address] = updated
+                changed = True
+    return dominators
 
 
 def is_mmio_address(address: int) -> bool:
@@ -389,7 +421,7 @@ def require_device_clock_gate_before_stages(
 ) -> None:
     rows = instructions(body)
     live = reachable_instruction_addresses(rows)
-    indices = {address: index for index, (address, _, _) in enumerate(rows)}
+    dominators = instruction_dominators(rows, live)
     stage_calls = [
         address
         for address, mnemonic, operands in rows
@@ -416,33 +448,115 @@ def require_device_clock_gate_before_stages(
             "selected startup must emit the default device clock gate write exactly once"
         )
 
-    predecessors = {address: set() for address in live}
-    for address in live:
-        for successor in instruction_successors(rows, indices[address]):
-            if successor in live:
-                predecessors[successor].add(address)
-    entry = rows[0][0]
-    dominators = {
-        address: {address} if address == entry else set(live)
-        for address in live
-    }
-    changed = True
-    while changed:
-        changed = False
-        for address in live - {entry}:
-            incoming = predecessors[address]
-            updated = {address} | (
-                set.intersection(*(dominators[item] for item in incoming))
-                if incoming
-                else set()
-            )
-            if updated != dominators[address]:
-                dominators[address] = updated
-                changed = True
     if gate_stores[0] not in dominators[stage_calls[0]]:
         raise EntryError(
             "selected device clock gate write must dominate SysTick startup"
         )
+
+
+def require_fallible_stage_short_circuit(
+    body: str,
+    called_fragment: str,
+    continuation_fragment: str,
+    *,
+    optional: bool = False,
+) -> None:
+    rows = instructions(body)
+    live = reachable_instruction_addresses(rows)
+    indices = {address: index for index, (address, _, _) in enumerate(rows)}
+    dominators = instruction_dominators(rows, live)
+    calls = [
+        index
+        for index, (address, mnemonic, operands) in enumerate(rows)
+        if address in live
+        and mnemonic == "bl"
+        and called_fragment in operands
+        and "+0x" not in operands
+    ]
+    if optional and not calls:
+        return
+    if len(calls) != 1:
+        raise EntryError(
+            f"selected startup must call {called_fragment} exactly once"
+        )
+    call_index = calls[0]
+    continuation = next(
+        (
+            address
+            for address, mnemonic, operands in rows[call_index + 1 :]
+            if address in live
+            and mnemonic == "bl"
+            and continuation_fragment in operands
+            and "+0x" not in operands
+        ),
+        None,
+    )
+    if continuation is None:
+        raise EntryError(
+            f"{called_fragment} has no reachable later startup continuation"
+        )
+    conditional = next(
+        (
+            index
+            for index in range(call_index + 1, min(call_index + 9, len(rows)))
+            if rows[index][0] in live
+            and CONDITIONAL_BRANCH.fullmatch(rows[index][1])
+        ),
+        None,
+    )
+    if conditional is None:
+        raise EntryError(
+            f"{called_fragment} result does not guard later startup effects"
+        )
+    branch_address = rows[conditional][0]
+    successors = instruction_successors(rows, indices[branch_address])
+    if len(successors) != 2:
+        raise EntryError(
+            f"{called_fragment} result does not split success from failure"
+        )
+    successor_paths = [
+        reachable_instruction_addresses(rows, [successor])
+        for successor in successors
+    ]
+    continuing = [
+        index
+        for index, path in enumerate(successor_paths)
+        if continuation in path
+    ]
+    if len(continuing) != 1:
+        raise EntryError(
+            f"{called_fragment} result does not uniquely select continuation"
+        )
+    failure_path = successor_paths[1 - continuing[0]]
+    if continuation in failure_path:
+        raise EntryError(
+            f"{called_fragment} failure path reaches later startup effects"
+        )
+    if any(
+        address in failure_path and mnemonic in {"bl", "blx"}
+        for address, mnemonic, _ in rows
+    ):
+        raise EntryError(
+            f"{called_fragment} failure path reaches later startup effects"
+        )
+    returns = {
+        address
+        for address, mnemonic, operands in rows
+        if address in failure_path and is_supported_return(mnemonic, operands)
+    }
+    if not returns or any(
+        not (reachable_instruction_addresses(rows, [address]) & returns)
+        for address in failure_path
+    ):
+        raise EntryError(
+            f"{called_fragment} failure path does not terminate fail-closed"
+        )
+    if not optional:
+        call_address = rows[call_index][0]
+        if call_address not in dominators[continuation]:
+            raise EntryError(
+                f"{called_fragment} can be bypassed before later startup effects"
+            )
 
 
 def has_mmio_store(functions: dict[str, str], reached: set[str], start: str) -> bool:
@@ -979,6 +1093,7 @@ def require_result_guards(
     rows = instructions(body)
     live = reachable_instruction_addresses(rows)
     indices = {address: index for index, (address, _, _) in enumerate(rows)}
+    dominators = instruction_dominators(rows, live)
     calls = [
         index
         for index, (address, mnemonic, operands) in enumerate(rows)
@@ -1077,6 +1192,10 @@ def require_result_guards(
         if continuation is None:
             raise EntryError(
                 f"{called_fragment} result has no reachable later startup stage"
+            )
+        if rows[index][0] not in dominators[continuation]:
+            raise EntryError(
+                f"{called_fragment} can be bypassed before later startup effects"
             )
         successors = instruction_successors(rows, indices[branch_address])
         if len(successors) != 2:
@@ -1233,6 +1352,22 @@ def inspect_disassembly(disassembly: str, symbols: str, vector_dump: str) -> Non
             "StartupIo>::adc_init",
             "StartupIo>::st7565_init",
         ),
+    )
+    require_fallible_stage_short_circuit(
+        functions[coordinator],
+        "StartupIo>::systick",
+        "StartupIo>::portcon",
+    )
+    require_fallible_stage_short_circuit(
+        functions[coordinator],
+        "StartupIo>::st7565_init",
+        "eeprom_read_transport::execute_read::<",
+    )
+    require_fallible_stage_short_circuit(
+        functions[coordinator],
+        "StartupIo>::bk1080_shutdown",
+        "eeprom_read_transport::execute_read::<",
+        optional=True,
     )
     require_result_guards(
         functions[coordinator],
