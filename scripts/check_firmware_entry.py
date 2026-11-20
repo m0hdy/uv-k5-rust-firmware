@@ -372,8 +372,27 @@ def error_store_kinds(body: str) -> dict[int, str]:
         memory = dict(memory_state)
         _, mnemonic, operands = rows[indices[address]]
         clean_operands = operands.split("@")[0].strip()
-        for register in clobbered_address_registers(mnemonic, operands):
-            registers[register] = None
+        multiple_store = re.fullmatch(
+            r"r([0-7])!?,\s*\{[^}]+\}", clean_operands
+        )
+        if mnemonic.startswith("stm"):
+            stores[address] = "unknown"
+            if multiple_store is None:
+                memory.clear()
+            else:
+                base = registers[int(multiple_store.group(1))]
+                kinds = {kind for kind, _ in base} if base is not None else set()
+                if base and kinds == {"stack"}:
+                    stores[address] = "stack"
+                    memory.clear()
+                elif base and kinds == {"data"}:
+                    stores[address] = "data"
+                elif base and kinds == {"const"} and all(
+                    is_mmio_address(value) for _, value in base
+                ):
+                    stores[address] = "mmio"
+                else:
+                    memory.clear()
         store = re.fullmatch(
             r"r([0-7]),\s*\[(sp|r[0-7])(?:,\s*#(\d+))?\]",
             clean_operands,
@@ -424,6 +443,8 @@ def error_store_kinds(body: str) -> dict[int, str]:
             elif stores[address] == "unknown":
                 memory.clear()
 
+        for register in clobbered_address_registers(mnemonic, operands):
+            registers[register] = None
         destination = re.match(r"\s*r([0-7])\s*,", operands)
         if mnemonic in {"bl", "blx"}:
             registers[:4] = [None] * 4

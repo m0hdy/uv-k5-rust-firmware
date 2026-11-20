@@ -275,6 +275,20 @@ class FirmwareEntryTests(unittest.TestCase):
         ):
             self.inspect(broken)
 
+    def test_eeprom_error_cannot_write_inline_mmio_with_stmia(self):
+        broken = DISASSEMBLY.replace(
+            "590: bx lr",
+            "590: ldr r1, [pc, #4]\n"
+            " 592: stmia r1!, {r0}\n"
+            " 594: bx lr\n"
+            " 598: .word 0x40060000",
+            1,
+        )
+        with self.assertRaisesRegex(
+            EntryError, "first-error path reaches an unapproved store effect"
+        ):
+            self.inspect(broken)
+
     def test_eeprom_error_rejects_indirect_escape(self):
         broken = DISASSEMBLY.replace("590: bx lr", "590: bx r0", 1)
         with self.assertRaisesRegex(EntryError, "unsupported return or escape"):
