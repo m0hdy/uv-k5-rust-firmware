@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -161,6 +162,8 @@ def validate_required_call_targets(disassembly: str) -> None:
         ),
         ("StartupIo>::adc_init", "StartupIo>::adc_init", True),
         ("StartupIo>::st7565_init", "StartupIo>::st7565_init", True),
+        ("StartupIo>::bk1080_shutdown", "StartupIo>::bk1080_shutdown", True),
+        ("bk1080_startup_adapter::shutdown_mmio", "bk1080_startup_adapter::shutdown_mmio", False),
         ("StartupIo>::crc_init", "StartupIo>::crc_init", True),
         ("crc_startup_adapter::apply_to_hardware", "crc_startup_adapter::apply_to_hardware", True),
         ("crc_startup_adapter::apply_with_io::<", "crc_startup_adapter::apply_with_io::<", False),
@@ -280,6 +283,7 @@ def validate_required_call_targets(disassembly: str) -> None:
         ("StartupIo>::backlight_init_hardware", True),
         ("StartupIo>::adc_init", True),
         ("StartupIo>::st7565_init", True),
+        ("StartupIo>::bk1080_shutdown", True),
         ("StartupIo>::crc_init", True),
         ("crc_startup_adapter::apply_to_hardware", True),
         ("crc_startup_adapter::apply_with_io::<", False),
@@ -313,14 +317,9 @@ def validate_required_call_targets(disassembly: str) -> None:
                 allowed_helpers = (
                     (
                         (
-                            "HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::placeholder",
+                            "core::result::Result<(), startup_adapter_witness::board_startup_adapters::StartupError<core::convert::Infallible>>>::is_err",
                             False,
-                            r"<?startup_adapter_witness::board_startup_adapters::HardwareIo as startup_adapter_witness::board_startup_adapters::StartupIo>::placeholder",
-                        ),
-                        (
-                            "core::result::Result<(), startup_adapter_witness::board_startup_adapters::StartupError>>::is_err",
-                            False,
-                            r"<?core::result::Result<\(\), startup_adapter_witness::board_startup_adapters::StartupError>>::is_err",
+                            r"<?core::result::Result<\(\), startup_adapter_witness::board_startup_adapters::StartupError<core::convert::Infallible>>>::is_err",
                         ),
                     )
                     if caller == "board_sequence::Backend>::call"
@@ -903,9 +902,9 @@ def backend_dispatch_targets(function: str) -> list[int]:
     # sequencer and its exclusive call sites are pinned separately below.
     target_count = 9
     stack_size = 24
-    self_stack_offset = 8
-    variant_stack_offset = 12
-    index_stack_offset = 4
+    self_stack_offset = 4
+    variant_stack_offset = 8
+    index_stack_offset = 0
     instructions = parse_instructions(function)
     prefix = instructions[:18]
     if len(prefix) != 18 or any(
@@ -1083,17 +1082,17 @@ def validate_st7565_backend_case(backend: str, address: int) -> None:
 
     cursor = address
     for mnemonic, operands in (
-        ("ldr", r"\s*r3,\s*\[sp,\s*#8\]\s*"),
+        ("ldr", r"\s*r3,\s*\[sp,\s*#4\]\s*"),
         ("ldr", r"\s*r0,\s*\[r3,\s*#0\]\s*"),
         ("ldr", r"\s*r1,\s*\[r3,\s*#12\]\s*"),
         ("ldr", r"\s*r2,\s*\[r3,\s*#16\]\s*"),
-        ("ldr", r"\s*r3,\s*\[r3,\s*#20\]\s*"),
+        ("ldr", r"\s*r3,\s*\[r3,\s*#28\]\s*"),
     ):
         cursor = advance(expect(cursor, mnemonic, operands))
     cursor = advance(expect_call(cursor))
     for mnemonic, operands in (
         ("mov", r"\s*r1,\s*r0\s*"),
-        ("add", r"\s*r0,\s*sp,\s*#20\s*"),
+        ("add", r"\s*r0,\s*sp,\s*#16\s*"),
         ("strb", r"\s*r1,\s*\[r0,\s*#0\]\s*"),
         ("ldrb", r"\s*r0,\s*\[r0,\s*#0\]\s*"),
         ("cmp", r"\s*r0,\s*#255\s*"),
@@ -1109,11 +1108,12 @@ def validate_st7565_backend_case(backend: str, address: int) -> None:
 
     cursor = error_path
     for mnemonic, operands in (
-        ("ldr", r"\s*r1,\s*\[sp,\s*#8\]\s*"),
-        ("ldr", r"\s*r0,\s*\[sp,\s*#20\]\s*"),
+        ("ldr", r"\s*r1,\s*\[sp,\s*#4\]\s*"),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#16\]\s*"),
         ("movs", r"\s*r2,\s*#1\s*"),
         ("strb", r"\s*r2,\s*\[r1,\s*#8\]\s*"),
-        ("strb", r"\s*r0,\s*\[r1,\s*#24\]\s*"),
+        ("movs", r"\s*r2,\s*#32\s*"),
+        ("strb", r"\s*r0,\s*\[r1,\s*r2\]\s*"),
     ):
         cursor = advance(expect(cursor, mnemonic, operands))
     error_return = expect(cursor, "b.n", r"\s*[0-9a-fA-F]+\b.*")
@@ -1136,7 +1136,7 @@ def validate_backend_dispatch(disassembly: str) -> None:
     targets = backend_dispatch_targets(backend)
     target_count = 9
     stack_size = 24
-    self_stack_offset = 8
+    self_stack_offset = 4
     portcon_offset = 4
     gpio_offset = 5
     adc_offset = 6
@@ -1227,13 +1227,13 @@ def validate_backend_dispatch(disassembly: str) -> None:
     systick_end = expect(
         systick_end,
         "add",
-        r"\s*r0,\s*sp,\s*#16\s*",
+        r"\s*r0,\s*sp,\s*#12\s*",
         1,
     )
     systick_end = expect(systick_end, "strb", r"\s*r1,\s*\[r0,\s*#0\]\s*", 1)
     systick_end = expect_call(
         systick_end,
-        "Result<(), startup_adapter_witness::board_startup_adapters::StartupError>>::is_err",
+        "Result<(), startup_adapter_witness::board_startup_adapters::StartupError<core::convert::Infallible>>>::is_err",
         1,
     )
     systick_end = expect(systick_end, "cmp", r"\s*r0,\s*#0\s*", 1)
@@ -1242,7 +1242,13 @@ def validate_backend_dispatch(disassembly: str) -> None:
         raise WitnessError("sequencer backend SysTick result split has an unexpected branch")
     error_handler = branch_target(is_err_branch)
     systick_end += is_err_branch[1]
-    expect_epilogue_branch(systick_end, 1)
+    success_branch = by_address.get(systick_end)
+    if success_branch is None or success_branch[2] != "b.n":
+        raise WitnessError("sequencer backend SysTick success branch is invalid")
+    success_target = branch_target(success_branch)
+    if success_target is None:
+        raise WitnessError("sequencer backend SysTick success branch has no target")
+    expect_epilogue_branch(success_target, 1)
 
     if error_handler is None:
         raise WitnessError("sequencer backend SysTick error branch has no target")
@@ -1251,8 +1257,9 @@ def validate_backend_dispatch(disassembly: str) -> None:
     )
     error_end = expect(error_end, "movs", r"\s*r0,\s*#1\s*", 1)
     error_end = expect(error_end, "strb", r"\s*r0,\s*\[r1,\s*#8\]\s*", 1)
-    error_end = expect(error_end, "movs", r"\s*r0,\s*#255\s*", 1)
-    error_end = expect(error_end, "strb", r"\s*r0,\s*\[r1,\s*#24\]\s*", 1)
+    error_end = expect(error_end, "movs", r"\s*r2,\s*#32\s*", 1)
+    error_end = expect(error_end, "movs", r"\s*r0,\s*#3\s*", 1)
+    error_end = expect(error_end, "strb", r"\s*r0,\s*\[r1,\s*r2\]\s*", 1)
     expect_epilogue_branch(error_end, 1)
 
     portcon_end = expect(
@@ -1292,16 +1299,48 @@ def validate_backend_dispatch(disassembly: str) -> None:
     adc_end = expect_call(adc_end, methods[5], 5)
     expect_epilogue_branch(adc_end, 5)
 
-    placeholder_end = expect(targets[7], "ldr", r"\s*r1,\s*\[sp,\s*#12\]\s*", 7)
-    placeholder_end = expect(placeholder_end, "ldr", r"\s*r0,\s*\[sp,\s*#8\]\s*", 7)
-    placeholder_end = expect(placeholder_end, "ldr", r"\s*r0,\s*\[r0,\s*#0\]\s*", 7)
-    placeholder_end = expect_call(placeholder_end, "StartupIo>::placeholder", 7)
-    expect_epilogue_branch(placeholder_end, 7)
+    fm_end = targets[7]
+    for mnemonic, operands in (
+        ("ldr", r"\s*r2,\s*\[sp,\s*#4\]\s*"),
+        ("ldr", r"\s*r0,\s*\[r2,\s*#0\]\s*"),
+        ("ldr", r"\s*r1,\s*\[r2,\s*#20\]\s*"),
+        ("ldr", r"\s*r2,\s*\[r2,\s*#24\]\s*"),
+    ):
+        fm_end = expect(fm_end, mnemonic, operands, 7)
+    fm_end = expect_call(fm_end, "StartupIo>::bk1080_shutdown", 7)
+    for mnemonic, operands in (
+        ("mov", r"\s*r1,\s*r0\s*"),
+        ("add", r"\s*r0,\s*sp,\s*#20\s*"),
+        ("strb", r"\s*r1,\s*\[r0,\s*#0\]\s*"),
+        ("ldrb", r"\s*r0,\s*\[r0,\s*#0\]\s*"),
+        ("lsls", r"\s*r0,\s*r0,\s*#31\s*"),
+        ("cmp", r"\s*r0,\s*#0\s*"),
+    ):
+        fm_end = expect(fm_end, mnemonic, operands, 7)
+    error_branch = by_address.get(fm_end)
+    if error_branch is None or error_branch[2] != "bne.n":
+        raise WitnessError("sequencer backend FM result split is invalid")
+    fm_error = branch_target(error_branch)
+    expect_epilogue_branch(fm_end + error_branch[1], 7)
+    if fm_error is None:
+        raise WitnessError("sequencer backend FM error branch has no target")
+    for mnemonic, operands in (
+        ("ldr", r"\s*r1,\s*\[sp,\s*#4\]\s*"),
+        ("movs", r"\s*r0,\s*#1\s*"),
+        ("strb", r"\s*r0,\s*\[r1,\s*#8\]\s*"),
+        ("movs", r"\s*r2,\s*#32\s*"),
+        ("movs", r"\s*r0,\s*#5\s*"),
+        ("strb", r"\s*r0,\s*\[r1,\s*r2\]\s*"),
+    ):
+        fm_error = expect(fm_error, mnemonic, operands, 7)
+    expect_epilogue_branch(fm_error, 7)
 
-    crc_end = expect(targets[8], "ldr", r"\s*r0,\s*\[sp,\s*#8\]\s*", 8)
+    crc_end = expect(targets[8], "ldr", r"\s*r0,\s*\[sp,\s*#4\]\s*", 8)
     crc_end = expect(crc_end, "ldr", r"\s*r0,\s*\[r0,\s*#0\]\s*", 8)
     crc_end = expect_call(crc_end, "StartupIo>::crc_init", 8)
     expect_epilogue_branch(crc_end, 8)
+    if success_target != crc_end + by_address[crc_end][1]:
+        raise WitnessError("sequencer backend SysTick success path is not its dedicated continuation")
     validate_st7565_stage(disassembly, backend)
 
 def validate_backlight_executor_paths(function: str) -> None:
@@ -2107,8 +2146,8 @@ def validate_adapter_run_result(function: str) -> None:
     start = call[0] + call[1]
     instructions = {instruction[0]: instruction for instruction in parse_instructions(function)}
     expected = (
-        ("ldr", r"\s*r0,\s*\[sp,\s*#44\]\s*"),
-        ("add", r"\s*sp,\s*#52\s*"),
+        ("ldr", r"\s*r0,\s*\[sp,\s*#68\]\s*"),
+        ("add", r"\s*sp,\s*#76\s*"),
         ("pop", r"\s*\{\s*r4,\s*r5,\s*r6,\s*r7,\s*pc\s*\}\s*"),
     )
     path = [instructions.get(start + offset * 2) for offset in range(len(expected))]
@@ -2266,15 +2305,15 @@ def validate_crc_configuration(disassembly: str) -> None:
         ("witness_main", """
 push {r7, lr}
 add r7, sp, #0
-sub sp, #24
-add r0, sp, #16
-movs r1, #0
-strb r1, [r0, #0]
+sub sp, #32
+add r0, sp, #24
 movs r2, #1
+strb r2, [r0, #0]
 strb r2, [r0, #1]
+movs r1, #0
 strb r1, [r0, #2]
 ldrb r4, [r0, #2]
-add r3, sp, #20
+add r3, sp, #28
 strb r4, [r3, #2]
 ldrb r4, [r0, #0]
 ldrb r0, [r0, #1]
@@ -2285,38 +2324,53 @@ ldrh r0, [r3, #0]
 ldrb r3, [r3, #2]
 lsls r3, r3, #16
 adds r0, r0, r3
+str r2, [sp, #12]
+ldr r2, [pc, #24]
+str r2, [sp, #8]
+add r2, sp, #20
 str r2, [sp, #4]
-ldr r2, [pc, #16]
+ldr r2, [pc, #20]
 str r2, [sp, #0]
-ldr r2, [pc, #16]
-add r3, sp, #12
+ldr r2, [pc, #20]
+add r3, sp, #16
 """, "run_hardware"),
         ("run_hardware", """
 push {r4, r5, r6, r7, lr}
 add r7, sp, #12
-sub sp, #28
-mov r6, r0
+sub sp, #52
+str r1, [sp, #24]
+mov r1, r0
+ldr r0, [r7, #20]
+str r0, [sp, #28]
+ldr r6, [r7, #16]
 ldr r5, [r7, #12]
 ldr r4, [r7, #8]
-add r0, sp, #16
-strh r6, [r0, #0]
-lsrs r6, r6, #16
-strb r6, [r0, #2]
-ldrb r6, [r0, #2]
-add r0, sp, #12
-strb r6, [r0, #2]
-ldr r6, [sp, #16]
-strh r6, [r0, #0]
+ldr r0, [sp, #24]
+add r0, sp, #40
+strh r1, [r0, #0]
+lsrs r1, r1, #16
+strb r1, [r0, #2]
+ldrb r1, [r0, #2]
+add r0, sp, #36
+strb r1, [r0, #2]
+ldr r1, [sp, #40]
+strh r1, [r0, #0]
 ldrb r0, [r0, #2]
-add r6, sp, #24
-strb r0, [r6, #2]
-ldr r0, [sp, #12]
-strh r0, [r6, #0]
-ldrh r0, [r6, #0]
-ldrb r6, [r6, #2]
-lsls r6, r6, #16
-adds r0, r0, r6
-add r6, sp, #20
+add r1, sp, #48
+strb r0, [r1, #2]
+ldr r0, [sp, #36]
+strh r0, [r1, #0]
+ldrh r0, [r1, #0]
+ldrb r1, [r1, #2]
+lsls r1, r1, #16
+adds r0, r0, r1
+ldr r1, [sp, #24]
+str r0, [sp, #32]
+add r0, sp, #44
+str r0, [sp, #16]
+ldr r0, [sp, #28]
+str r0, [sp, #12]
+ldr r0, [sp, #32]
 str r6, [sp, #8]
 str r5, [sp, #4]
 str r4, [sp, #0]
@@ -2324,45 +2378,57 @@ str r4, [sp, #0]
         ("board_startup_adapters::run::<", """
 push {r4, r5, r6, r7, lr}
 add r7, sp, #12
-sub sp, #52
-mov r4, r3
-mov r5, r2
-mov r6, r0
-ldr r0, [r7, #16]
-str r0, [sp, #0]
-ldr r2, [r7, #12]
-ldr r3, [r7, #8]
-add r0, sp, #16
-strh r6, [r0, #0]
-lsrs r6, r6, #16
-strb r6, [r0, #2]
-ldrb r6, [r0, #2]
-add r0, sp, #12
-str r0, [sp, #4]
-strb r6, [r0, #2]
-ldr r6, [sp, #16]
-strh r6, [r0, #0]
-ldr r0, [sp, #0]
-ldr r6, [sp, #12]
-str r0, [sp, #20]
-add r0, sp, #20
-str r0, [sp, #8]
-strb r1, [r0, #4]
+sub sp, #76
+mov r6, r3
+str r2, [sp, #20]
+str r1, [sp, #4]
+mov r1, r0
+ldr r0, [sp, #20]
+ldr r2, [r7, #24]
+str r2, [sp, #8]
+ldr r2, [r7, #20]
+ldr r3, [r7, #16]
+ldr r4, [r7, #12]
+ldr r5, [r7, #8]
 ldr r0, [sp, #4]
-ldr r1, [sp, #8]
-strb r6, [r1, #5]
-strh r5, [r1, #6]
-movs r5, #0
-strb r5, [r1, #8]
-str r4, [sp, #32]
-str r3, [sp, #36]
-str r2, [sp, #40]
-movs r2, #254
-strb r2, [r1, #24]
+add r0, sp, #32
+strh r1, [r0, #0]
+lsrs r1, r1, #16
+strb r1, [r0, #2]
 ldrb r0, [r0, #2]
-add r2, sp, #48
-strb r0, [r2, #2]
+add r1, sp, #28
+str r1, [sp, #24]
+strb r0, [r1, #2]
+ldr r0, [sp, #32]
+strh r0, [r1, #0]
+ldr r1, [sp, #4]
+ldr r0, [sp, #28]
+str r0, [sp, #12]
+ldr r0, [sp, #8]
+str r0, [sp, #36]
+add r0, sp, #36
+str r0, [sp, #16]
+strb r1, [r0, #4]
 ldr r0, [sp, #12]
+ldr r1, [sp, #16]
+strb r0, [r1, #5]
+ldr r0, [sp, #20]
+strh r0, [r1, #6]
+movs r0, #0
+strb r0, [r1, #8]
+ldr r0, [sp, #24]
+str r6, [sp, #48]
+str r5, [sp, #52]
+str r4, [sp, #56]
+str r3, [sp, #60]
+str r2, [sp, #64]
+movs r3, #32
+movs r2, #255
+strb r2, [r1, r3]
+ldrb r0, [r0, #2]
+add r2, sp, #72
+strb r0, [r2, #2]
+ldr r0, [sp, #28]
 strh r0, [r2, #0]
 ldrh r0, [r2, #0]
 ldrb r2, [r2, #2]
@@ -2402,6 +2468,40 @@ movs r1, #0
             for target in direct_call_targets(path[len(expected)][4])
         ):
             raise WitnessError(f"CRC enabled configuration forwarding is invalid in {symbol}")
+        if symbol == "witness_main":
+            call_instruction = path[len(expected)]
+            by_address = {
+                instruction[0]: instruction
+                for instruction in parse_instructions(function_entry_body(disassembly, address, name))
+            }
+            branch = by_address.get(call_instruction[0] + call_instruction[1])
+            loop = branch_target(branch) if branch is not None and branch[2] == "b.n" else None
+            yield_instruction = by_address.get(loop)
+            back = by_address.get(loop + 2) if loop is not None else None
+            if not (
+                loop == call_instruction[0] + call_instruction[1] + 2
+                and matches_instruction(yield_instruction, "yield", r"\s*")
+                and back is not None and back[2] == "b.n" and branch_target(back) == loop
+            ):
+                raise WitnessError("witness_main has an unexpected post-startup loop")
+            words = {
+                int(match.group(1), 16): int(match.group(2), 16)
+                for line in function_entry_body(disassembly, address, name).splitlines()
+                if (match := re.match(
+                    r"\s*([0-9a-fA-F]+):\s+[0-9a-fA-F]+\s+\.word\s+0x([0-9a-fA-F]+)\b", line
+                ))
+            }
+            literals = []
+            for instruction in path:
+                match = re.fullmatch(r"r2,\s*\[pc,\s*#(\d+)\]", instruction[3].split("@")[0].strip())
+                if instruction[2] == "ldr" and match:
+                    literals.append(words.get(((instruction[0] + 4) & ~3) + int(match.group(1))))
+            if (
+                len(literals) != 3 or literals[2] != 0x5aa5
+                or any(value is None or value % 4 or not 0x10000000 <= value < 0x10004000 for value in literals[:2])
+                or literals[0] == literals[1]
+            ):
+                raise WitnessError("witness delay vtables or ADC selection literals are invalid")
 
 
 def validate_crc_path(disassembly: str) -> None:
@@ -2459,6 +2559,344 @@ def validate_crc_path(disassembly: str) -> None:
                 values.append(words.get(literal))
             if values != [0x40003000, 0x40003004]:
                 raise WitnessError("CRC executor has unexpected register literals")
+
+
+def validate_fm_path(disassembly: str) -> None:
+    # These are complete straight-line frames, including the preserved typed
+    # result, PB15 read/modify/write, and keypad handoff after shutdown.
+    gpio_type = (
+        "startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<"
+        "startup_adapter_witness::i2c_bitbang_flow::target_gpio::TargetRegisters, "
+        "<startup_adapter_witness::board_startup_adapters::HardwareIo as "
+        "startup_adapter_witness::board_startup_adapters::StartupIo>::"
+        "bk1080_shutdown::DelayRef>"
+    )
+    gpio_methods = {
+        method: f"<{gpio_type}>{method}"
+        for method in ("::new_target", "::handoff_to_keypad", "::restore_keypad_mode", "::set_sda", "::update")
+    }
+    gpio_methods["::new"] = (
+        "<startup_adapter_witness::eeprom_i2c_bridge::I2cBitbangTransport<"
+        + gpio_type + ">>::new"
+    )
+    paths = (
+        ("StartupIo>::bk1080_shutdown", True, """
+push {r7, lr}
+add r7, sp, #0
+sub sp, #8
+str r2, [sp, #4]
+mov r0, r1
+ldr r1, [sp, #4]
+bl bk1080_startup_adapter::shutdown_mmio
+add sp, #8
+pop {r7, pc}
+"""),
+        ("bk1080_startup_adapter::shutdown_mmio", False, """
+push {r7, lr}
+add r7, sp, #0
+sub sp, #40
+mov r2, r1
+mov r1, r0
+add r0, sp, #8
+str r0, [sp, #0]
+bl ::new_target
+ldr r0, [sp, #0]
+bl ::new
+str r0, [sp, #20]
+add r0, sp, #20
+add r1, sp, #24
+bl bk1080_startup_adapter::shutdown_with_io
+str r0, [sp, #4]
+ldr r0, [sp, #16]
+str r0, [sp, #36]
+ldr r0, [sp, #12]
+str r0, [sp, #32]
+ldr r0, [sp, #8]
+str r0, [sp, #28]
+add r0, sp, #28
+bl ::handoff_to_keypad
+ldr r0, [sp, #4]
+add sp, #40
+pop {r7, pc}
+"""),
+        ("bk1080_startup_adapter::shutdown_with_io", False, """
+push {r7, lr}
+add r7, sp, #0
+sub sp, #16
+str r1, [sp, #8]
+bl bk1080_startup_adapter::shutdown_transaction
+mov r1, r0
+ldr r0, [sp, #8]
+str r1, [sp, #12]
+ldr r1, [pc, #28]
+str r1, [sp, #4]
+bl bk1080_startup_adapter::WordIo>::read_word
+ldr r1, [sp, #4]
+mov r2, r0
+ldr r0, [sp, #8]
+movs r3, #1
+lsls r3, r3, #15
+orrs r2, r3
+bl bk1080_startup_adapter::WordIo>::write_word
+ldr r0, [sp, #12]
+add sp, #16
+pop {r7, pc}
+"""),
+        ("bk1080_startup_adapter::WordIo>::read_word", True, """
+push {r7, lr}
+add r7, sp, #0
+ldr r0, [r1, #0]
+pop {r7, pc}
+"""),
+        ("bk1080_startup_adapter::WordIo>::write_word", True, """
+push {r7, lr}
+add r7, sp, #0
+str r2, [r1, #0]
+pop {r7, pc}
+"""),
+        ("::handoff_to_keypad", True, """
+push {r7, lr}
+add r7, sp, #0
+sub sp, #8
+str r0, [sp, #4]
+bl ::restore_keypad_mode
+ldr r0, [sp, #4]
+movs r1, #1
+strb r1, [r0, #8]
+bl core::ptr::drop_glue
+add sp, #8
+pop {r7, pc}
+"""),
+        ("::restore_keypad_mode", True, """
+push {r7, lr}
+add r7, sp, #0
+sub sp, #16
+str r0, [sp, #4]
+movs r1, #1
+str r1, [sp, #12]
+bl ::set_sda
+ldr r0, [sp, #4]
+ldr r1, [sp, #12]
+lsls r2, r1, #11
+str r2, [sp, #8]
+movs r1, #2
+movs r3, #0
+str r3, [sp, #0]
+bl ::update
+ldr r3, [sp, #0]
+ldr r0, [sp, #4]
+ldr r2, [sp, #8]
+movs r1, #3
+bl ::update
+ldr r0, [sp, #4]
+ldr r2, [sp, #8]
+ldr r3, [sp, #12]
+mov r1, r3
+bl ::update
+add sp, #16
+pop {r7, pc}
+"""),
+        ("target_gpio::RegisterIo>::read", True, """
+push {r7, lr}
+add r7, sp, #0
+mov r0, r1
+bl target_gpio::Register>::address
+ldr r0, [r0, #0]
+pop {r7, pc}
+"""),
+        ("target_gpio::RegisterIo>::write", True, """
+push {r7, lr}
+add r7, sp, #0
+sub sp, #8
+str r2, [sp, #4]
+mov r0, r1
+bl target_gpio::Register>::address
+ldr r2, [sp, #4]
+str r2, [r0, #0]
+add sp, #8
+pop {r7, pc}
+"""),
+    )
+    for symbol, suffix, source in paths:
+        address, name = function_entry(disassembly, symbol, suffix)
+        body = function_entry_body(disassembly, address, name)
+        expected = []
+        for line in source.strip().splitlines():
+            mnemonic, operands = line.split(" ", 1)
+            if mnemonic == "bl":
+                expected.append((mnemonic, r"\s*[0-9a-fA-F]+\s+<.*>.*", operands))
+            else:
+                expected.append((mnemonic, r"\s*" + re.escape(operands).replace(r"\ ", r"\s*") + r"\s*", None))
+        validate_exact_returning_instruction_path(body, f"FM {symbol}", expected)
+        path = reachable_instruction_prefix(body)
+        for instruction, (_, _, expected_call) in zip(path, expected, strict=True):
+            if instruction[2] != "bl":
+                continue
+            edge = re.search(r"\bbl\s+([0-9a-fA-F]+)\s+<(.+)>$", instruction[4])
+            if edge is None:
+                raise WitnessError(f"FM {symbol} has an invalid call")
+            target_address, target = int(edge.group(1), 16), edge.group(2)
+            entry, entry_name = function_entry(disassembly, target, True)
+            if entry != target_address or entry_name != target:
+                raise WitnessError(f"FM {symbol} call does not target its symbol entry")
+            selector = gpio_methods.get(expected_call, expected_call)
+            if expected_call == "core::ptr::drop_glue":
+                selector = "core::ptr::drop_glue::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<"
+            expected_entry, expected_name = function_entry(
+                disassembly, selector, expected_call.startswith("::")
+            )
+            if entry != expected_entry or entry_name != expected_name:
+                raise WitnessError(f"FM {symbol} calls the wrong {expected_call} symbol")
+        if "shutdown_with_io" in symbol:
+            literal_instruction = reachable_instruction_prefix(body)[8]
+            literal = ((literal_instruction[0] + 4) & ~3) + 28
+            if not re.search(rf"(?m)^\s*{literal:x}:\s+[0-9a-fA-F]+\s+\.word\s+0x40060800\b", body):
+                raise WitnessError("FM GPIOB DATA literal is invalid")
+
+
+def fm_emission_fingerprint(disassembly: str, symbol: str, suffix: bool) -> str:
+    """Fingerprint one pinned emitted body, with relocatable control-flow edges.
+
+    Branch destinations are offsets, while every direct call must name and
+    address the exact linked symbol entry. Data words include register literals
+    and local jump-table targets. This makes gaps, traps and altered returns
+    fail closed even in blocks after a conditional branch.
+    """
+    entry, name = function_entry(disassembly, symbol, suffix)
+    body = function_entry_body(disassembly, entry, name)
+    instructions = parse_instructions(body)
+    end = max(address + size for address, size, *_ in instructions)
+    lines = []
+    for address, size, mnemonic, operands, text in instructions:
+        operands = re.split(r"\s+[@;]\s*", operands, maxsplit=1)[0].strip()
+        if mnemonic in ("bl", "blx") and direct_call_targets(text):
+            edge = re.search(r"\bblx?\s+([0-9a-fA-F]+)\s+<(.+)>$", text)
+            if edge is None:
+                raise WitnessError(f"FM {symbol} has an invalid call")
+            call_address, target = int(edge.group(1), 16), edge.group(2)
+            target_address, target_name = function_entry(disassembly, target, True)
+            if target_address != call_address or target_name != target:
+                raise WitnessError(f"FM {symbol} call does not target its symbol entry")
+            operands = target
+        elif mnemonic.startswith("b") and mnemonic not in ("bl", "blx", "bx", "bkpt", "bic", "bics"):
+            target = branch_target((address, size, mnemonic, operands, text))
+            if target is None or not entry <= target < end:
+                raise WitnessError(f"FM {symbol} has an invalid branch target")
+            operands = f"entry{target - entry:+x}"
+        lines.append(f"{address-entry:x}:{size}:{mnemonic}:{operands}")
+    for match in re.finditer(
+        r"(?m)^\s*([0-9a-fA-F]+):\s+[0-9a-fA-F]+\s+\.word\s+0x([0-9a-fA-F]+)\b",
+        body,
+    ):
+        address, value = (int(part, 16) for part in match.groups())
+        normalized = (
+            f"entry{(value & ~1) - entry:+x}/{value & 1}"
+            if entry <= (value & ~1) < end
+            else f"{value:x}"
+        )
+        lines.append(f"{address-entry:x}:word:{normalized}")
+    return hashlib.sha256("\n".join(lines).encode()).hexdigest()
+
+
+def validate_fm_transport(disassembly: str) -> None:
+    # Pinned rustc 1.99.1 Cortex-M0 emission. These whole-body digests cover
+    # transaction byte/error/STOP control flow, bitbang edges, GPIO updates,
+    # register mapping literals, and frame setup/restore. They are intentionally
+    # fail-closed when code generation changes; regenerate only after auditing
+    # the complete disassembly and its reachable branch/call targets.
+    bodies = (
+        ("::new_target", True, "acae5f0e78235d8429dbd9a8c596df31ec66f3d28714404e05cf0c2715454f04"),
+        ("DelayRef>>::new", True, "5492e5aa7271606972063d052379ce32c8f3759e619249e79ee55e7582370339"),
+        ("DelayRef>>>::new", True, "1c5b5e3fb8082a3687d6ac5113fd86221edd7aa8e779e6117c17e39e0922fd2b"),
+        ("core::ptr::drop_glue::<startup_adapter_witness::i2c_bitbang_flow::target_gpio::GpioI2cIo<", False, "af273b4cfe9e797c26ac3499689e6c96f4d6b31bef2087713dcc7180ff2b0ef1"),
+        ("bk1080_shutdown::DelayRef> as core::ops::drop::Drop>::drop", True, "ab889453f787016da3aaa29f89459cb22be034fc42fa0e786c11734bd54b6d62"),
+        ("bk1080_shutdown::DelayRef as startup_adapter_witness::i2c_bitbang_flow::target_gpio::Delay1us>::delay_1us", True, "a63cf72a09fe83a7d67a3f7f84d8ebf7b4d4b7868bdd8e2f610c4789f9dda8b8"),
+        ("LinkOnlyDelay as startup_adapter_witness::i2c_bitbang_flow::target_gpio::Delay1us>::delay_1us", True, "1c5b5e3fb8082a3687d6ac5113fd86221edd7aa8e779e6117c17e39e0922fd2b"),
+        ("LinkOnlyDelay as startup_adapter_witness::st7565_startup_executor::target_spi0::DelayMs>::delay_ms", True, "1c5b5e3fb8082a3687d6ac5113fd86221edd7aa8e779e6117c17e39e0922fd2b"),
+        ("bk1080_startup_adapter::shutdown_transaction", False, "17efd2479951531a6017fb8a90ad813059ab564199c13cc193681aaa0a4f42a9"),
+        ("I2cTransport>::start", True, "045c3a7ec30a6aa2bfdb139f4ef03f59ac01671429de2defb4c104cd27ce52d0"),
+        ("I2cTransport>::stop", True, "c92af9b0841448c9881e2e4c085308a71bd98163b3624789afe6d0a8209fbebb"),
+        ("I2cTransport>::write_byte", True, "88b88856ab5801e2dcd21e7d1dfe2c8285cc6b354ee1f2307b6adc3271f23705"),
+        ("i2c_bitbang_flow::start::<", False, "919f2826e196e1d732d913c5eaf1048a79e140094430af6f0687a540fdb83c71"),
+        ("i2c_bitbang_flow::stop::<", False, "9bdb4cf534ba89511a72286b29cb772c5873057db06ce5892889c20442c3a106"),
+        ("i2c_bitbang_flow::write_byte::<", False, "e73e81d6ef20bb2e45f75c23cd2e9d8b75d565ca0405bd856f59057ee45cedb0"),
+        ("i2c_bitbang_flow::input::<", False, "2790f82a6d3a16b5e83470702bf8a2a452916a7184a874dc2382b36b8eddf6b7"),
+        ("i2c_bitbang_flow::output::<", False, "48501447af0b42dbb921a87c114449eb745c114bca2a4b5c65de42cb59c5f12f"),
+        ("I2cIo>::sda", True, "f039930a80df5e2ef34b8794254045f4f2b7f3d701ce89d5840ca37b80fcb452"),
+        ("I2cIo>::scl", True, "28c8167fd7e8c3f7000b6632633a89aa240bd74a40e746104405aea89b82c718"),
+        ("I2cIo>::sda_input_enable", True, "bde12975daa044bc79548479c6121f65122ace324c538bbf627071d2402e53a0"),
+        ("I2cIo>::sda_open_drain", True, "dc19d6e1a733c29ec452bd15c8626c0f695a56bd40f61173fb6b30363ec7bb88"),
+        ("I2cIo>::sda_direction", True, "0d937e8d85ad049f818757841edc6813e3b029958ed8a433dc3e2dc3fcff1458"),
+        ("I2cIo>::read_sda", True, "60bf4a51449e37d5c16a8036e754d598b5053e6d5e529d1534e3e8a4d3f04e36"),
+        ("I2cIo>::delay_1us", True, "aa907e4381537e98ba573ece3e525e9294a16f6d7d607f422d84794ebc767281"),
+        ("::set_sda", True, "0c6c84c8f178359192d9e8c146be525511eb839ba99ca0afe7b8de693a4e5842"),
+        ("::set_scl", True, "7974ef860b3e5117157c180ee8925348a3116554ecfcdb7584fe69d74dbc7fea"),
+        ("::update", True, "625024bbed5542b0e10db8749efbb6676ad2be88b28ae4557547728022237409"),
+        ("target_gpio::Register>::address", True, "d8a494ea35519397cb04a8a7377118ab2f09e397059c20d17b33e3fa2bd4df1e"),
+        ("core::convert::Infallible>>::map_err::<startup_adapter_witness::bk1080_startup_adapter::ShutdownError", False, "7da1e3e3a982892dc49bb9e5f062ee75c13565ecd045d9662bc7dcc5656006e0"),
+        ("ShutdownError<core::convert::Infallible>> as core::ops::try_trait::Try>::branch", True, "7d8570dc22e1f398915befe12be19bdebd495fb366563ee748563525f87ad988"),
+        ("ShutdownError<core::convert::Infallible>> as core::ops::try_trait::FromResidual", False, "944c2b4958aed7d0f3cc29f69e2e53845608760d8bcaec96d0309a1a60e91123"),
+        ("[u8; 4] as core::iter::traits::collect::IntoIterator>::into_iter", True, "a85dfd9e401691c72a28fa54dacbcf4c2cf7a5c8e870131563a3ea73eb5be234"),
+        ("core::array::iter::IntoIter<u8, 4> as core::iter::traits::iterator::Iterator>::next", True, "bd602b465a0136cd6b6b481e1c5a80685f37c383ca74cb2414a00a9db198733c"),
+        ("core::ptr::drop_glue::<core::array::iter::IntoIter<u8, 4>>", True, "637ce113a9c6327b563dc57c18153f96a30464444cfc74233fa893c973ac6667"),
+        ("core::ops::range::Range<i32> as core::iter::traits::iterator::Iterator>::rev", True, "1c5b5e3fb8082a3687d6ac5113fd86221edd7aa8e779e6117c17e39e0922fd2b"),
+        ("core::iter::adapters::rev::Rev<core::ops::range::Range<i32>> as core::iter::traits::collect::IntoIterator>::into_iter", True, "1c5b5e3fb8082a3687d6ac5113fd86221edd7aa8e779e6117c17e39e0922fd2b"),
+        ("core::iter::adapters::rev::Rev<core::ops::range::Range<i32>> as core::iter::traits::iterator::Iterator>::next", True, "5d0b0ea1a1d05f49d485cb53f8afa3b6d2c41a808c52d5b4ed62e12d36a8a674"),
+        ("core::ops::range::Range<i32> as core::iter::traits::collect::IntoIterator>::into_iter", True, "1c5b5e3fb8082a3687d6ac5113fd86221edd7aa8e779e6117c17e39e0922fd2b"),
+        ("core::ops::range::Range<i32> as core::iter::traits::iterator::Iterator>::next", True, "9120d0c9d6876cd9488995c391c779532bedc65004d6bdb2884bf8f101c7808a"),
+        ("core::array::iter::iter_inner::PolymorphicIter<[core::mem::maybe_uninit::MaybeUninit<u8>]>>::next", True, "5b677b5fee4f29c1c38310374593d08770f9bd40b89c6176daa265db545c167e"),
+        ("core::array::iter::IntoIter<u8, 4> as core::ops::drop::Drop>::drop", True, "400080cfc0ebea14fecd729c1924aafd0a6f4d304ff0bd542ce7dd1bd47e5c16"),
+        ("core::ops::range::Range<i32> as core::iter::traits::double_ended::DoubleEndedIterator>::next_back", True, "a1c89f91c901ec5b27f04c03893f264914d6b573a2dc881b65c991a681a4798c"),
+        ("core::ops::range::Range<i32> as core::iter::range::RangeIteratorImpl>::spec_next", True, "b22e3df4cb912d420db26b8efb9769ab371f8efc4d7e423496858af8f42567ba"),
+        ("core::ops::range::Range<i32> as core::iter::range::RangeIteratorImpl>::spec_next_back", True, "683158d183618dda3e588b26f6ea8c94cfa8e2d550f60b0a0f3617565c2bcfb1"),
+        ("i32 as core::iter::range::Step>::forward_unchecked", True, "fdee960163843b944106c997e856ebeb5e7a33ba6114d02e7739a15980610857"),
+        ("i32 as core::iter::range::Step>::backward_unchecked", True, "e1f7b9e6fedcf93c907fc8ffbf292995ae21ea626a43ffb07de92ef4b6c1a260"),
+        ("i2c_bitbang_flow::Level as core::cmp::PartialEq>::eq", True, "f82a92d69d4a6d8b588429e0a8795e1e05fd16164e1b86222792f6fbdd8960f7"),
+        ("i2c_bitbang_flow::Direction as core::cmp::PartialEq>::eq", True, "f82a92d69d4a6d8b588429e0a8795e1e05fd16164e1b86222792f6fbdd8960f7"),
+    )
+    for symbol, suffix, expected in bodies:
+        if fm_emission_fingerprint(disassembly, symbol, suffix) != expected:
+            raise WitnessError(f"FM {symbol} emitted control flow or data has changed")
+
+
+def validate_delay_vtables(disassembly: str, contents: str) -> None:
+    entry, name = function_entry(disassembly, "witness_main", False)
+    body = function_entry_body(disassembly, entry, name)
+    words = {
+        int(match.group(1), 16): int(match.group(2), 16)
+        for line in body.splitlines()
+        if (match := re.match(
+            r"\s*([0-9a-fA-F]+):\s+[0-9a-fA-F]+\s+\.word\s+0x([0-9a-fA-F]+)\b", line
+        ))
+    }
+    literals = []
+    for instruction in reachable_instruction_prefix(body):
+        match = re.fullmatch(r"r2,\s*\[pc,\s*#(\d+)\]", instruction[3].split("@")[0].strip())
+        if instruction[2] == "ldr" and match:
+            literals.append(words.get(((instruction[0] + 4) & ~3) + int(match.group(1))))
+    if len(literals) != 3 or any(value is None for value in literals):
+        raise WitnessError("witness delay vtable literals are missing")
+    data = {}
+    for line in contents.splitlines():
+        match = re.match(r"\s*([0-9a-fA-F]+)\s+((?:[0-9a-fA-F]{8}\s*){1,4})", line)
+        if match:
+            address = int(match.group(1), 16)
+            for offset, byte in enumerate(bytes.fromhex("".join(match.group(2).split()))):
+                data[address + offset] = byte
+    for table, selector in (
+        (literals[0], "LinkOnlyDelay as startup_adapter_witness::i2c_bitbang_flow::target_gpio::Delay1us>::delay_1us"),
+        (literals[1], "LinkOnlyDelay as startup_adapter_witness::st7565_startup_executor::target_spi0::DelayMs>::delay_ms"),
+    ):
+        target, _ = function_entry(disassembly, selector, True)
+        try:
+            values = [
+                int.from_bytes(bytes(data[table + offset + i] for i in range(4)), "little")
+                for offset in (0, 4, 8, 12)
+            ]
+        except KeyError as error:
+            raise WitnessError("witness delay vtable contents are missing") from error
+        if values != [0, 0, 1, target | 1]:
+            raise WitnessError("witness delay vtable has an unexpected method or layout")
 
 
 def validate_concrete_wrapper_frames(disassembly: str) -> None:
@@ -2525,7 +2963,7 @@ def validate_call_path(disassembly: str) -> None:
         function_block(disassembly, "run_hardware"),
         "run_hardware",
         ("board_startup_adapters::run::<",),
-        (("add", r"\s*sp,\s*#28\s*"),),
+        (("add", r"\s*sp,\s*#52\s*"),),
         ("pop", r"\s*\{\s*r4,\s*r5,\s*r6,\s*r7,\s*pc\s*\}\s*"),
     )
     validate_adapter_run_result(
@@ -2646,6 +3084,8 @@ def validate_call_path(disassembly: str) -> None:
     validate_backend_dispatch(disassembly)
     validate_crc_path(disassembly)
     validate_crc_configuration(disassembly)
+    validate_fm_path(disassembly)
+    validate_fm_transport(disassembly)
     validate_backlight_register_evidence(disassembly)
     validate_required_call_targets(disassembly)
     validate_concrete_wrapper_frames(disassembly)
@@ -2812,6 +3252,7 @@ def validate(elf: Path) -> tuple[int, int]:
         raise WitnessError("Reset_Handler does not retain the witness startup call path")
     validate_systick_handler(disassembly, symbols["SysTick_Handler"])
     validate_call_path(disassembly)
+    validate_delay_vtables(disassembly, run_tool("objdump", "-s", "-j", ".text", str(elf)))
 
     return flash_used, ram_used
 

@@ -130,12 +130,9 @@ and link-only checks do not establish any of these hardware preconditions.
 CI separately links `startup-witness/` for Cortex-M0 with a dedicated
 vector table and a returning SysTick handler. Its linker places code at
 `0x10000000` and RAM at `0x20010000`, outside the DP32G030 memory map, and
-enforces 16 KiB code/load and 4 KiB RAM limits. The existing inspection has
-not yet been updated for the FM-enabled witness: it rejects the changed
-`run_hardware` frame and does not prove the new shutdown chain. Its previous
-checks cover vector
-targets, the linked sequencer-to-adapter call path, reachable ADC, ST7565, and
-CRC stages, the concrete display `startup_mmio` to `startup_with_io` call chain,
+enforces 16 KiB code/load and 4 KiB RAM limits. Inspection covers vector
+targets, the linked sequencer-to-adapter call path, reachable ADC, ST7565, FM,
+and CRC stages, the concrete display `startup_mmio` to `startup_with_io` call chain,
 reachable backlight register accesses and their order, retained adapter
 symbols, and section budgets. The ADC path is checked through its existing
 word adapter to `apply_with_io`; the
@@ -147,7 +144,12 @@ The backend-dispatch check is intentionally pinned to the emitted Cortex-M0
 shape and the nine sequencer variants. The ST7565 case checks its arguments,
 returned error encoding and success and error continuations. The ADC case
 forwards the trigger field, the backlight path preserves the pinned register
-sequence, and the CRC path reaches its two ordered word writes. Reset and
+sequence, and the CRC path reaches its two ordered word writes. The FM case
+checks delay forwarding, typed success/error continuations, the shutdown and
+keypad handoff frames, and the PB15 read/modify/write after the transaction.
+Pinned complete emitted bodies cover the transaction, GPIO bitbang and target
+register operations; a change to those bodies requires a fresh disassembly
+audit. Reset and
 `witness_main` retain their intentional terminal loops and are not treated as
 returning wrappers.
 Unexpected instructions, conditional branches, or changed guard inputs,
@@ -174,6 +176,7 @@ RUSTFLAGS='-D warnings -C link-arg=-Tlinker/startup-witness.ld -C link-arg=-Map=
   --target thumbv6m-none-eabi \
   --release \
   --target-dir target/startup-witness
+python3 -m unittest tests.test_startup_witness_emission
 python3 scripts/check_startup_witness.py \
   --elf target/startup-witness/thumbv6m-none-eabi/release/startup-adapter-witness
 ```
