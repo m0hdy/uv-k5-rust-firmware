@@ -401,7 +401,7 @@ def is_control_transfer(
     if mnemonic in ("bl", "blx"):
         return not direct_call_targets(line)
     if re.fullmatch(
-        r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.(?:n|w))?",
+        r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le|al)(?:\.(?:n|w))?",
         mnemonic,
     ) or mnemonic in ("bx", "cbz", "cbnz", "tbb", "tbh"):
         return True
@@ -503,13 +503,13 @@ def reachable_control_flow_analysis(
             if not direct_call_targets(line):
                 raise WitnessError(f"{description} has an unsupported indirect call")
             successors.append(fallthrough)
-        elif mnemonic in ("b", "b.n", "b.w"):
+        elif mnemonic in ("b", "b.n", "b.w", "bal", "bal.n", "bal.w"):
             target = branch_target(instruction)
             if target is None:
                 raise WitnessError(f"{description} has an unsupported branch")
             successors.append(target)
         elif re.fullmatch(
-            r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.(?:n|w))?",
+            r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le|al)(?:\.(?:n|w))?",
             mnemonic,
         ):
             target = branch_target(instruction)
@@ -734,7 +734,7 @@ def reachable_call_targets(function: str) -> list[str]:
 
 
 def branch_target(instruction: tuple[int, int, str, str, str]) -> int | None:
-    target = re.match(r"\s*([0-9a-fA-F]+)\b", instruction[3])
+    target = re.match(r"\s*((?:0x)?[0-9a-fA-F]+)\b", instruction[3], re.I)
     return int(target.group(1), 16) if target else None
 
 
@@ -1581,7 +1581,7 @@ def validate_backlight_executor_paths(function: str) -> None:
                 case_instructions.append(instruction)
                 break
             if re.fullmatch(
-                r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.(?:n|w))?",
+                r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le|al)(?:\.(?:n|w))?",
                 instruction[2],
             ) or instruction[2] == "bx" or (
                 instruction[2] == "pop" and re.search(r"\bpc\b", instruction[3])
@@ -1639,7 +1639,7 @@ def validate_backlight_executor_paths(function: str) -> None:
         instruction
         for instruction in instructions
         if re.fullmatch(
-            r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.(?:n|w))?",
+            r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le|al)(?:\.(?:n|w))?",
             instruction[2],
         )
     ]
@@ -2708,12 +2708,12 @@ def validate_call_path(disassembly: str) -> None:
         for instruction in parse_instructions(disassembly[label.end():end]):
             mnemonic, operands = instruction[2:4]
             if re.fullmatch(
-                r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.(?:n|w))?",
+                r"b(?:\.(?:n|w))?|b(?:eq|ne|cs|hs|cc|lo|mi|pl|vs|vc|hi|ls|ge|lt|gt|le|al)(?:\.(?:n|w))?",
                 mnemonic,
             ):
                 target = branch_target(instruction)
             elif mnemonic in ("cbz", "cbnz"):
-                match = re.match(r"\s*r\d+\s*,\s*([0-9a-fA-F]+)\b", operands)
+                match = re.match(r"\s*r\d+\s*,\s*((?:0x)?[0-9a-fA-F]+)\b", operands, re.I)
                 target = int(match.group(1), 16) if match else None
             else:
                 continue

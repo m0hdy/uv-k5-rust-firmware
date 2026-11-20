@@ -1435,13 +1435,35 @@ class StartupWitnessCheckerTests(unittest.TestCase):
     def test_elf_validator_rejects_direct_branches_into_backend(self):
         original = " 1420: 4770 bx lr"
         self.assertEqual(CONNECTED_DISPATCH.count(original), 1)
-        for branch in ("b.n 5f6", "b.n 13b0", "b.n 13b6", "b.n 640", "b.n 648",
-                       "bne.n 1020", "b.w 1022",
-                       "cbz r0, 13b0", "cbnz r1, 5f6"):
+        for branch in ("b.n 5f6", "b.n 0x5f6", "b.n 13b0", "b.n 13b6", "b.n 640", "b.n 648",
+                       "bne.n 1020", "bal.n 5f6", "b.w 1022",
+                       "cbz r0, 13b0", "cbz r0, 0x13b0", "cbnz r1, 5f6"):
             with self.subTest(branch=branch):
-                mutated = CONNECTED_DISPATCH.replace(original, f" 1420: e000 {branch}", 1)
+                encoded = "f000 b800" if branch.startswith("b.w") else "e000"
+                mutated = CONNECTED_DISPATCH.replace(original, f" 1420: {encoded} {branch}", 1)
                 with self.assertRaisesRegex(WitnessError, "backend.*unexpected branch source"):
                     self.inspect_fixture_elf(mutated)
+
+    def test_elf_validator_rejects_always_branch_before_reset_call(self):
+        original = (
+            " 100: f000 f800 bl 1cc <witness_main>\n"
+            " 104: e7fe b.n 104 <Reset_Handler+0x4>"
+        )
+        self.assertEqual(CONNECTED_DISPATCH.count(original), 1)
+        mutated = CONNECTED_DISPATCH.replace(
+            original, " 100: e7fe bal.n 100\n"
+            " 102: f000 f800 bl 1cc <witness_main>\n"
+            " 106: e7fe b.n 106 <Reset_Handler+0x6>", 1,
+        )
+        with self.assertRaisesRegex(WitnessError, "Reset_Handler.*no reachable"):
+            self.inspect_fixture_elf(mutated)
+
+    def test_always_branch_has_no_fallthrough(self):
+        body = " 100: e001 bal.n 106\n 102: de00 udf #0\n 106: 4770 bx lr\n"
+        self.assertEqual(
+            [instruction[0] for instruction in reachable_control_flow(body, "BAL path")],
+            [0x100, 0x106],
+        )
 
     def test_full_validator_rejects_disabled_or_corrupted_crc_configuration(self):
         mutations = (
