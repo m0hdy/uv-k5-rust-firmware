@@ -184,6 +184,46 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
         ):
             self.validate(probe)
 
+    def test_actual_eeprom_result_slot_is_reloaded(self):
+        _, body = self.coordinator()
+        rows = entry_check.instructions(body)
+        first_read = next(
+            index
+            for index, (_, mnemonic, operands) in enumerate(rows)
+            if mnemonic.startswith("bl")
+            and "eeprom_read_transport::execute_read::<" in operands
+            and "+0x" not in operands
+        )
+        load_index = first_read + 1
+        address, mnemonic, operands = rows[load_index]
+        self.assertEqual(mnemonic, "ldr")
+        returned_slot = re.fullmatch(
+            r"r0,\s*\[sp,\s*#(\d+)\].*", operands
+        )
+        self.assertIsNotNone(returned_slot)
+        comparison = next(
+            index
+            for index in range(load_index + 1, first_read + 9)
+            if rows[index][1] == "cmp"
+        )
+        unrelated_store = next(
+            operands
+            for _, mnemonic, operands in rows[comparison + 1 : first_read + 9]
+            if mnemonic == "str" and "[sp," in operands
+        )
+        wrong_slot = int(re.search(r"#(\d+)", unrelated_store).group(1))
+        self.assertNotEqual(wrong_slot, int(returned_slot.group(1)))
+        self.assertEqual(wrong_slot % 4, 0)
+        self.assertLessEqual(wrong_slot, 1020)
+        encoding = 0x9800 | (wrong_slot // 4)
+        probe = self.patch_halfword(
+            "eeprom-wrong-result-slot.elf", address, encoding
+        )
+        with self.assertRaisesRegex(
+            entry_check.EntryError, "returned result slot"
+        ):
+            self.validate(probe)
+
 
 if __name__ == "__main__":
     unittest.main()

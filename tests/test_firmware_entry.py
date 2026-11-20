@@ -28,25 +28,28 @@ DISASSEMBLY = """
  50c: bl 630 <board::StartupIo>::backlight_init_hardware>
  510: bl 640 <board::StartupIo>::adc_init>
  514: bl 650 <board::StartupIo>::st7565_init>
+ 516: add r0, sp, #0
  518: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>
- 51a: ldr r0, [sp, #0]
- 51c: cmp r0, #2
- 51e: beq.n 524 <coordinate_with_welcome::<TargetBootIo>+0x24>
- 520: b.n 580 <coordinate_with_welcome::<TargetBootIo>+0x80>
- 524: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>
- 526: ldr r0, [sp, #0]
- 528: cmp r0, #2
- 52a: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x80>
- 52c: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>
- 52e: ldr r0, [sp, #0]
- 530: cmp r0, #2
- 532: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x80>
- 534: bl 710 <adc_samples::decode_adc_sample>
- 538: bl 720 <adc_samples::calibrated_battery_voltage>
- 53c: bl 730 <startup_version_display::startup_version_display_plan>
- 540: bl 740 <startup_version_row_plan::compose_startup_version_row>
- 544: bx lr
- 580: bx lr
+ 51c: ldr r0, [sp, #0]
+ 51e: cmp r0, #2
+ 520: beq.n 526 <coordinate_with_welcome::<TargetBootIo>+0x26>
+ 522: b.n 590 <coordinate_with_welcome::<TargetBootIo>+0x90>
+ 526: add r0, sp, #0
+ 528: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>
+ 52c: ldr r0, [sp, #0]
+ 52e: cmp r0, #2
+ 530: bne.n 590 <coordinate_with_welcome::<TargetBootIo>+0x90>
+ 532: add r0, sp, #0
+ 534: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>
+ 538: ldr r0, [sp, #0]
+ 53a: cmp r0, #2
+ 53c: bne.n 590 <coordinate_with_welcome::<TargetBootIo>+0x90>
+ 53e: bl 710 <adc_samples::decode_adc_sample>
+ 542: bl 720 <adc_samples::calibrated_battery_voltage>
+ 546: bl 730 <startup_version_display::startup_version_display_plan>
+ 54a: bl 740 <startup_version_row_plan::compose_startup_version_row>
+ 54e: bx lr
+ 590: bx lr
 00000600 <board::StartupIo>::systick>:
  600: str r0, [r1]
  602: bx lr
@@ -153,7 +156,7 @@ class FirmwareEntryTests(unittest.TestCase):
 
     def test_unchecked_eeprom_result_is_rejected(self):
         broken = DISASSEMBLY.replace(
-            "51e: beq.n 524", "51e: nop", 1
+            "520: beq.n 526", "520: nop", 1
         )
         with self.assertRaisesRegex(
             EntryError, "not conditionally checked|not checked|exactly 3 times"

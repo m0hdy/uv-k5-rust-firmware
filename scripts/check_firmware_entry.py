@@ -23,6 +23,7 @@ CONDITIONAL_BRANCH = re.compile(
 )
 EEPROM_SUCCESS_TAG = 2
 PREDICATE_PRESERVING_INSTRUCTIONS = {"nop", "str", "strb", "strh"}
+SRET_SETUP_PRESERVING_INSTRUCTIONS = {"add", "ldr", "mov"}
 
 
 def function_body(disassembly: str, symbol: str) -> str:
@@ -187,6 +188,29 @@ def has_nontrivial_instruction(body: str) -> bool:
     )
 
 
+def result_slot_before_call(
+    rows: list[tuple[int, str, str]], call_index: int
+) -> int:
+    for _, mnemonic, operands in reversed(rows[max(0, call_index - 8) : call_index]):
+        destination = re.match(r"\s*(r[0-7]|sp)\s*,", operands)
+        if destination and destination.group(1) == "r0":
+            definition = re.fullmatch(
+                r"r0,\s*sp,\s*#(\d+)", operands.split("@")[0].strip()
+            )
+            if mnemonic != "add" or definition is None:
+                break
+            return int(definition.group(1))
+        if (
+            mnemonic not in SRET_SETUP_PRESERVING_INSTRUCTIONS
+            or destination is None
+            or destination.group(1) == "sp"
+        ):
+            break
+    raise EntryError(
+        "EEPROM result address lacks a supported stack-relative reaching definition"
+    )
+
+
 def vector_words(vector_dump: str) -> list[int]:
     words = []
     for line in vector_dump.splitlines():
@@ -232,6 +256,7 @@ def require_result_guards(
     if len(calls) != expected_calls:
         raise EntryError(f"selected coordinator must call {called_fragment} exactly {expected_calls} times")
     for index in calls:
+        result_slot = result_slot_before_call(rows, index)
         following = [
             row for row in rows[index + 1 : index + 9] if row[0] in live
         ]
@@ -266,12 +291,18 @@ def require_result_guards(
                 f"{called_fragment} result payload has unknown control or operand changes"
             )
         _, payload_mnemonic, payload_operands = before_comparison[0]
-        if payload_mnemonic != "ldr" or not re.fullmatch(
-            rf"{compared_register},\s*\[sp,\s*#\d+\]",
+        payload_load = re.fullmatch(
+            rf"{compared_register},\s*\[sp,\s*#(\d+)\]",
             payload_operands.split("@")[0].strip(),
-        ):
+        )
+        if payload_mnemonic != "ldr" or payload_load is None:
             raise EntryError(
                 f"{called_fragment} comparison is not loaded from its result payload"
+            )
+        payload_slot = int(payload_load.group(1))
+        if payload_slot != result_slot:
+            raise EntryError(
+                f"{called_fragment} comparison does not reload its returned result slot"
             )
         if any(
             mnemonic not in PREDICATE_PRESERVING_INSTRUCTIONS
