@@ -508,6 +508,46 @@ def require_fallible_stage_short_circuit(
         raise EntryError(
             f"{called_fragment} result does not guard later startup effects"
         )
+    predicate = rows[conditional][1]
+    comparisons = [
+        rows[index]
+        for index in range(call_index + 1, conditional)
+        if rows[index][1] == "cmp"
+        and re.fullmatch(r"r0,\s*#(?:0|0x0)", rows[index][2])
+    ]
+    inverted_tag_tests = []
+    for index in range(call_index + 1, conditional - 1):
+        destination = re.fullmatch(r"(r[0-7]),\s*r0", rows[index][2])
+        if (
+            rows[index][1] == "mvns"
+            and destination is not None
+            and rows[index + 1][1] == "lsls"
+            and re.fullmatch(
+                rf"{destination[1]},\s*{destination[1]},\s*#24",
+                rows[index + 1][2],
+            )
+        ):
+            inverted_tag_tests.append(index)
+    if not re.fullmatch(r"b(?:eq|ne)(?:\.n|\.w)?", predicate):
+        raise EntryError(
+            f"{called_fragment} result uses an unsupported success predicate branch"
+        )
+    if (len(comparisons), len(inverted_tag_tests)) not in {(1, 0), (0, 1)}:
+        raise EntryError(
+            f"{called_fragment} result must establish a supported success predicate before branching"
+        )
+    predicate_end = (
+        rows.index(comparisons[0])
+        if comparisons
+        else inverted_tag_tests[0] + 1
+    )
+    if any(
+        rows[index][1] not in PREDICATE_PRESERVING_INSTRUCTIONS
+        for index in range(predicate_end + 1, conditional)
+    ):
+        raise EntryError(
+            f"{called_fragment} result predicate flags are overwritten before branching"
+        )
     branch_address = rows[conditional][0]
     successors = instruction_successors(rows, indices[branch_address])
     if len(successors) != 2:
@@ -527,7 +567,13 @@ def require_fallible_stage_short_circuit(
         raise EntryError(
             f"{called_fragment} result does not uniquely select continuation"
         )
-    failure_path = successor_paths[1 - continuing[0]]
+    expected_success_index = 0 if predicate.startswith("beq") else 1
+    if continuing[0] != expected_success_index:
+        raise EntryError(
+            f"{called_fragment} success predicate does not select continuation"
+        )
+    failure_index = 1 - expected_success_index
+    failure_path = successor_paths[failure_index]
     if continuation in failure_path:
         raise EntryError(
             f"{called_fragment} failure path reaches later startup effects"

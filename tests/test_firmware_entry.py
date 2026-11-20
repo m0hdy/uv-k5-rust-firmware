@@ -9,6 +9,7 @@ from check_firmware_entry import (  # noqa: E402
     error_store_kinds,
     function_has_mmio_store,
     inspect_disassembly,
+    require_fallible_stage_short_circuit,
 )
 
 
@@ -31,34 +32,36 @@ DISASSEMBLY = """
  4fa: ldr r1, [pc, #164]
  4fc: str r1, [r0]
  500: bl 600 <board::StartupIo>::systick>
- 501: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x88>
+ 501: cmp r0, #0
+ 502: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x88>
  504: bl 610 <board::StartupIo>::portcon>
  508: bl 620 <board::StartupIo>::gpio>
  50c: bl 630 <board::StartupIo>::backlight_init_hardware>
  510: bl 640 <board::StartupIo>::adc_init>
  514: bl 650 <board::StartupIo>::st7565_init>
- 515: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x88>
- 516: add r0, sp, #0
- 518: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>
- 51c: ldr r0, [sp, #0]
- 51e: cmp r0, #2
- 520: beq.n 526 <coordinate_with_welcome::<TargetBootIo>+0x26>
- 522: b.n 590 <coordinate_with_welcome::<TargetBootIo>+0x90>
- 526: add r0, sp, #0
- 528: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>
- 52c: ldr r0, [sp, #0]
- 52e: cmp r0, #2
- 530: bne.n 590 <coordinate_with_welcome::<TargetBootIo>+0x90>
- 532: add r0, sp, #0
- 534: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>
- 538: ldr r0, [sp, #0]
- 53a: cmp r0, #2
- 53c: bne.n 590 <coordinate_with_welcome::<TargetBootIo>+0x90>
- 53e: bl 710 <adc_samples::decode_adc_sample>
- 542: bl 720 <adc_samples::calibrated_battery_voltage>
- 546: bl 730 <startup_version_display::startup_version_display_plan>
- 54a: bl 740 <startup_version_row_plan::compose_startup_version_row>
- 54e: bx lr
+ 515: cmp r0, #0
+ 517: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x88>
+ 518: add r0, sp, #0
+ 51a: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>
+ 51e: ldr r0, [sp, #0]
+ 520: cmp r0, #2
+ 522: beq.n 528 <coordinate_with_welcome::<TargetBootIo>+0x26>
+ 524: b.n 590 <coordinate_with_welcome::<TargetBootIo>+0x90>
+ 528: add r0, sp, #0
+ 52a: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>
+ 52e: ldr r0, [sp, #0]
+ 530: cmp r0, #2
+ 532: bne.n 590 <coordinate_with_welcome::<TargetBootIo>+0x90>
+ 534: add r0, sp, #0
+ 536: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>
+ 53a: ldr r0, [sp, #0]
+ 53c: cmp r0, #2
+ 53e: bne.n 590 <coordinate_with_welcome::<TargetBootIo>+0x90>
+ 540: bl 710 <adc_samples::decode_adc_sample>
+ 544: bl 720 <adc_samples::calibrated_battery_voltage>
+ 548: bl 730 <startup_version_display::startup_version_display_plan>
+ 54c: bl 740 <startup_version_row_plan::compose_startup_version_row>
+ 550: bx lr
  580: bx lr
  590: bx lr
  59c: .word 0x40000008
@@ -151,6 +154,20 @@ class FirmwareEntryTests(unittest.TestCase):
     def test_selected_entry_reaches_all_required_stages(self):
         self.inspect()
 
+    def test_compiler_enum_tag_success_predicate_is_checked(self):
+        body = """
+ c0: bl 200 <board::StartupIo>::systick>
+ c4: mvns r1, r0
+ c6: lsls r1, r1, #24
+ c8: beq.n d0 <coordinator+0x10>
+ ca: bx lr
+ d0: bl 300 <board::StartupIo>::portcon>
+ d4: bx lr
+"""
+        require_fallible_stage_short_circuit(
+            body, "StartupIo>::systick", "StartupIo>::portcon"
+        )
+
     def test_device_clock_gate_write_must_precede_systick(self):
         for broken in (
             DISASSEMBLY.replace("4fc: str r1, [r0]", "4fc: nop", 1),
@@ -169,14 +186,16 @@ class FirmwareEntryTests(unittest.TestCase):
     def test_display_initialization_requires_canonical_prerequisite_order(self):
         broken = DISASSEMBLY.replace(
             "500: bl 600 <board::StartupIo>::systick>\n"
-            " 501: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x88>\n"
+            " 501: cmp r0, #0\n"
+            " 502: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x88>\n"
             " 504: bl 610 <board::StartupIo>::portcon>\n"
             " 508: bl 620 <board::StartupIo>::gpio>\n"
             " 50c: bl 630 <board::StartupIo>::backlight_init_hardware>\n"
             " 510: bl 640 <board::StartupIo>::adc_init>\n"
             " 514: bl 650 <board::StartupIo>::st7565_init>",
             "500: bl 600 <board::StartupIo>::systick>\n"
-            " 501: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x88>\n"
+            " 501: cmp r0, #0\n"
+            " 502: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x88>\n"
             " 504: bl 650 <board::StartupIo>::st7565_init>\n"
             " 508: bl 610 <board::StartupIo>::portcon>\n"
             " 50c: bl 620 <board::StartupIo>::gpio>\n"
@@ -188,7 +207,7 @@ class FirmwareEntryTests(unittest.TestCase):
             self.inspect(broken)
 
     def test_fallible_board_stage_errors_cannot_reach_later_effects(self):
-        for branch in ("501: bne.n 580", "515: bne.n 580"):
+        for branch in ("502: bne.n 580", "517: bne.n 580"):
             with self.subTest(branch=branch):
                 broken = DISASSEMBLY.replace(
                     branch, branch.replace("580", "53e"), 1
@@ -197,6 +216,24 @@ class FirmwareEntryTests(unittest.TestCase):
                     EntryError, "failure path reaches later startup effects"
                 ):
                     self.inspect(broken)
+
+    def test_fallible_board_stage_success_polarity_is_checked(self):
+        for branch in ("502: bne.n 580", "517: bne.n 580"):
+            with self.subTest(branch=branch):
+                broken = DISASSEMBLY.replace(
+                    branch, branch.replace("bne.n", "beq.n"), 1
+                )
+                with self.assertRaisesRegex(EntryError, "success predicate does not select continuation"):
+                    self.inspect(broken)
+
+    def test_fallible_board_stage_predicate_flags_must_be_preserved(self):
+        broken = DISASSEMBLY.replace(
+            " 502: bne.n 580",
+            " 502: cmp r1, #0\n 503: bne.n 580",
+            1,
+        )
+        with self.assertRaisesRegex(EntryError, "predicate flags are overwritten"):
+            self.inspect(broken)
 
     def test_fallible_board_stage_errors_cannot_write_mmio(self):
         broken = DISASSEMBLY.replace(
@@ -214,17 +251,13 @@ class FirmwareEntryTests(unittest.TestCase):
 
     def test_eeprom_reads_cannot_be_bypassed_before_battery_sampling(self):
         broken = DISASSEMBLY.replace(
-            "515: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x88>\n"
-            " 516: add r0, sp, #0\n"
-            " 518: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>",
-            "515: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x88>\n"
-            " 515a: cbz r1, 53e <coordinate_with_welcome::<TargetBootIo>+0x46>\n"
-            " 516: add r0, sp, #0\n"
-            " 518: bl 700 <eeprom_read_transport::execute_read::<TargetBootIo>>",
+            " 522: beq.n 528 <coordinate_with_welcome::<TargetBootIo>+0x26>",
+            " 522: beq.n 548 <coordinate_with_welcome::<TargetBootIo>+0x50>",
             1,
         )
         with self.assertRaisesRegex(
-            EntryError, "can be bypassed before later startup effects"
+            EntryError,
+            "can be bypassed before later startup effects|exactly 3 times",
         ):
             self.inspect(broken)
 
@@ -317,7 +350,7 @@ class FirmwareEntryTests(unittest.TestCase):
 
     def test_unchecked_eeprom_result_is_rejected(self):
         broken = DISASSEMBLY.replace(
-            "520: beq.n 526", "520: nop", 1
+            "522: beq.n 528", "522: nop", 1
         )
         with self.assertRaisesRegex(
             EntryError, "not conditionally checked|not checked|exactly 3 times"
@@ -331,7 +364,7 @@ class FirmwareEntryTests(unittest.TestCase):
 
     def test_eeprom_error_cannot_jump_to_welcome(self):
         broken = DISASSEMBLY.replace(
-            "522: b.n 590", "522: b.n 546", 1
+            "524: b.n 590", "524: b.n 548", 1
         )
         with self.assertRaisesRegex(EntryError, "first-error path reaches a later effect"):
             self.inspect(broken)

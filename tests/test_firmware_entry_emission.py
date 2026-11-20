@@ -296,6 +296,44 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
         ):
             self.validate(probe)
 
+    def test_actual_fallible_board_stage_success_polarity_is_checked(self):
+        _, body = self.coordinator()
+        rows = entry_check.instructions(body)
+        for stage in (
+            "StartupIo>::systick",
+            "StartupIo>::st7565_init",
+            "StartupIo>::bk1080_shutdown",
+        ):
+            call_index = next(
+                (
+                    index
+                    for index, (_, mnemonic, operands) in enumerate(rows)
+                    if mnemonic == "bl" and stage in operands
+                ),
+                None,
+            )
+            if call_index is None and stage.endswith("bk1080_shutdown"):
+                continue
+            self.assertIsNotNone(call_index, stage)
+            conditional = next(
+                index
+                for index in range(call_index + 1, min(call_index + 9, len(rows)))
+                if entry_check.CONDITIONAL_BRANCH.fullmatch(rows[index][1])
+            )
+            address, mnemonic, _ = rows[conditional]
+            self.assertIn(mnemonic, {"beq", "beq.n", "beq.w", "bne", "bne.n", "bne.w"})
+            encoding = self.read_halfword(address)
+            self.assertEqual(encoding & 0xFF00, 0xD000 if mnemonic.startswith("beq") else 0xD100)
+            probe = self.patch_halfword(
+                f"{stage.split('>::')[-1]}-success-polarity.elf",
+                address,
+                encoding ^ 0x0100,
+            )
+            with self.subTest(stage=stage), self.assertRaisesRegex(
+                entry_check.EntryError, "success predicate does not select continuation"
+            ):
+                self.validate(probe)
+
     def test_actual_board_failure_cannot_write_mmio(self):
         _, body = self.coordinator()
         rows = entry_check.instructions(body)
