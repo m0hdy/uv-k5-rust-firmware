@@ -2859,7 +2859,79 @@ def validate_fm_transport(disassembly: str) -> None:
             raise WitnessError(f"FM {symbol} emitted control flow or data has changed")
 
 
-def validate_delay_vtables(disassembly: str, contents: str) -> None:
+def validate_fm_referenced_data(
+    disassembly: str, contents: str, text_section: tuple[int, int, int]
+) -> None:
+    size, start, _ = text_section
+    data = {}
+    for line in contents.splitlines():
+        match = re.match(r"\s*([0-9a-fA-F]+)\s+((?:[0-9a-fA-F]{8}\s*){1,4})", line)
+        if match:
+            address = int(match.group(1), 16)
+            for offset, byte in enumerate(bytes.fromhex("".join(match.group(2).split()))):
+                position = address + offset
+                if position in data or not start <= position < start + size:
+                    raise WitnessError("FM .text contents have overlapping or out-of-bounds data")
+                data[position] = byte
+
+    def read(address: int, length: int, description: str) -> bytes:
+        if address < start or address + length > start + size:
+            raise WitnessError(f"FM {description} is outside .text")
+        try:
+            return bytes(data[address + offset] for offset in range(length))
+        except KeyError as error:
+            raise WitnessError(f"FM {description} contents are missing") from error
+
+    def literal(symbol: str, suffix: bool, offset: int) -> int:
+        entry, name = function_entry(disassembly, symbol, suffix)
+        body = function_entry_body(disassembly, entry, name)
+        instructions = {item[0]: item for item in parse_instructions(body)}
+        instruction = instructions.get(entry + offset)
+        if instruction is None or instruction[2] != "ldr":
+            raise WitnessError(f"FM {symbol} data reference is missing")
+        match = re.fullmatch(r"r[0-7],\s*\[pc,\s*#(\d+)\]", instruction[3].split("@")[0].strip())
+        if match is None:
+            raise WitnessError(f"FM {symbol} data reference is invalid")
+        address = ((instruction[0] + 4) & ~3) + int(match.group(1))
+        word = re.search(
+            rf"(?m)^\s*{address:x}:\s+[0-9a-fA-F]+\s+\.word\s+0x([0-9a-fA-F]+)\b",
+            body,
+        )
+        value = int.from_bytes(read(address, 4, f"{symbol} literal"), "little")
+        if word is None or value != int(word.group(1), 16):
+            raise WitnessError(f"FM {symbol} literal does not match linked data")
+        return value
+
+    for symbol, suffix, offset, expected, description in (
+        ("::set_scl", True, 0x0c, b"\x01", "High comparison"),
+        ("I2cIo>::sda_direction", True, 0x0c, b"\x01", "Output comparison"),
+        ("i2c_bitbang_flow::write_byte::<", False, 0xa0, b"\x00", "Low/ACK comparison"),
+        ("core::array::iter::iter_inner::PolymorphicIter<[core::mem::maybe_uninit::MaybeUninit<u8>]>>::next",
+         True, 0x1c, bytes(8), "iterator empty sentinel"),
+    ):
+        pointer = literal(symbol, suffix, offset)
+        if read(pointer, len(expected), description) != expected:
+            raise WitnessError(f"FM {description} data is invalid")
+
+    entry, name = function_entry(disassembly, "target_gpio::Register>::address", True)
+    body = function_entry_body(disassembly, entry, name)
+    words = {
+        int(match.group(1), 16): int(match.group(2), 16)
+        for line in body.splitlines()
+        if (match := re.match(
+            r"\s*([0-9a-fA-F]+):\s+[0-9a-fA-F]+\s+\.word\s+0x([0-9a-fA-F]+)\b", line
+        ))
+    }
+    for address, expected in words.items():
+        if int.from_bytes(read(address, 4, "register jump table or literal"), "little") != expected:
+            raise WitnessError("FM register jump table or literal data is invalid")
+    if len(words) != 8:
+        raise WitnessError("FM register jump table or literals are missing")
+
+
+def validate_delay_vtables(
+    disassembly: str, contents: str, text_section: tuple[int, int, int]
+) -> None:
     entry, name = function_entry(disassembly, "witness_main", False)
     body = function_entry_body(disassembly, entry, name)
     words = {
@@ -2887,6 +2959,9 @@ def validate_delay_vtables(disassembly: str, contents: str) -> None:
         (literals[0], "LinkOnlyDelay as startup_adapter_witness::i2c_bitbang_flow::target_gpio::Delay1us>::delay_1us"),
         (literals[1], "LinkOnlyDelay as startup_adapter_witness::st7565_startup_executor::target_spi0::DelayMs>::delay_ms"),
     ):
+        size, start, _ = text_section
+        if table % 4 or table < start or table + 16 > start + size:
+            raise WitnessError("witness delay vtable is outside aligned .text")
         target, _ = function_entry(disassembly, selector, True)
         try:
             values = [
@@ -3252,7 +3327,9 @@ def validate(elf: Path) -> tuple[int, int]:
         raise WitnessError("Reset_Handler does not retain the witness startup call path")
     validate_systick_handler(disassembly, symbols["SysTick_Handler"])
     validate_call_path(disassembly)
-    validate_delay_vtables(disassembly, run_tool("objdump", "-s", "-j", ".text", str(elf)))
+    text_contents = run_tool("objdump", "-s", "-j", ".text", str(elf))
+    validate_fm_referenced_data(disassembly, text_contents, sections[".text"])
+    validate_delay_vtables(disassembly, text_contents, sections[".text"])
 
     return flash_used, ram_used
 

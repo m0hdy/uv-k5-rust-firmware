@@ -148,8 +148,10 @@ sequence, and the CRC path reaches its two ordered word writes. The FM case
 checks delay forwarding, typed success/error continuations, the shutdown and
 keypad handoff frames, and the PB15 read/modify/write after the transaction.
 Pinned complete emitted bodies cover the transaction, GPIO bitbang and target
-register operations; a change to those bodies requires a fresh disassembly
-audit. Reset and
+register operations. Referenced `.text` data is checked for the High/Output and
+Low/ACK comparison values, the iterator's empty sentinel, and GPIO register
+dispatch table and literals, along with the delay vtables. A change to the
+emitted bodies requires a fresh disassembly audit. Reset and
 `witness_main` retain their intentional terminal loops and are not treated as
 returning wrappers.
 Unexpected instructions, conditional branches, or changed guard inputs,
@@ -169,14 +171,14 @@ cargo clippy --locked --test board_startup_adapters --test boot_coordinator \
   --test board_startup_composition --test backlight_startup_executor \
   --test adc_startup_adapter -- -D warnings
 RUSTFLAGS='-D warnings' cargo check --locked --lib --target thumbv6m-none-eabi
-python3 -m unittest tests.test_startup_witness
+python3 -m unittest discover -s tests -p 'test_startup_witness.py' -q
 RUSTFLAGS='-D warnings -C link-arg=-Tlinker/startup-witness.ld -C link-arg=-Map=../target/startup-witness/startup-adapter-witness.map' \
   cargo build --locked \
   --manifest-path startup-witness/Cargo.toml \
   --target thumbv6m-none-eabi \
   --release \
   --target-dir target/startup-witness
-python3 -m unittest tests.test_startup_witness_emission
+python3 -m unittest discover -s tests -p 'test_startup_witness_emission.py' -q
 python3 scripts/check_startup_witness.py \
   --elf target/startup-witness/thumbv6m-none-eabi/release/startup-adapter-witness
 ```

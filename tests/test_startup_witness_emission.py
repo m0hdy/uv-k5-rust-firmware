@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -111,6 +112,35 @@ class StartupWitnessEmissionTests(unittest.TestCase):
         flash, ram = self.validate_emission(self.disassembly)
         self.assertGreater(flash, 0)
         self.assertGreaterEqual(ram, 0)
+
+    def test_real_elf_rejects_referenced_data_only_corruption(self):
+        sections = self.run_tool("objdump", "-h", str(ELF))
+        match = re.search(
+            r"(?m)^\s*\d+\s+\.text\s+([0-9a-f]+)\s+([0-9a-f]+)\s+"
+            r"[0-9a-f]+\s+([0-9a-f]+)\b", sections
+        )
+        self.assertIsNotNone(match)
+        size, vma, file_offset = (int(value, 16) for value in match.groups())
+        original = ELF.read_bytes()
+        cases = (
+            (0x100039F8, b"\x01", b"\x00"),
+            (0x100038E8, b"\x00", b"\x01"),
+            (0x100039F0, b"\x00", b"\x01"),
+            (0x10001268, bytes.fromhex("7b120010"), bytes.fromhex("81120010")),
+            (0x10001974, bytes.fromhex("f8390010"), bytes.fromhex("00400010")),
+        )
+        with tempfile.TemporaryDirectory(prefix="startup-witness-data-") as directory:
+            scratch = Path(directory) / "witness.elf"
+            for address, expected, replacement in cases:
+                with self.subTest(address=hex(address)):
+                    self.assertTrue(vma <= address and address + len(expected) <= vma + size)
+                    offset = file_offset + address - vma
+                    modified = bytearray(original)
+                    self.assertEqual(modified[offset:offset + len(expected)], expected)
+                    modified[offset:offset + len(expected)] = replacement
+                    scratch.write_bytes(modified)
+                    with self.assertRaises(witness.WitnessError):
+                        witness.validate(scratch)
 
     def test_calls_must_target_real_numeric_entries(self):
         cases = (

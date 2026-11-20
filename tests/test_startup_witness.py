@@ -813,6 +813,19 @@ CONNECTED_DISPATCH = re.sub(
 
 # Captured from the pinned witness ELF; this fixture remains host-only.
 FM_DISASSEMBLY = (Path(__file__).parent / "fixtures" / "startup-witness-fm-disassembly.txt").read_text()
+FM_TEXT_DUMP = "Contents of section .text:\n" + "\n".join(
+    f" {int(match.group(1), 16):08x} "
+    f"{int(match.group(2), 16).to_bytes(4, 'little').hex()}"
+    for line in FM_DISASSEMBLY.splitlines()
+    if (match := re.match(
+        r"\s*([0-9a-fA-F]+):\s+[0-9a-fA-F]+\s+\.word\s+0x([0-9a-fA-F]+)\b", line
+    ))
+) + (
+    "\n 100038e8 00737263\n"
+    " 100039f0 00000000 00000000 01d4d4d4\n"
+    " 10003b20 00000000 00000000 01000000 7d260010\n"
+    " 10003b30 00000000 00000000 01000000 f52f0010\n"
+)
 _fm_shutdown_name = re.search(
     r"(?m)^10003118 <(.+StartupIo>::bk1080_shutdown)>:$", FM_DISASSEMBLY
 ).group(1)
@@ -1425,7 +1438,7 @@ TRAP_BEFORE_RETURN = """
 
 
 class StartupWitnessCheckerTests(unittest.TestCase):
-    def inspect_fixture_elf(self, disassembly, text_dump=None):
+    def inspect_fixture_elf(self, disassembly, text_dump=None, text_size=0x3A80):
         vector = bytearray(0xC0)
         vector[0:4] = (0x20003FF0).to_bytes(4, "little")
         vector[4:8] = (0x101).to_bytes(4, "little")
@@ -1436,13 +1449,12 @@ class StartupWitnessCheckerTests(unittest.TestCase):
             )
             for offset in range(0, len(vector), 16)
         )
-        sections = " 0 .vector_table 000000c0 10000000 10000000\n 1 .text 00001000 100000c0 100000c0\n"
+        sections = (
+            " 0 .vector_table 000000c0 10000000 10000000\n"
+            f" 1 .text {text_size:08x} 100000c0 100000c0\n"
+        )
         if text_dump is None:
-            text_dump = (
-                "Contents of section .text:\n"
-                " 10003b20 00000000 00000000 01000000 7d260010\n"
-                " 10003b30 00000000 00000000 01000000 f52f0010\n"
-            )
+            text_dump = FM_TEXT_DUMP
         symbols = "\n".join(
             f"{address:08x} T {name}" for address, name in (
                 (0x100, "Reset_Handler"), (0x3000, "SysTick_Handler"),
@@ -1468,17 +1480,13 @@ class StartupWitnessCheckerTests(unittest.TestCase):
             return validate(Path("synthetic.elf"))
 
     def test_elf_validator_requires_enabled_crc_configuration(self):
-        self.assertEqual(self.inspect_fixture_elf(CONNECTED_DISPATCH), (0x10C0, 0))
+        self.assertEqual(self.inspect_fixture_elf(CONNECTED_DISPATCH), (0x3B40, 0))
         with self.assertRaisesRegex(WitnessError, "CRC enabled configuration forwarding"):
             self.inspect_fixture_elf(CONNECTED_DISPATCH.replace(" 1cc: 0000 movs r2, #1", " 1cc: 0000 movs r2, #0", 1))
 
     def test_full_validator_rejects_bad_delay_vtables(self):
-        baseline = (
-            "Contents of section .text:\n"
-            " 10003b20 00000000 00000000 01000000 7d260010\n"
-            " 10003b30 00000000 00000000 01000000 f52f0010\n"
-        )
-        self.assertEqual(self.inspect_fixture_elf(CONNECTED_DISPATCH, baseline), (0x10C0, 0))
+        baseline = FM_TEXT_DUMP
+        self.assertEqual(self.inspect_fixture_elf(CONNECTED_DISPATCH, baseline), (0x3B40, 0))
         for original, replacement in (
             ("7d260010", "f52f0010"),
             ("f52f0010", "7d260010"),
@@ -1489,6 +1497,28 @@ class StartupWitnessCheckerTests(unittest.TestCase):
                 self.assertEqual(baseline.count(original), 1)
                 with self.assertRaisesRegex(WitnessError, "vtable"):
                     self.inspect_fixture_elf(CONNECTED_DISPATCH, baseline.replace(original, replacement, 1))
+
+    def test_full_validator_rejects_fm_referenced_data_corruption(self):
+        for original, replacement in (
+            ("01d4d4d4", "00d4d4d4"),
+            ("00737263", "01737263"),
+            ("100039f0 00000000 00000000", "100039f0 01000000 00000000"),
+            ("10001268 7b120010", "10001268 81120010"),
+            ("10001974 f8390010", "10001974 00400010"),
+            ("1000292c f8390010", "1000292c c0000010"),
+            ("100038e8 00737263", "100038e8"),
+            ("10001268 7b120010", "10001268"),
+        ):
+            with self.subTest(original=original):
+                self.assertEqual(FM_TEXT_DUMP.count(original), 1)
+                with self.assertRaisesRegex(WitnessError, "FM "):
+                    self.inspect_fixture_elf(
+                        CONNECTED_DISPATCH, FM_TEXT_DUMP.replace(original, replacement, 1)
+                    )
+
+    def test_full_validator_rejects_data_outside_text_mapping(self):
+        with self.assertRaisesRegex(WitnessError, r"FM \.text contents.*out-of-bounds"):
+            self.inspect_fixture_elf(CONNECTED_DISPATCH, text_size=0x3900)
 
     def test_full_validator_requires_each_fm_stage(self):
         for symbol in (
@@ -1826,7 +1856,7 @@ class StartupWitnessCheckerTests(unittest.TestCase):
                 target = f"bl {address:x} <{call_label}>"
                 self.assertEqual(shifted.count(target), 1)
                 shifted = shifted.replace(target, f"bl {address + 4:x} <{call_label}>", 1)
-                self.assertEqual(self.inspect_fixture_elf(shifted), (0x10C0, 0))
+                self.assertEqual(self.inspect_fixture_elf(shifted), (0x3B40, 0))
 
     def test_accepts_immediate_systick_return_at_symbol_entry(self):
         validate_systick_handler(SYSTICK_RETURN, 0x100)
