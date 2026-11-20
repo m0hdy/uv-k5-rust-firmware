@@ -20,13 +20,16 @@ DISASSEMBLY = """
 00000200 <firmware_main>:
  200: bl 300 <firmware_integration_entry>
 00000300 <firmware_integration_entry>:
- 300: bl 500 <coordinate_with_welcome::<TargetBootIo>>
+ 300: bl 4f8 <coordinate_with_welcome::<TargetBootIo>>
  304: bl 400 <firmware_fail_closed>
 00000400 <firmware_fail_closed>:
  400: cpsid i
  402: wfi
  404: b.n 402 <firmware_fail_closed+0x2>
-00000500 <coordinate_with_welcome::<TargetBootIo>>:
+000004f8 <coordinate_with_welcome::<TargetBootIo>>:
+ 4f8: ldr r0, [pc, #160]
+ 4fa: ldr r1, [pc, #164]
+ 4fc: str r1, [r0]
  500: bl 600 <board::StartupIo>::systick>
  504: bl 610 <board::StartupIo>::portcon>
  508: bl 620 <board::StartupIo>::gpio>
@@ -55,6 +58,8 @@ DISASSEMBLY = """
  54a: bl 740 <startup_version_row_plan::compose_startup_version_row>
  54e: bx lr
  590: bx lr
+ 59c: .word 0x40000008
+ 5a0: .word 0x1a100487
 00000600 <board::StartupIo>::systick>:
  600: ldr r1, [pc, #4]
  602: str r0, [r1]
@@ -142,6 +147,15 @@ class FirmwareEntryTests(unittest.TestCase):
 
     def test_selected_entry_reaches_all_required_stages(self):
         self.inspect()
+
+    def test_device_clock_gate_write_must_precede_systick(self):
+        for broken in (
+            DISASSEMBLY.replace("4fc: str r1, [r0]", "4fc: nop", 1),
+            DISASSEMBLY.replace("5a0: .word 0x1a100487", "5a0: .word 0", 1),
+        ):
+            with self.subTest(broken=broken):
+                with self.assertRaisesRegex(EntryError, "device clock gate write"):
+                    self.inspect(broken)
 
     def test_display_initialization_requires_canonical_prerequisite_order(self):
         broken = DISASSEMBLY.replace(

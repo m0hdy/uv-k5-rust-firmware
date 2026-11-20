@@ -25,6 +25,8 @@ EEPROM_SUCCESS_TAG = 2
 PREDICATE_PRESERVING_INSTRUCTIONS = {"nop", "str", "strb", "strh"}
 MAX_ABSTRACT_VALUES = 8
 MAX_ERROR_COPY_BYTES = 64
+DEVICE_CLOCK_GATE_ADDRESS = 0x40000008
+DEFAULT_DEVICE_CLOCK_GATES = 0x1A100487
 
 
 def function_body(disassembly: str, symbol: str) -> str:
@@ -249,10 +251,12 @@ def clobbered_address_registers(mnemonic: str, operands: str) -> set[int]:
     return registers
 
 
-def function_has_mmio_store(body: str) -> bool:
+def function_proven_stores(
+    body: str,
+) -> dict[int, tuple[frozenset[int], frozenset[int] | None]]:
     rows = instructions(body)
     if not rows:
-        return False
+        return {}
     live = reachable_instruction_addresses(rows)
     indices = {address: index for index, (address, _, _) in enumerate(rows)}
     words = {
@@ -267,6 +271,7 @@ def function_has_mmio_store(body: str) -> bool:
         rows[0][0]: (None,) * 8
     }
     pending = [rows[0][0]]
+    proven_stores = {}
     non_writing = {
         "cmp",
         "cpsid",
@@ -283,14 +288,20 @@ def function_has_mmio_store(body: str) -> bool:
         for register in clobbered_address_registers(mnemonic, operands):
             state[register] = None
         store = re.fullmatch(
-            r"r[0-7],\s*\[(r[0-7])(?:,\s*#(\d+))?\]",
+            r"(r[0-7]),\s*\[(r[0-7])(?:,\s*#(\d+))?\]",
             operands.split("@")[0].strip(),
         )
         if mnemonic.startswith("str") and store:
-            base = state[int(store.group(1)[1])]
-            offset = int(store.group(2) or 0)
-            if base and all(is_mmio_address(value + offset) for value in base):
-                return True
+            source = state[int(store.group(1)[1])]
+            base = state[int(store.group(2)[1])]
+            offset = int(store.group(3) or 0)
+            if base:
+                proven_stores[address] = (
+                    frozenset(value + offset for value in base),
+                    source,
+                )
+            else:
+                proven_stores.pop(address, None)
 
         destination = re.match(r"\s*r([0-7])\s*,", operands)
         if mnemonic == "bl":
@@ -362,7 +373,72 @@ def function_has_mmio_store(body: str) -> bool:
             if merged != current:
                 states[successor] = merged
                 pending.append(successor)
-    return False
+    return proven_stores
+
+
+def function_has_mmio_store(body: str) -> bool:
+    return any(
+        all(is_mmio_address(target) for target in targets)
+        for targets, _ in function_proven_stores(body).values()
+    )
+
+
+def require_device_clock_gate_before_stages(
+    body: str, first_stage_fragment: str
+) -> None:
+    rows = instructions(body)
+    live = reachable_instruction_addresses(rows)
+    indices = {address: index for index, (address, _, _) in enumerate(rows)}
+    stage_calls = [
+        address
+        for address, mnemonic, operands in rows
+        if address in live
+        and mnemonic == "bl"
+        and first_stage_fragment in operands
+    ]
+    if len(stage_calls) != 1:
+        raise EntryError(
+            f"selected startup must call {first_stage_fragment} exactly once"
+        )
+    gate_stores = [
+        address
+        for address, (targets, values) in function_proven_stores(body).items()
+        if address in live
+        and targets == frozenset({DEVICE_CLOCK_GATE_ADDRESS})
+        and values == frozenset({DEFAULT_DEVICE_CLOCK_GATES})
+    ]
+    if len(gate_stores) != 1:
+        raise EntryError(
+            "selected startup must emit the default device clock gate write exactly once"
+        )
+
+    predecessors = {address: set() for address in live}
+    for address in live:
+        for successor in instruction_successors(rows, indices[address]):
+            if successor in live:
+                predecessors[successor].add(address)
+    entry = rows[0][0]
+    dominators = {
+        address: {address} if address == entry else set(live)
+        for address in live
+    }
+    changed = True
+    while changed:
+        changed = False
+        for address in live - {entry}:
+            incoming = predecessors[address]
+            updated = {address} | (
+                set.intersection(*(dominators[item] for item in incoming))
+                if incoming
+                else set()
+            )
+            if updated != dominators[address]:
+                dominators[address] = updated
+                changed = True
+    if gate_stores[0] not in dominators[stage_calls[0]]:
+        raise EntryError(
+            "selected device clock gate write must dominate SysTick startup"
+        )
 
 
 def has_mmio_store(functions: dict[str, str], reached: set[str], start: str) -> bool:
@@ -1140,6 +1216,9 @@ def inspect_disassembly(disassembly: str, symbols: str, vector_dump: str) -> Non
     coordinator = require_reachable(selected, "coordinate_with_welcome::<")
     startup_path = reachable_functions(functions, coordinator)
     coordinator_address = function_address(disassembly, coordinator)
+    require_device_clock_gate_before_stages(
+        functions[coordinator], "StartupIo>::systick"
+    )
     require_reachable_call_sequence(
         functions[coordinator],
         (

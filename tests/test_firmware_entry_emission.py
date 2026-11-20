@@ -159,6 +159,33 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
         ):
             self.validate(probe)
 
+    def test_actual_device_clock_gate_write_is_required(self):
+        _, body = self.coordinator()
+        stores = entry_check.function_proven_stores(body)
+        gate_writes = [
+            address
+            for address, (targets, values) in stores.items()
+            if targets
+            == frozenset({entry_check.DEVICE_CLOCK_GATE_ADDRESS})
+            and values
+            == frozenset({entry_check.DEFAULT_DEVICE_CLOCK_GATES})
+        ]
+        self.assertEqual(len(gate_writes), 1)
+        gate_write = gate_writes[0]
+        row = next(
+            row
+            for row in entry_check.instructions(body)
+            if row[0] == gate_write
+        )
+        self.assertEqual(row[1], "str")
+        probe = self.patch_halfword(
+            "missing-device-clock-gate-write.elf", gate_write, 0xBF00
+        )
+        with self.assertRaisesRegex(
+            entry_check.EntryError, "device clock gate write"
+        ):
+            self.validate(probe)
+
     def test_actual_display_initialization_requires_prerequisite_order(self):
         _, body = self.coordinator()
         stage_calls = {}
@@ -203,7 +230,8 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
         self.assertEqual(rows[1][0] - address, 2)
         probe = self.patch_halfword("coordinator-self-loop.elf", address, 0xE7FE)
         with self.assertRaisesRegex(
-            entry_check.EntryError, "cannot reach|exactly 3 times|top level"
+            entry_check.EntryError,
+            "cannot reach|exactly 3 times|top level|systick exactly once",
         ):
             self.validate(probe)
 
