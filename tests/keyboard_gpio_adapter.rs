@@ -24,7 +24,8 @@ enum Event {
 #[derive(Default)]
 struct State {
     values: [u32; 4],
-    reads: VecDeque<(Register, u32)>,
+    input_samples: VecDeque<u16>,
+    sample_pending: bool,
     trace: Vec<Event>,
 }
 
@@ -44,8 +45,14 @@ struct MockRegisters(Rc<RefCell<State>>);
 impl RegisterIo for MockRegisters {
     fn read(&mut self, register: Register) -> u32 {
         let mut state = self.0.borrow_mut();
-        let (expected_register, value) = state.reads.pop_front().expect("unexpected read");
-        assert_eq!(register, expected_register);
+        let index = State::index(register);
+        let mut value = state.values[index];
+        if register == Register::GpioAData && state.sample_pending {
+            if let Some(sample) = state.input_samples.pop_front() {
+                value = (value & !0x78) | u32::from(sample & 0x78);
+            }
+            state.sample_pending = false;
+        }
         state.trace.push(Event::Read(register, value));
         value
     }
@@ -61,7 +68,9 @@ struct MockDelay(Rc<RefCell<State>>);
 
 impl Delay1us for MockDelay {
     fn delay_1us(&mut self) {
-        self.0.borrow_mut().trace.push(Event::Delay);
+        let mut state = self.0.borrow_mut();
+        state.sample_pending = true;
+        state.trace.push(Event::Delay);
     }
 }
 
@@ -92,7 +101,10 @@ impl Expected {
 
     fn update(&mut self, and_mask: u32, or_mask: u32) {
         self.read(Register::GpioAData, self.data);
-        self.write(Register::GpioAData, (self.data & and_mask) | or_mask);
+        self.write(
+            Register::GpioAData,
+            (self.data & (and_mask | 0xffff_0000)) | or_mask,
+        );
     }
 
     fn set_pin(&mut self, pin: u32, set: bool) {
@@ -125,7 +137,10 @@ impl Expected {
             self.update(SELECT[row], 0);
             for &sample in samples {
                 self.delay();
-                self.read(Register::GpioAData, sample);
+                self.read(
+                    Register::GpioAData,
+                    (self.data & !0x78) | u32::from(sample as u16 & 0x78),
+                );
             }
         }
     }
@@ -156,24 +171,14 @@ fn poll(
     expected.cleanup();
     expected.events.extend_from_slice(effects);
 
-    {
-        let mut shared = state.borrow_mut();
-        shared.reads = expected
-            .events
-            .iter()
-            .filter_map(|event| match event {
-                Event::Read(register, value) => Some((*register, *value)),
-                _ => None,
-            })
-            .collect();
-    }
+    state.borrow_mut().input_samples = rows.iter().flatten().map(|sample| *sample as u16).collect();
 
     adapter.poll(&mut Effects(Rc::clone(state)));
 
     let shared = state.borrow();
     assert!(
-        shared.reads.is_empty(),
-        "poll omitted expected register reads"
+        shared.input_samples.is_empty(),
+        "poll omitted expected GPIOA input samples"
     );
     assert_eq!(&shared.trace[start..], expected.events);
 }
@@ -291,10 +296,10 @@ fn zero_sample_three_stable_and_eight_attempt_boundaries_are_actual_reads() {
     let (mut adapter, state) = adapter();
     poll(&mut adapter, &state, &[vec![0, 0, 0]], &[Event::CancelBoot]);
 
-    let late_stable = [vec![1, 2, 3, 4, 5, 0xfff7, 0xfff7, 0xfff7]];
+    let late_stable = [vec![0x08, 0x10, 0x18, 0x20, 0x30, 0x70, 0x70, 0x70]];
     poll(&mut adapter, &state, &late_stable, &[Event::CancelBoot]);
 
-    let two_at_limit = [vec![1, 2, 3, 4, 5, 6, 0xfff7, 0xfff7]];
+    let two_at_limit = [vec![0x08, 0x10, 0x18, 0x20, 0x30, 0x38, 0x70, 0x70]];
     poll(&mut adapter, &state, &two_at_limit, &[]);
 }
 
@@ -303,8 +308,78 @@ fn no_key_and_noise_abort_both_run_shared_stop_and_voice_cleanup() {
     let (mut adapter, state) = adapter();
     poll(&mut adapter, &state, &all_rows_no_key(), &[]);
 
-    let noise = [(0..8).map(|i| 0xfff7 ^ (i % 2)).collect()];
+    let noise = [(0..8).map(|i| 0x70 ^ ((i % 2) << 3)).collect()];
     poll(&mut adapter, &state, &noise, &[]);
+}
+
+#[test]
+fn actual_register_trace_preserves_upper_bits_and_cleans_up_early_key() {
+    let (mut adapter, state) = adapter();
+    state.borrow_mut().input_samples = [0xfff7; 3].into();
+    adapter.poll(&mut Effects(Rc::clone(&state)));
+
+    let shared = state.borrow();
+    let data_accesses: Vec<_> = shared
+        .trace
+        .iter()
+        .filter(|event| {
+            matches!(
+                event,
+                Event::Read(Register::GpioAData, _) | Event::Write(Register::GpioAData, _)
+            )
+        })
+        .take(4)
+        .cloned()
+        .collect();
+    assert_eq!(
+        data_accesses,
+        [
+            Event::Read(Register::GpioAData, 0xa5a5_c3a5),
+            Event::Write(Register::GpioAData, 0xa5a5_ffa5),
+            Event::Read(Register::GpioAData, 0xa5a5_ffa5),
+            Event::Write(Register::GpioAData, 0xa5a5_ffa5),
+        ]
+    );
+    let data_writes: Vec<_> = shared
+        .trace
+        .iter()
+        .filter_map(|event| match event {
+            Event::Write(Register::GpioAData, value) => Some(*value),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        data_writes,
+        [
+            0xa5a5_ffa5,
+            0xa5a5_ffa5,
+            0xa5a5_f7a5,
+            0xa5a5_f3a5,
+            0xa5a5_f7a5,
+            0xa5a5_ffa5,
+            0xa5a5_efa5,
+            0xa5a5_efa5,
+        ]
+    );
+    let samples: Vec<_> = shared
+        .trace
+        .iter()
+        .filter_map(|event| match event {
+            Event::Read(Register::GpioAData, value) if value & 0x78 == 0x70 => Some(*value),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(samples, [0xa5a5_fff5; 3]);
+    assert!(shared.input_samples.is_empty());
+    assert!(data_writes.iter().all(|value| value >> 16 == 0xa5a5));
+    assert_eq!(
+        &shared.trace[shared.trace.len() - 3..],
+        [
+            Event::Read(Register::GpioAData, 0xa5a5_efa5),
+            Event::Write(Register::GpioAData, 0xa5a5_efa5),
+            Event::CancelBoot,
+        ]
+    );
 }
 
 #[test]

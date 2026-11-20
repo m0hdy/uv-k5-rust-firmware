@@ -36,8 +36,9 @@ impl<R: RegisterIo, D: Delay1us> KeyboardGpioAdapter<R, D> {
 impl<R: RegisterIo, D: Delay1us> MatrixIo for GpioBackend<R, D> {
     fn update_gpioa(&mut self, and_mask: u32, or_mask: u32) {
         let current = self.registers.read(Register::GpioAData);
+        let preservation_mask = and_mask | 0xffff_0000;
         self.registers
-            .write(Register::GpioAData, (current & and_mask) | or_mask);
+            .write(Register::GpioAData, (current & preservation_mask) | or_mask);
     }
 
     fn read_gpioa(&mut self) -> u32 {

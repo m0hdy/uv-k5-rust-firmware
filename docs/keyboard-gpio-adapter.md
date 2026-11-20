@@ -21,9 +21,13 @@ result—key, no key, or unstable/noise abort—runs the shared STOP followed by
 clear-PA12 and set-PA13 cleanup.
 
 Every GPIOA DATA update reads the latest complete register value and writes
-the masked result; STOP applies the same fresh read-modify-write policy to
-GPIOA DATA. No update combines adjacent operations. This preserves unrelated
-bits in each operation but does not make concurrent register writers safe.
+the masked result; matrix row masks are widened to preserve bits 16–31 while
+retaining their exact low-16-bit selection. The pinned C poll clears those
+upper bits because its masks are 16-bit; preserving them here is an intentional
+register-safety divergence, with low-16-bit row selection and key priority
+unchanged. STOP applies the same fresh read-modify-write policy to GPIOA DATA.
+No update combines adjacent operations. This preserves unrelated bits in each
+operation but does not make concurrent register writers safe.
 STOP's pin order and delays come from
 [`i2c_bitbang_flow::stop`](../src/i2c_bitbang_flow.rs), not a duplicate local
 sequence.
