@@ -36,6 +36,7 @@ __vector_table:
 .type Reset_Handler,%function
 .thumb_func
 Reset_Handler:
+    cpsid i
     ldr r0, =.Linitial_sp
     mov sp, r0
     ldr r0, =__data_load

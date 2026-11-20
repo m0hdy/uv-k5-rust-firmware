@@ -20,13 +20,17 @@ plans through the EEPROM read executor, returns the failed block together with
 the original typed read error, and does not issue the display read if the core
 read fails. Both entries use the same settings decoders. An erased `[0xff; 8]`
 response remains ordinary data and is passed to the corresponding decoder.
-No MMIO, physical transport, EEPROM write, additional settings block, or
-startup wiring is involved.
+These legacy APIs intentionally remain two-block compositions, so the
+channel-selection caller's third transaction remains at `0x0e80`. The explicit
+`compose_with_welcome` and `compose_with_welcome_transport` extensions add one
+read at `0x0e90`; the opt-in firmware entry uses the fallible extension and
+passes that acquired mode to the initialized-display continuation without
+reacquiring it. No MMIO or EEPROM write is involved.
 
-The host tests check both complete command traces, the order and lengths of
-the requests, routing to each decoder, all NOAA/VOX/BLMIN_TMP_OFF presence
-combinations, both block-specific transport failures and cleanup, and erased
-bytes in either block.
+The host tests check legacy and welcome-extended command traces, request order
+and lengths, routing to each decoder, all NOAA/VOX/BLMIN_TMP_OFF presence
+combinations, block-specific transport failures and cleanup, and erased bytes
+in either core/display block.
 
 From the repository root:
 

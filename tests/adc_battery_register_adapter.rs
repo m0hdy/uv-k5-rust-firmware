@@ -1,3 +1,5 @@
+pub use uv_k5_rust_firmware::startup_battery_sampling;
+
 #[path = "../src/adc_battery_register_adapter.rs"]
 mod adc_battery_register_adapter;
 

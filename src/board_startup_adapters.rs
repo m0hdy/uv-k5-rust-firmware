@@ -147,27 +147,28 @@ pub fn run<IO: StartupIo>(
 }
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-struct HardwareIo;
+pub(super) struct HardwareIo;
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
 impl StartupIo for HardwareIo {
     type FmError = core::convert::Infallible;
 
     fn device_clock_gates(&mut self) {
-        // SAFETY: This witness is only linked, never executed; target integration must uphold
-        // the adapter's documented DP32G030 mapping and exclusive startup ownership.
+        // SAFETY: The target integration boundary upholds the DP32G030 mapping
+        // and exclusive startup ownership required by this adapter.
         unsafe { device_clock_gate_startup::apply_device_clock_gates() }
     }
 
     fn systick(&mut self, period_ticks: u32) -> Result<(), StartupError<Self::FmError>> {
-        // SAFETY: The witness vector installs SysTick_Handler before this enable path.
+        // SAFETY: The firmware vector table installs SysTick_Handler before
+        // this path enables SysTick.
         unsafe { systick_startup_adapter::apply_to_hardware(period_ticks) }
             .map_err(|_| StartupError::SysTick)
     }
 
     fn portcon(&mut self, enable_swd: bool) {
-        // SAFETY: This witness is only linked, never executed; target integration must uphold
-        // the adapter's documented DP32G030 mapping and exclusive startup ownership.
+        // SAFETY: The target integration boundary upholds the DP32G030 mapping
+        // and exclusive startup ownership required by this adapter.
         unsafe {
             portcon_startup_adapter::apply_portcon_startup_plan(PortconFeatures { enable_swd })
         }
@@ -175,8 +176,8 @@ impl StartupIo for HardwareIo {
 
     fn gpio(&mut self, enable_fmradio: bool) {
         let plan = GpioPlan::for_features(GpioFeatures { enable_fmradio });
-        // SAFETY: This witness is only linked, never executed; target integration must uphold
-        // the adapter's documented DP32G030 mapping and exclusive startup ownership.
+        // SAFETY: The target integration boundary upholds the DP32G030 mapping
+        // and exclusive startup ownership required by this adapter.
         unsafe { gpio_startup_adapter::apply_gpio_startup_plan(&plan) }
     }
 
@@ -187,8 +188,8 @@ impl StartupIo for HardwareIo {
     }
 
     fn adc_init(&mut self, exttrig_sel: u16) {
-        // SAFETY: The caller must uphold the SARADC mapping, IRQ-handler/vector,
-        // and whole-register/interrupt serialization requirements documented below.
+        // SAFETY: The target integration boundary upholds the SARADC mapping,
+        // masked-IRQ and whole-register serialization requirements.
         unsafe { initialize_adc_hardware(exttrig_sel) }
     }
 
@@ -230,15 +231,17 @@ impl StartupIo for HardwareIo {
 ///
 /// The caller must satisfy the mapping and exclusive-ownership preconditions
 /// documented by the target adapters, reserve B6 for the backlight, and
-/// install valid SysTick and SARADC vectors and handlers before this enables
-/// their interrupts. Serialize the complete SARADC operation against every
-/// writer to its touched SYSCON/SARADC registers and IRQ line. The caller must
-/// ensure the CRC clock and register mapping are valid, own its complete CR
-/// and IV registers, and serialize CRC initialization against all users,
-/// including interrupt handlers, whenever CRC is enabled. The board clock
-/// assignment already enables CRC bit 27. The caller must explicitly select
-/// `exttrig_sel`, provide an accurate millisecond delay,
-/// and provide a nonzero ST7565 FIFO poll budget; no values are inferred here.
+/// install a valid SysTick vector and handler before this enables SysTick.
+/// The SARADC adapter disables its NVIC line before setup and keeps peripheral
+/// interrupt enables zero; no SARADC handler is assumed. Serialize the
+/// complete SARADC operation against every writer to its touched
+/// SYSCON/SARADC registers and IRQ line. The caller must ensure the CRC clock
+/// and register mapping are valid, own its complete CR and IV registers, and
+/// serialize CRC initialization against all users, including interrupt
+/// handlers, whenever CRC is enabled. The board clock assignment already
+/// enables CRC bit 27. The caller must explicitly select `exttrig_sel`,
+/// provide an accurate millisecond delay, and provide a nonzero ST7565 FIFO
+/// poll budget; no values are inferred here.
 /// When FM is enabled, the caller must also satisfy all `shutdown_mmio`
 /// mapping, pin ownership, register serialization, and delay requirements.
 /// The link-only witness is deliberately not configured for hardware execution.

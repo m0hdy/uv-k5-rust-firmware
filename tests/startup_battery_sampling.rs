@@ -1,11 +1,8 @@
-#[path = "../src/startup_battery_sampling.rs"]
-mod startup_battery_sampling;
-
-use startup_battery_sampling::{
+use std::collections::VecDeque;
+use uv_k5_rust_firmware::startup_battery_sampling::{
     AcquisitionError, CalibrationError, ReadRegister, RegisterIo, StartupBatteryError,
     StartupBatteryReadings, WriteRegister, sample_startup_battery,
 };
-use std::collections::VecDeque;
 
 #[derive(Debug, Eq, PartialEq)]
 enum Event {

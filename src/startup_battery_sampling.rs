@@ -1,14 +1,11 @@
-#![cfg_attr(not(test), no_std)]
-
 //! Offline composition of startup battery acquisition and voltage calibration.
 
-#[allow(unused_attributes)]
-#[path = "adc_battery_acquisition.rs"]
-mod adc_battery_acquisition;
-use adc_battery_acquisition::acquire_battery_samples;
-pub use adc_battery_acquisition::adc_samples::CalibrationError;
-use adc_battery_acquisition::adc_samples::calibrated_battery_voltage;
-pub use adc_battery_acquisition::{AcquisitionError, ReadRegister, RegisterIo, WriteRegister};
+use crate::adc_battery_acquisition::acquire_battery_samples;
+pub use crate::adc_battery_acquisition::{
+    AcquisitionError, ReadRegister, RegisterIo, WriteRegister,
+};
+pub use crate::adc_samples::CalibrationError;
+use crate::adc_samples::calibrated_battery_voltage;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StartupBatteryReadings {

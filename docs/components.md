@@ -7,19 +7,21 @@ inputs or a mock backend without starting firmware.
 
 ## Target boundaries
 
-See the [README diagram](../README.md#target-component-architecture) for the
-intended runtime connections. Startup composes the board adapters, loads
-settings, and selects the startup display before entering the application
-loop. The scheduler translates ticks into application work; it does not
-decode keys, make tuning decisions, or draw to the LCD. Application flows
-consume typed inputs and request effects through peripheral interfaces.
-EEPROM and LCD adapters handle their respective bus and register operations.
+See the [README diagram](../README.md#selected-firmware-entry) for the entry
+connections. With `firmware-integration` enabled, startup composes board
+adapters, acquires settings, samples battery state, and continues the
+initialized display before parking. The default firmware entry remains a
+non-installable bootstrap. No application loop is wired yet. The scheduler
+translates ticks into application work; it does not decode keys, make tuning
+decisions, or draw to the LCD. Application flows consume typed inputs and
+request effects through peripheral interfaces. EEPROM and LCD adapters handle
+their respective bus and register operations.
 
 ## Behavior and validation
 
 | Area | Component docs |
 | --- | --- |
-| Startup and pins | [Target contract](target-contract.md), [Board sequence](board-sequence.md), [Board composition](board-startup-composition.md), [Clock gates](device-clock-gate-startup.md), [SysTick](systick-startup-adapter.md), [PortCon](portcon-startup-adapter.md), [GPIO](gpio-startup-adapter.md) |
+| Startup and pins | [Firmware entry integration](firmware-entry-integration.md), [Target contract](target-contract.md), [Board sequence](board-sequence.md), [Board composition](board-startup-composition.md), [Clock gates](device-clock-gate-startup.md), [SysTick](systick-startup-adapter.md), [PortCon](portcon-startup-adapter.md), [GPIO](gpio-startup-adapter.md) |
 | Scheduler | [Flag state](periodic-scheduler-flags.md), [Dispatch order](app-timeslice-dispatch.md), [Scheduler composition](app-scheduler-composition.md) |
 | Keypad and application | [Matrix sampling](keyboard-matrix-scan.md), [Keypad polling](keyboard-poll-flow.md), [Numeric buffer](numeric-input-box.md), [Memory-channel entry](app-numeric-input-flow.md), [Scan continuation](app-scan-flow.md) |
 | Settings and buses | [Settings boot](settings-boot-composition.md), [Core defaults](settings-boot-defaults-provenance.md), [Display defaults](display-boot-defaults-provenance.md), [EEPROM read transport](eeprom-read-transport.md), [I²C byte and edge sequence](i2c-bitbang-flow.md), [UART init plan](uart-init-plan-provenance.md) |

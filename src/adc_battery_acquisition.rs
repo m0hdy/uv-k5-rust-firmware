@@ -1,5 +1,3 @@
-#![cfg_attr(not(test), no_std)]
-
 //! Offline model of the pinned board battery ADC acquisition sequence.
 //!
 //! The sequence follows `BOARD_ADC_GetBatteryInfo()` in `board.c` and
@@ -8,11 +6,7 @@
 //! [`7607f0a`](https://github.com/egzumer/uv-k5-firmware-custom/tree/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3).
 //! It has no MMIO implementation and is not connected to firmware startup.
 
-#[path = "adc_samples.rs"]
-#[allow(dead_code)]
-pub(crate) mod adc_samples;
-
-use adc_samples::{AdcRegisterSnapshot, decode_adc_sample};
+use crate::adc_samples::{AdcRegisterSnapshot, decode_adc_sample};
 
 const SARADC_START_START_MASK: u32 = 1;
 const SARADC_IF_CHANNEL_4: u32 = 1 << 4;

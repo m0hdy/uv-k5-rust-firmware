@@ -83,6 +83,7 @@ fn address_free_register_interface_records_the_full_order_and_fresh_reads() {
     assert_eq!(
         io.events,
         vec![
+            Event::Irq(Interrupt::Saradc, IrqAction::Disable),
             Event::Read(Register::DeviceClockGate, 0xa5a5_51aa),
             Event::Write(Register::DeviceClockGate, 0xa7a5_51aa),
             Event::Read(Register::Configuration, 0xafff_ffff),
@@ -99,8 +100,6 @@ fn address_free_register_interface_records_the_full_order_and_fresh_reads() {
             Event::Write(Register::InterruptFlags, u32::MAX),
             Event::Read(Register::InterruptEnable, 0xdead_beef),
             Event::Write(Register::InterruptEnable, 0xdeac_0000),
-            Event::Read(Register::InterruptEnable, 0),
-            Event::Irq(Interrupt::Saradc, IrqAction::Disable),
             Event::Read(Register::Configuration, 0xd6ad_0000),
             Event::Write(Register::Configuration, 0xdead_0000),
             Event::Read(Register::Start, 0xa5a5_5aaf),
@@ -112,27 +111,26 @@ fn address_free_register_interface_records_the_full_order_and_fresh_reads() {
 }
 
 #[test]
-fn nonzero_interrupt_enable_readback_enables_saradc_irq() {
+fn stale_interrupt_enable_state_never_enables_saradc_irq() {
     let mut reads = empty_reads();
-    reads[7] = VecDeque::from([0, 0x8000_0000]);
+    reads[7] = VecDeque::from([0x8003_ffff]);
 
     let mut io = FakeRegisterIo::new([0; 9], reads);
     apply_with_io(&mut io, 0x1234);
 
     assert_eq!(
+        io.events.first(),
+        Some(&Event::Irq(Interrupt::Saradc, IrqAction::Disable))
+    );
+    assert!(
         io.events
             .iter()
             .filter(|event| matches!(event, Event::Irq(_, _)))
-            .copied()
-            .collect::<Vec<_>>(),
-        [Event::Irq(Interrupt::Saradc, IrqAction::Enable)]
+            .all(|event| matches!(event, Event::Irq(_, IrqAction::Disable)))
     );
-    assert_eq!(
+    assert!(
         io.events
-            .iter()
-            .filter(|event| matches!(event, Event::Read(Register::InterruptEnable, _)))
-            .count(),
-        2
+            .contains(&Event::Write(Register::InterruptEnable, 0x8000_0000))
     );
 }
 
@@ -178,7 +176,7 @@ fn physical_startup_uses_word_transactions_and_only_changes_the_saradc_nvic_line
     use PhysicalEvent::{Read32, SyncIrqDisable, Write32};
 
     for (preserved_ie, trigger, initial_nvic, final_nvic) in
-        [(0, 0xa55a, 0x38, 0x28), (0x8000_0000, 0xfedc, 0x28, 0x38)]
+        [(0, 0xa55a, 0x38, 0x28), (0x8000_0000, 0xfedc, 0x28, 0x28)]
     {
         let initial_ie = preserved_ie | 0x0003_ffff;
         let mut io = FakeWordIo {
@@ -199,6 +197,8 @@ fn physical_startup_uses_word_transactions_and_only_changes_the_saradc_nvic_line
         apply_with_words(&mut io, trigger);
 
         let mut expected = vec![
+            Write32(0xe000_e180, 0x10),
+            SyncIrqDisable,
             Read32(0x4000_0008, 0x4000_0040),
             Write32(0x4000_0008, 0x4200_0040),
             Read32(0x400b_a000, 0xf800_8000),
@@ -215,13 +215,7 @@ fn physical_startup_uses_word_transactions_and_only_changes_the_saradc_nvic_line
             Write32(0x400b_a00c, u32::MAX),
             Read32(0x400b_a008, initial_ie),
             Write32(0x400b_a008, preserved_ie),
-            Read32(0x400b_a008, preserved_ie),
         ];
-        if preserved_ie == 0 {
-            expected.extend([Write32(0xe000_e180, 0x10), SyncIrqDisable]);
-        } else {
-            expected.push(Write32(0xe000_e100, 0x10));
-        }
         expected.extend([
             Read32(0x400b_a000, 0xc7c3_8210),
             Write32(0x400b_a000, 0xcfc3_8210),
@@ -231,6 +225,7 @@ fn physical_startup_uses_word_transactions_and_only_changes_the_saradc_nvic_line
             Write32(0x400b_a004, 0x8000_0014),
         ]);
         assert_eq!(io.events, expected, "trigger {trigger:#06x}");
+        assert_eq!(io.registers[&0x400b_a008], preserved_ie);
         assert_eq!(io.registers[&0x400b_a00c], 0);
         assert_eq!(io.registers[&0x400b_a0b0], u32::from(trigger));
         assert_eq!(io.enabled_irqs, final_nvic);

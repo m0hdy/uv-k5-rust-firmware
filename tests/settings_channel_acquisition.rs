@@ -47,7 +47,7 @@ enum TransportError {
 
 struct MockTransport {
     events: Vec<BusEvent>,
-    responses: [[u8; 8]; 3],
+    responses: [[u8; 8]; 4],
     reads: usize,
     fail_at: Option<usize>,
     nack_at: Option<usize>,
@@ -56,7 +56,7 @@ struct MockTransport {
 }
 
 impl MockTransport {
-    fn new(responses: [[u8; 8]; 3]) -> Self {
+    fn new(responses: [[u8; 8]; 4]) -> Self {
         Self {
             events: Vec::new(),
             responses,
@@ -148,8 +148,8 @@ const ACQUISITION_TRACE: [BusEvent; 24] = {
     trace
 };
 
-fn responses(channel: [u8; 8]) -> [[u8; 8]; 3] {
-    [CORE_DATA, DISPLAY_DATA, channel]
+fn responses(channel: [u8; 8]) -> [[u8; 8]; 4] {
+    [CORE_DATA, DISPLAY_DATA, channel, [0; 8]]
 }
 
 fn expected_channel(
@@ -184,7 +184,7 @@ fn expected_error(
 }
 
 #[test]
-fn acquires_three_ordered_blocks_and_decodes_the_channel_selection() {
+fn acquires_two_settings_blocks_then_channel_selection() {
     let mut bus = MockTransport::new(responses(CHANNEL_DATA));
 
     let result = acquire_with_transport(&mut bus, FEATURES).unwrap();
@@ -232,7 +232,7 @@ fn decoder_matches_valid_zero_erased_and_channel_boundary_bytes() {
 }
 
 #[test]
-fn feature_flags_keep_the_two_settings_blocks_and_noaa_selection_independent() {
+fn feature_flags_keep_two_settings_reads_and_noaa_selection_independent() {
     for noaa_enabled in [false, true] {
         for vox_enabled in [false, true] {
             for blmin_tmp_off_enabled in [false, true] {
@@ -521,7 +521,7 @@ impl Delay1us for NoDelay {
 }
 
 #[test]
-fn gpio_register_mock_runs_all_three_blocks_through_the_existing_bridge() {
+fn gpio_register_mock_runs_two_settings_blocks_and_channel_through_the_existing_bridge() {
     let data = responses(CHANNEL_DATA);
     let (registers, _) = MockRegisters::new(response_samples(&data));
     let mut io = GpioI2cIo::new(registers, NoDelay);

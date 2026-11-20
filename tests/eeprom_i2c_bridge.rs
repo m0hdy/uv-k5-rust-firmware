@@ -172,7 +172,6 @@ fn erased_responses_are_read_as_data_in_either_startup_block() {
     let normal = [73, 8, 10, 1, 1, 1, 9, 4];
     let erased = [0xff; 8];
     let display = [0x24, 3, 1, 4, 2, 5, 1, 1];
-
     for responses in [[erased, display], [normal, erased]] {
         let mut io = PinMock::with_responses(&responses);
         assert!(read_settings_boot(&mut io, FEATURES).is_ok());

@@ -1,3 +1,5 @@
+pub use uv_k5_rust_firmware::systick_timing;
+
 #[path = "../src/systick_startup_adapter.rs"]
 mod systick_startup_adapter;
 

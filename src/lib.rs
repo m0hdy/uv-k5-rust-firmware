@@ -1,5 +1,8 @@
 #![no_std]
 
+pub mod adc_battery_acquisition;
+pub mod adc_battery_register_adapter;
+pub mod adc_samples;
 pub mod bk1080_startup_adapter;
 #[allow(unused_attributes)]
 pub mod boot_coordinator;
@@ -33,10 +36,13 @@ pub mod st7565_mmio_transport;
 pub mod st7565_startup;
 #[allow(unused_attributes)]
 pub mod st7565_startup_executor;
+pub mod startup_battery_sampling;
 #[allow(unused_attributes)]
 pub mod startup_version_display;
 #[allow(unused_attributes)]
 pub mod startup_version_row_plan;
+pub mod systick_delay_adapter;
+pub mod systick_timing;
 pub mod tuning_signalling;
 #[allow(unused_attributes)]
 pub mod welcome_startup;

@@ -484,7 +484,7 @@ const STARTUP_FEATURES: Features = Features {
     blmin_tmp_off_enabled: true,
 };
 
-fn startup_samples(responses: &[[u8; 8]; 2]) -> Vec<Level> {
+fn startup_samples(responses: &[[u8; 8]]) -> Vec<Level> {
     let mut samples = Vec::new();
     for response in responses {
         samples.extend([Low; 4]);

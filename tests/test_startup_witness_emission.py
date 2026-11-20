@@ -8,7 +8,6 @@ import os
 import re
 import shutil
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -122,15 +121,94 @@ class StartupWitnessEmissionTests(unittest.TestCase):
         self.assertIsNotNone(match)
         size, vma, file_offset = (int(value, 16) for value in match.groups())
         original = ELF.read_bytes()
-        cases = (
-            (0x100039F8, b"\x01", b"\x00"),
-            (0x100038E8, b"\x00", b"\x01"),
-            (0x100039F0, b"\x00", b"\x01"),
-            (0x10001268, bytes.fromhex("7b120010"), bytes.fromhex("81120010")),
-            (0x10001974, bytes.fromhex("f8390010"), bytes.fromhex("00400010")),
+
+        def literal_pointer(fragment, suffix, offset):
+            entry, name = self.entry(fragment, suffix)
+            body = witness.function_entry_body(self.disassembly, entry, name)
+            instruction = {
+                item[0]: item for item in witness.parse_instructions(body)
+            }[entry + offset]
+            displacement = re.fullmatch(
+                r"r[0-7],\s*\[pc,\s*#(\d+)\]",
+                instruction[3].split("@")[0].strip(),
+            )
+            self.assertIsNotNone(displacement)
+            literal = ((instruction[0] + 4) & ~3) + int(displacement.group(1))
+            start = file_offset + literal - vma
+            return int.from_bytes(original[start : start + 4], "little")
+
+        register_entry, register_name = self.entry(
+            "target_gpio::Register>::address", True
         )
-        with tempfile.TemporaryDirectory(prefix="startup-witness-data-") as directory:
-            scratch = Path(directory) / "witness.elf"
+        register_body = witness.function_entry_body(
+            self.disassembly, register_entry, register_name
+        )
+        register_word = re.search(
+            r"(?m)^\s*([0-9a-f]+):\s+[0-9a-f]+\s+\.word\s+0x([0-9a-f]+)\b",
+            register_body,
+        )
+        self.assertIsNotNone(register_word)
+        register_address, register_value = (
+            int(value, 16) for value in register_word.groups()
+        )
+
+        main, main_name = self.entry("witness_main")
+        main_body = witness.function_entry_body(self.disassembly, main, main_name)
+        main_words = {
+            int(match.group(1), 16): int(match.group(2), 16)
+            for line in main_body.splitlines()
+            if (match := re.match(
+                r"\s*([0-9a-f]+):\s+[0-9a-f]+\s+\.word\s+0x([0-9a-f]+)\b",
+                line,
+            ))
+        }
+        vtables = []
+        for instruction in witness.reachable_instruction_prefix(main_body):
+            displacement = re.fullmatch(
+                r"r2,\s*\[pc,\s*#(\d+)\]",
+                instruction[3].split("@")[0].strip(),
+            )
+            if instruction[2] == "ldr" and displacement:
+                literal = ((instruction[0] + 4) & ~3) + int(displacement.group(1))
+                vtables.append(main_words[literal])
+        self.assertEqual(len(vtables), 3)
+        delay_target, _ = self.entry(
+            "LinkOnlyDelay as startup_adapter_witness::i2c_bitbang_flow::target_gpio::Delay1us>::delay_1us",
+            True,
+        )
+
+        cases = (
+            (literal_pointer("::set_scl", True, 0x0C), b"\x01", b"\x00"),
+            (
+                literal_pointer("i2c_bitbang_flow::write_byte::<", False, 0xA0),
+                b"\x00",
+                b"\x01",
+            ),
+            (
+                literal_pointer(
+                    "core::array::iter::iter_inner::PolymorphicIter<[core::mem::maybe_uninit::MaybeUninit<u8>]>>::next",
+                    True,
+                    0x1C,
+                ),
+                bytes(8),
+                b"\x01" + bytes(7),
+            ),
+            (
+                register_address,
+                register_value.to_bytes(4, "little"),
+                (register_value + 6).to_bytes(4, "little"),
+            ),
+            (
+                vtables[0] + 12,
+                (delay_target | 1).to_bytes(4, "little"),
+                delay_target.to_bytes(4, "little"),
+            ),
+        )
+        probe_dir = ROOT / "target/startup-witness-data-probes"
+        shutil.rmtree(probe_dir, ignore_errors=True)
+        probe_dir.mkdir(parents=True)
+        scratch = probe_dir / "witness.elf"
+        try:
             for address, expected, replacement in cases:
                 with self.subTest(address=hex(address)):
                     self.assertTrue(vma <= address and address + len(expected) <= vma + size)
@@ -141,6 +219,8 @@ class StartupWitnessEmissionTests(unittest.TestCase):
                     scratch.write_bytes(modified)
                     with self.assertRaises(witness.WitnessError):
                         witness.validate(scratch)
+        finally:
+            shutil.rmtree(probe_dir, ignore_errors=True)
 
     def test_calls_must_target_real_numeric_entries(self):
         cases = (
@@ -232,14 +312,37 @@ class StartupWitnessEmissionTests(unittest.TestCase):
         )
         original_method = (target | 1).to_bytes(4, "little").hex()
         contents = self.run_tool("objdump", "-s", "-j", ".text", str(ELF))
-        line = re.compile(
-            rf"(?m)^(\s*{table:x}\s+00000000\s+00000000\s+01000000\s+)({original_method})(\s+.*)$"
-        )
-        self.assertEqual(len(line.findall(contents)), 1)
-        mutated_contents = line.sub(
-            lambda match: match.group(1) + target.to_bytes(4, "little").hex() + match.group(3),
-            contents, count=1,
-        )
+        method_address = table + 12
+        mutated_lines = []
+        replacements = 0
+        for line in contents.splitlines():
+            parts = line.split()
+            try:
+                address = int(parts[0], 16)
+            except (IndexError, ValueError):
+                mutated_lines.append(line)
+                continue
+            words = [
+                word for word in parts[1:5]
+                if re.fullmatch(r"[0-9a-fA-F]{8}", word)
+            ]
+            data = bytearray.fromhex("".join(words))
+            if address <= method_address and method_address + 4 <= address + len(data):
+                offset = method_address - address
+                self.assertEqual(data[offset : offset + 4].hex(), original_method)
+                data[offset : offset + 4] = target.to_bytes(4, "little")
+                mutated_lines.append(
+                    f" {address:08x} "
+                    + " ".join(
+                        data[index : index + 4].hex()
+                        for index in range(0, len(data), 4)
+                    )
+                )
+                replacements += 1
+            else:
+                mutated_lines.append(line)
+        self.assertEqual(replacements, 1)
+        mutated_contents = "\n".join(mutated_lines)
         with self.assertRaises(witness.WitnessError):
             self.validate_emission(self.disassembly, mutated_contents)
 

@@ -2,9 +2,7 @@
 
 //! Typed SysTick startup operations and a restricted Cortex-M0 adapter.
 
-#[allow(dead_code)]
-#[path = "systick_timing.rs"]
-pub mod systick_timing;
+use crate::systick_timing;
 
 pub const SYS_TICK_PERIOD_TICKS: u32 = systick_timing::SYS_TICK_PERIOD_TICKS;
 pub const SYS_TICK_DELAY_MULTIPLIER: u32 = systick_timing::SYS_TICK_MULTIPLIER;

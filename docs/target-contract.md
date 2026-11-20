@@ -147,6 +147,25 @@ flowchart TD
 
 Sources: [entry, memory, and section layout](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/firmware.ld#L1-L32), [reset vector and stack word](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/start.S#L31-L40), [HandlerReset](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/start.S#L243-L253), [data and BSS initialization](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/init.c#L25-L47).
 
+## Rust firmware entry selection
+
+The Rust reset path in `src/bin/startup.S` calls `firmware_main` after data and
+BSS initialization. Its default configuration remains the non-installable
+spin-only bootstrap. Only an explicit `firmware-integration` feature selects
+the concrete boot path; that path is built for Cortex-M0 only and requires all
+caller-owned values described in
+[the firmware-entry contract](firmware-entry-integration.md). No policy values
+are inferred from the pinned C initializer.
+
+The feature-selected ELF is independently inspected for the emitted
+Reset-to-`firmware_main`-to-integration-to-executor call path, vector and
+linker layout, and flash/RAM budget. CI uses explicit structural-only policy
+fixtures and never packages that ELF. The integration stops after the
+initialized-display welcome continuation and does not provide an operational
+application loop. Neither this linked evidence nor the default development
+image establishes bootloader acceptance, device execution, or safe
+installation.
+
 ## Memory and address contract
 
 The C linker script explicitly defines the application regions:

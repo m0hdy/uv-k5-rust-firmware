@@ -101,14 +101,15 @@ welcome APIs. The already-initialized-display continuation is the distinct
 its explicit-version counterpart); it acquires the welcome mode and continues
 without reinitializing the controller.
 
-The existing interrupt obligations remain: install a valid SysTick handler
-before enabling SysTick, and if preserved SARADC IE bits can enable NVIC IRQ 4,
-install a valid handler at vector slot 20 and prevent that IRQ from racing
-initialization. Serialize the entire SARADC operation against every writer to
-its touched SYSCON/SARADC registers and IRQ line. Neither the board adapter
-nor the link-only witness supplies operational handlers. The default
-`firmware_main` path remains unchanged; this board-stage wiring does not
-invoke it or complete application startup.
+The selected firmware integration masks interrupts at Reset before RAM or
+peripheral effects and installs a valid returning SysTick handler before
+enabling the counter. SARADC setup disables the NVIC IRQ before touching the
+peripheral and clears only SARADC interrupt-enable source fields, preserving
+unrelated bits; it never reenables the IRQ. No SARADC handler is installed or
+assumed. Serialize the entire SARADC operation against every writer to touched
+SYSCON/SARADC registers and the IRQ line. The opt-in `firmware-integration`
+feature selects this sequence from `firmware_main`; the default bootstrap
+remains unchanged and performs no peripheral startup.
 
 The link-only witness enables synthetic FM and CRC features and uses delay
 stand-ins only to retain and inspect the concrete target call path. It does
@@ -116,16 +117,18 @@ not model elapsed time, provide production timing, or establish a timing policy;
 the witness is never executed or published. The synthetic feature configuration
 is not production policy.
 
-The SARADC adapter may enable NVIC IRQ 4 when preserved SARADC IE bits are
-nonzero. Before running startup with interrupt delivery possible, install a
-valid handler in the active vector at slot 20 and prevent that IRQ from racing
-initialization as needed. Serialize the entire SARADC operation against every
-writer to the touched SYSCON and SARADC registers, including updates to
-unrelated shared clock fields, and against changes to the SARADC NVIC line.
-The link-only witness passes a synthetic trigger only to exercise argument
-forwarding; it is not production policy. The witness does not provide an
-operational SARADC IRQ handler or prove that a device vector slot is safe. Host
-and link-only checks do not establish any of these hardware preconditions.
+The SARADC adapter masks NVIC IRQ 4 before peripheral setup and clears the
+configured SARADC source bits in its interrupt-enable register while
+preserving unrelated bits. The selected entry does not unmask global
+interrupts, so preserved bits cannot activate an unprovided handler. The
+adapter does not clear pending state; the startup path keeps the line disabled
+and remains globally masked before parking.
+Serialize the complete operation against every writer to the touched SYSCON
+and SARADC registers, including updates to unrelated shared clock fields, and
+against changes to the SARADC NVIC line. The opt-in firmware entry requires
+caller-supplied trigger, timing, feature, and budget policy; build fixtures are
+not production policy. Host and linked checks do not establish hardware
+preconditions or calibration.
 
 CI separately links `startup-witness/` for Cortex-M0 with a dedicated
 vector table and a returning SysTick handler. Its linker places code at
