@@ -296,6 +296,82 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
         ):
             self.validate(probe)
 
+    def test_actual_board_failure_cannot_write_mmio(self):
+        _, body = self.coordinator()
+        rows = entry_check.instructions(body)
+        st7565 = next(
+            index
+            for index, (_, mnemonic, operands) in enumerate(rows)
+            if mnemonic == "bl" and "StartupIo>::st7565_init" in operands
+        )
+        first_read = next(
+            address
+            for address, mnemonic, operands in rows
+            if mnemonic == "bl"
+            and "eeprom_read_transport::execute_read::<" in operands
+        )
+        conditional = next(
+            index
+            for index in range(st7565 + 1, st7565 + 9)
+            if entry_check.CONDITIONAL_BRANCH.fullmatch(rows[index][1])
+        )
+        failure = next(
+            successor
+            for successor in entry_check.instruction_successors(
+                rows, conditional
+            )
+            if first_read
+            not in entry_check.reachable_instruction_addresses(
+                rows, [successor]
+            )
+        )
+        failure_row = next(row for row in rows if row[0] == failure)
+        self.assertEqual(failure_row[1], "ldr")
+        self.assertIn("[sp,", failure_row[2])
+        words = {
+            int(address, 16): int(value, 16)
+            for address, value in re.findall(
+                r"(?m)^\s*([0-9a-fA-F]+):\s+(?:[0-9a-fA-F]+\s+)?"
+                r"\.word\s+0x([0-9a-fA-F]+)\b",
+                body,
+            )
+        }
+        pc = (failure + 4) & ~3
+        literal = next(
+            address
+            for address, value in words.items()
+            if entry_check.is_mmio_address(value)
+            and address >= pc
+            and (address - pc) % 4 == 0
+            and address - pc <= 1020
+        )
+        encoding = 0x4900 | ((literal - pc) // 4)
+        probe = self.patch_halfword(
+            "board-error-writes-mmio.elf", failure, encoding
+        )
+        mutated_functions = entry_check.function_bodies(
+            self.run_objdump(probe, "-d", "-C", "--wide")
+        )
+        mutated_body = mutated_functions[
+            next(
+                symbol
+                for symbol in mutated_functions
+                if "coordinate_with_welcome::<" in symbol
+            )
+        ]
+        mutated_row = next(
+            row
+            for row in entry_check.instructions(mutated_body)
+            if row[0] == failure
+        )
+        self.assertEqual(mutated_row[1], "ldr")
+        self.assertIn("[pc,", mutated_row[2])
+        with self.assertRaisesRegex(
+            entry_check.EntryError,
+            "failure path reaches an unapproved store effect",
+        ):
+            self.validate(probe)
+
     def test_actual_coordinator_entry_self_loop_is_rejected(self):
         name, body = self.coordinator()
         address = entry_check.function_address(self.disassembly, name)

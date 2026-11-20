@@ -198,6 +198,20 @@ class FirmwareEntryTests(unittest.TestCase):
                 ):
                     self.inspect(broken)
 
+    def test_fallible_board_stage_errors_cannot_write_mmio(self):
+        broken = DISASSEMBLY.replace(
+            "580: bx lr",
+            "580: ldr r1, [pc, #4]\n"
+            " 582: str r0, [r1]\n"
+            " 584: bx lr\n"
+            " 588: .word 0x40060000",
+            1,
+        )
+        with self.assertRaisesRegex(
+            EntryError, "failure path reaches an unapproved store effect"
+        ):
+            self.inspect(broken)
+
     def test_eeprom_reads_cannot_be_bypassed_before_battery_sampling(self):
         broken = DISASSEMBLY.replace(
             "515: bne.n 580 <coordinate_with_welcome::<TargetBootIo>+0x88>\n"

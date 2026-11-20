@@ -539,6 +539,14 @@ def require_fallible_stage_short_circuit(
         raise EntryError(
             f"{called_fragment} failure path reaches later startup effects"
         )
+    stores, _ = error_effect_kinds(body)
+    if any(
+        stores.get(address) not in {None, "stack", "data"}
+        for address in failure_path
+    ):
+        raise EntryError(
+            f"{called_fragment} failure path reaches an unapproved store effect"
+        )
     returns = {
         address
         for address, mnemonic, operands in rows
