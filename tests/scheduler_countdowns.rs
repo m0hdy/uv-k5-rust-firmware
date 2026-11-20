@@ -338,6 +338,52 @@ fn every_optional_feature_is_an_explicit_gate() {
 }
 
 #[test]
+fn optional_feature_gates_are_independent_and_power_save_flags_stay_sticky() {
+    for feature_bits in 0..16 {
+        let features = Features {
+            enable_noaa: feature_bits & 0b0001 != 0,
+            enable_voice: feature_bits & 0b0010 != 0,
+            enable_fmradio: feature_bits & 0b0100 != 0,
+            enable_vox: feature_bits & 0b1000 != 0,
+        };
+        let mut countdowns = state();
+        countdowns.noaa_countdown_10ms = 2;
+        countdowns.noaa_schedule_countdown_10ms = 2;
+        countdowns.countdown_to_play_next_voice_10ms = 1;
+        countdowns.fm_play_countdown_10ms = 1;
+        countdowns.vox_stop_countdown_10ms = 2;
+
+        let mut tick = allowed_noaa_context();
+        tick.features = features;
+        tick.fm_scan_active = true;
+        execute_countdowns(&mut countdowns, tick);
+
+        let mut expected = state();
+        expected.noaa_countdown_10ms = if features.enable_noaa { 1 } else { 2 };
+        expected.noaa_schedule_countdown_10ms = if features.enable_noaa { 1 } else { 2 };
+        expected.countdown_to_play_next_voice_10ms = u16::from(!features.enable_voice);
+        expected.play_queued_voice = features.enable_voice;
+        expected.fm_play_countdown_10ms = u16::from(!features.enable_fmradio);
+        expected.schedule_fm = features.enable_fmradio;
+        expected.vox_stop_countdown_10ms = if features.enable_vox { 1 } else { 2 };
+        assert_eq!(
+            countdowns, expected,
+            "feature combination {feature_bits:04b}"
+        );
+    }
+
+    let mut countdowns = state();
+    countdowns.power_save_10ms = 2;
+    countdowns.power_save_countdown_expired = true;
+    let mut tick = context();
+    tick.function = SchedulerFunction::PowerSave;
+    execute_countdowns(&mut countdowns, tick);
+
+    assert_eq!(countdowns.power_save_10ms, 1);
+    assert!(countdowns.power_save_countdown_expired);
+}
+
+#[test]
 fn foreground_and_power_save_countdowns_require_their_exact_function() {
     for function in [
         SchedulerFunction::Foreground,
