@@ -250,11 +250,10 @@ pub(crate) mod physical {
         /// (e.g. other peripheral clock gates), and other changes to the SARADC
         /// NVIC line. Exclusive ownership of the ADC pins is not sufficient.
         ///
-        /// If the SARADC IRQ can run (including if it is already enabled or
-        /// this call enables it on nonzero IE readback), its active vector must
-        /// point to a valid handler. Keep delivery masked until the handler and
-        /// peripheral are ready if needed, and prevent it from racing startup.
-        /// This call does not clear NVIC pending state or install a handler.
+        /// This call disables the SARADC NVIC line before peripheral access
+        /// and writes zero to the interrupt-enable register. The caller must
+        /// serialize other changes to the line throughout setup. This call
+        /// does not clear NVIC pending state or install a handler.
         ///
         /// `exttrig_sel` must be explicitly chosen by the caller for the board;
         /// the pinned board initializer does not supply a value.

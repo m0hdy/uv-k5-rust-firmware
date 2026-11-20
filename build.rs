@@ -107,6 +107,10 @@ fn configure_firmware_integration() {
                 matches!(value.as_str(), "true" | "false"),
                 "{input} must be exactly true or false"
             );
+            assert!(
+                *input != "UVK5_ENABLE_SWD" || value == "false",
+                "firmware-integration requires UVK5_ENABLE_SWD=false because PB11 is the display reset pin"
+            );
         } else {
             let parsed = value
                 .parse::<u32>()

@@ -4,6 +4,7 @@ use uv_k5_rust_firmware::eeprom_i2c_bridge::{
     Acknowledgement, Direction, Features, I2cBitbangTransport, I2cIo, I2cTransport, Level,
     ReadError, SettingsBootBlock, SettingsBootReadError, read_settings_boot,
 };
+use uv_k5_rust_firmware::startup_version_display::StartupDisplayMode;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Op {
@@ -24,7 +25,7 @@ struct PinMock {
 }
 
 impl PinMock {
-    fn with_responses(responses: &[[u8; 8]; 2]) -> Self {
+    fn with_responses(responses: &[[u8; 8]; 3]) -> Self {
         let mut samples = VecDeque::new();
         for response in responses {
             samples.extend([Low; 4]);
@@ -137,14 +138,18 @@ const FEATURES: Features = Features {
 };
 
 fn all_read_byte_acknowledgements() -> Vec<Level> {
-    (0..2)
+    (0..3)
         .flat_map(|_| [Low, Low, Low, Low, Low, Low, Low, High])
         .collect()
 }
 
 #[test]
 fn startup_reads_use_bitbang_start_repeated_start_ack_read_and_stop_flow() {
-    let responses = [[73, 8, 10, 1, 1, 1, 9, 4], [0x24, 3, 1, 4, 2, 5, 1, 1]];
+    let responses = [
+        [73, 8, 10, 1, 1, 1, 9, 4],
+        [0x24, 3, 1, 4, 2, 5, 1, 1],
+        [1, 2, 3, 4, 5, 6, 7, 3],
+    ];
     let mut io = PinMock::with_responses(&responses);
 
     let settings = read_settings_boot(&mut io, FEATURES).unwrap();
@@ -153,13 +158,15 @@ fn startup_reads_use_bitbang_start_repeated_start_ack_read_and_stop_flow() {
     assert_eq!(settings.core.vox_level, Some(9));
     assert_eq!(settings.display.channel_display_mode, 3);
     assert_eq!(settings.display.backlight_time, 5);
-    assert_eq!(io.count_sequence(&START), 4);
-    assert_eq!(io.count_sequence(&STOP), 2);
+    assert_eq!(settings.welcome_mode, StartupDisplayMode::None);
+    assert_eq!(io.count_sequence(&START), 6);
+    assert_eq!(io.count_sequence(&STOP), 3);
     let starts = io.sequence_positions(&START);
     let stops = io.sequence_positions(&STOP);
     assert!(starts[0] < starts[1] && starts[1] < stops[0]);
     assert!(stops[0] < starts[2] && starts[2] < starts[3] && starts[3] < stops[1]);
-    assert_eq!(io.read_count, 8 + 16 * 8);
+    assert!(stops[1] < starts[4] && starts[4] < starts[5] && starts[5] < stops[2]);
+    assert_eq!(io.read_count, 12 + 24 * 8);
     assert!(io.samples.is_empty());
     assert_eq!(
         io.read_byte_acknowledgements(),
@@ -172,13 +179,14 @@ fn erased_responses_are_read_as_data_in_either_startup_block() {
     let normal = [73, 8, 10, 1, 1, 1, 9, 4];
     let erased = [0xff; 8];
     let display = [0x24, 3, 1, 4, 2, 5, 1, 1];
+    let welcome = [0, 0, 0, 0, 0, 0, 0, 2];
 
-    for responses in [[erased, display], [normal, erased]] {
+    for responses in [[erased, display, welcome], [normal, erased, welcome]] {
         let mut io = PinMock::with_responses(&responses);
         assert!(read_settings_boot(&mut io, FEATURES).is_ok());
-        assert_eq!(io.count_sequence(&START), 4);
-        assert_eq!(io.count_sequence(&STOP), 2);
-        assert_eq!(io.read_count, 8 + 16 * 8);
+        assert_eq!(io.count_sequence(&START), 6);
+        assert_eq!(io.count_sequence(&STOP), 3);
+        assert_eq!(io.read_count, 12 + 24 * 8);
         assert_eq!(
             io.read_byte_acknowledgements(),
             all_read_byte_acknowledgements()

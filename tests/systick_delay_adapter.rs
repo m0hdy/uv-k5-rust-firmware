@@ -1,12 +1,9 @@
-#[path = "../src/systick_delay_adapter.rs"]
-mod systick_delay_adapter;
-
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 use uv_k5_rust_firmware::{
-    i2c_bitbang_flow::target_gpio::Delay1us, st7565_startup_executor::target_spi0::DelayMs,
+    i2c_bitbang_flow::target_gpio::Delay1us,
+    st7565_startup_executor::target_spi0::DelayMs,
+    systick_delay_adapter::{SysTickCounter, SysTickDelay, delay_ms_target_ticks},
 };
-
-use systick_delay_adapter::{SysTickCounter, SysTickDelay, delay_ms_target_ticks};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Read {

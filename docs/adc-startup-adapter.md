@@ -22,9 +22,8 @@ at pinned revision
 5. Write the caller-provided `EXTTRIG_SEL` directly, zero-extended to 32 bits.
 6. Read-modify-write offset-valid and KD-valid calibration fields to valid.
 7. Write all ones directly to IF (write-one-to-clear), without reading IF.
-8. Read-modify-write IE with the board's disabled interrupt fields, read IE
-   back, then disable NVIC's SARADC IRQ only if that readback is zero;
-   otherwise enable it.
+8. Disable NVIC's SARADC IRQ before touching the peripheral, clear the
+   interrupt-enable register, and never reenable the IRQ.
 9. Read-modify-write CFG to enable ADC.
 10. Read-modify-write START to assert soft reset, then read it again and
     read-modify-write it to deassert reset.
@@ -60,12 +59,11 @@ unresolved policy decision.
   fields in the shared clock registers. Also serialize other changes to the
   SARADC NVIC line. Exclusive ownership of the ADC pins alone does not protect
   the read-modify-write operations.
-- If the interrupt can be delivered, install a valid handler in the active
-  vector for external IRQ 4 (vector table index 20). Preserved IE bits can
-  cause NVIC enable before the final CFG and reset writes, and the NVIC line
-  might already be enabled or pending on entry. Keep delivery masked if needed
-  until the handler and peripheral are ready, and prevent it from racing
-  startup. The adapter does not install vectors or clear pending state.
+- The adapter disables NVIC IRQ 4 before peripheral access and writes zero to
+  the interrupt-enable register. It does not enable the IRQ, clear pending
+  state, or install a handler. The caller must serialize other changes to the
+  line throughout setup; the opt-in firmware path leaves the SARADC source
+  disabled and masks interrupts before parking.
 
 The adapter remains an internal module and is called by the board startup
 dispatcher at `Call::AdcInit`, after backlight and before the concrete ST7565

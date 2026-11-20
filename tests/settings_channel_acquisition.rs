@@ -47,7 +47,7 @@ enum TransportError {
 
 struct MockTransport {
     events: Vec<BusEvent>,
-    responses: [[u8; 8]; 3],
+    responses: [[u8; 8]; 4],
     reads: usize,
     fail_at: Option<usize>,
     nack_at: Option<usize>,
@@ -56,7 +56,7 @@ struct MockTransport {
 }
 
 impl MockTransport {
-    fn new(responses: [[u8; 8]; 3]) -> Self {
+    fn new(responses: [[u8; 8]; 4]) -> Self {
         Self {
             events: Vec::new(),
             responses,
@@ -133,23 +133,25 @@ const fn read_trace(address: u8) -> [BusEvent; 8] {
     ]
 }
 
-const ACQUISITION_TRACE: [BusEvent; 24] = {
+const ACQUISITION_TRACE: [BusEvent; 32] = {
     let core = read_trace(0x70);
     let display = read_trace(0x78);
+    let welcome = read_trace(0x90);
     let channel = read_trace(0x80);
-    let mut trace = [BusEvent::Stop; 24];
+    let mut trace = [BusEvent::Stop; 32];
     let mut index = 0;
     while index < 8 {
         trace[index] = core[index];
         trace[index + 8] = display[index];
-        trace[index + 16] = channel[index];
+        trace[index + 16] = welcome[index];
+        trace[index + 24] = channel[index];
         index += 1;
     }
     trace
 };
 
-fn responses(channel: [u8; 8]) -> [[u8; 8]; 3] {
-    [CORE_DATA, DISPLAY_DATA, channel]
+fn responses(channel: [u8; 8]) -> [[u8; 8]; 4] {
+    [CORE_DATA, DISPLAY_DATA, [0; 8], channel]
 }
 
 fn expected_channel(
@@ -179,12 +181,16 @@ fn expected_error(
             block: SettingsBootBlock::Display,
             error,
         }),
+        16..=23 => SettingsChannelAcquisitionError::SettingsBoot(SettingsBootReadError {
+            block: SettingsBootBlock::Welcome,
+            error,
+        }),
         _ => SettingsChannelAcquisitionError::ChannelSelection(error),
     }
 }
 
 #[test]
-fn acquires_three_ordered_blocks_and_decodes_the_channel_selection() {
+fn acquires_four_ordered_blocks_and_decodes_the_channel_selection() {
     let mut bus = MockTransport::new(responses(CHANNEL_DATA));
 
     let result = acquire_with_transport(&mut bus, FEATURES).unwrap();
@@ -196,9 +202,9 @@ fn acquires_three_ordered_blocks_and_decodes_the_channel_selection() {
         expected_channel([37, 91], [173, 4], [203, 204], Some([211, 216]))
     );
     assert_eq!(result.settings, baseline);
-    assert_eq!(baseline_bus.events.as_slice(), &ACQUISITION_TRACE[..16]);
+    assert_eq!(baseline_bus.events.as_slice(), &ACQUISITION_TRACE[..24]);
     assert_eq!(bus.events, ACQUISITION_TRACE);
-    assert_eq!(bus.reads, 3);
+    assert_eq!(bus.reads, 4);
 }
 
 #[test]
@@ -232,7 +238,7 @@ fn decoder_matches_valid_zero_erased_and_channel_boundary_bytes() {
 }
 
 #[test]
-fn feature_flags_keep_the_two_settings_blocks_and_noaa_selection_independent() {
+fn feature_flags_keep_the_three_settings_reads_and_noaa_selection_independent() {
     for noaa_enabled in [false, true] {
         for vox_enabled in [false, true] {
             for blmin_tmp_off_enabled in [false, true] {
@@ -262,7 +268,7 @@ fn feature_flags_keep_the_two_settings_blocks_and_noaa_selection_independent() {
                     blmin_tmp_off_enabled.then_some(BacklightMinStatus::On)
                 );
                 assert_eq!(bus.events, ACQUISITION_TRACE);
-                assert_eq!(baseline_bus.events.as_slice(), &ACQUISITION_TRACE[..16]);
+                assert_eq!(baseline_bus.events.as_slice(), &ACQUISITION_TRACE[..24]);
             }
         }
     }
@@ -299,13 +305,14 @@ fn every_transport_failure_stops_at_its_event_and_keeps_its_original_identity() 
             usize::from(event_index >= 6)
                 + usize::from(event_index >= 14)
                 + usize::from(event_index >= 22)
+                + usize::from(event_index >= 30)
         );
     }
 }
 
 #[test]
 fn a_cleanup_stop_failure_never_replaces_the_original_error() {
-    for event_index in [2, 10, 18] {
+    for event_index in [2, 10, 18, 26] {
         let mut bus = MockTransport::new(responses(CHANNEL_DATA));
         bus.fail_at = Some(event_index);
         bus.fail_cleanup = true;
@@ -490,6 +497,10 @@ fn expected_gpio_nack(block: usize) -> SettingsChannelAcquisitionError<Infallibl
             block: SettingsBootBlock::Display,
             error,
         }),
+        2 => SettingsChannelAcquisitionError::SettingsBoot(SettingsBootReadError {
+            block: SettingsBootBlock::Welcome,
+            error,
+        }),
         _ => SettingsChannelAcquisitionError::ChannelSelection(error),
     }
 }
@@ -521,7 +532,7 @@ impl Delay1us for NoDelay {
 }
 
 #[test]
-fn gpio_register_mock_runs_all_three_blocks_through_the_existing_bridge() {
+fn gpio_register_mock_runs_all_four_blocks_through_the_existing_bridge() {
     let data = responses(CHANNEL_DATA);
     let (registers, _) = MockRegisters::new(response_samples(&data));
     let mut io = GpioI2cIo::new(registers, NoDelay);
@@ -537,7 +548,7 @@ fn gpio_register_mock_runs_all_three_blocks_through_the_existing_bridge() {
 
 #[test]
 fn gpio_register_mock_cleans_up_each_write_nack_before_owner_release() {
-    for block in 0..3 {
+    for block in 0..4 {
         for write in 0..4 {
             for handoff in [false, true] {
                 let (registers, shared) = MockRegisters::new(nack_samples(block, write));

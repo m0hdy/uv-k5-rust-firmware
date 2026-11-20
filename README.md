@@ -6,50 +6,44 @@ reset/vector path and linker layout, but remains an unqualified bootstrap, not
 a flashable firmware image. It makes no assumptions about the radio's boot ROM,
 bootloader handoff, clock state, or physical hardware revision.
 
-## Target component architecture
+## Selected firmware entry
 
-The diagram shows how the completed Rust firmware is intended to fit
-together. The [component guide](docs/components.md) describes the boundaries
-and links to each subsystem's behavior and focused checks.
+The default `firmware_main` is still a non-installable bootstrap and performs
+no peripheral startup. The opt-in `firmware-integration` feature selects the
+real startup composition from that same entry, then parks after welcome because
+the application loop and radio/keypad behavior are not implemented. The
+[entry contract](docs/firmware-entry-integration.md) specifies its required
+external policy inputs and the limits of offline evidence.
 
 ```mermaid
 flowchart LR
-  Reset["Reset and runtime init"] --> Board["Board bring-up"]
-  Board --> Settings["Load settings"]
-  Settings --> Welcome["Startup display"]
-  Welcome --> Loop["Application scheduler"]
-  Board --> Tick["SysTick source"]
-  Tick --> Loop
-  Loop --> Input["Keypad and debounce"]
-  Input --> Control["Channel, tuning, and scan flows"]
-  Loop --> Control
-  Loop --> Battery["Battery sampling and status"]
-  Settings --> Storage["EEPROM transport"]
-  Control --> Storage
-  Control --> Radio["Radio drivers"]
-  Welcome --> Display["LCD rendering and SPI transport"]
-  Control --> Display
-  Battery --> Display
+  Reset["Reset_Handler"] --> Main["firmware_main"]
+  Main --> Select{"firmware-integration enabled?"}
+  Select -->|no, default| Bootstrap["Non-installable spin bootstrap"]
+  Select -->|yes, external policy required| Board["Concrete board startup"]
+  Board -->|success| Settings["Fallible EEPROM settings\ncore, display, welcome mode"]
+  Board -->|first error| Park["Mask interrupts and WFI"]
+  Settings -->|STOP then GPIO handoff| Battery["Bounded real ADC sampling"]
+  Settings -->|read failure| Park
+  Battery -->|success| Welcome["Initialized-display continuation\nM0HDY + project version in text modes"]
+  Battery -->|failure| Park
+  Welcome -->|success or first error| Park
+  Policy["Externally verified values:\nEXTTRIG_SEL, timing, calibration,\nfeatures and poll budgets"] -.-> Select
+  Park -.-> Future["Application loop and device validation\nremain outstanding"]
 ```
 
-The callable [welcome startup boundary](docs/startup-version-display.md#callable-welcome-execution)
-initializes SPI0 and the display before an optional M0HDY version-row transfer.
-The [EEPROM-selected welcome boundary](docs/startup-version-display.md#eeprom-selected-welcome-execution)
-also provides startup-mode acquisition and the initialized-display continuation.
-The diagram above is an intended architecture, not current firmware boot flow:
-wiring these callable boundaries into the firmware/application entry remains
-outstanding.
+The selected integration reuses the [board startup sequence](docs/board-startup-adapters.md),
+reads the actual welcome setting with core/display settings, samples the
+battery through the existing bounded executor, hands PA10/PA11 back after
+EEPROM STOP, and uses the already-initialized display for the version row.
+`None` and `FullScreen` modes issue no welcome-row transfer. ADC interrupt
+delivery is disabled before SARADC setup and remains masked; the startup does
+not rely on an ADC ISR. Successful welcome is not application completion.
 
-The separate [board startup adapter path](docs/board-startup-adapters.md)
-executes clock-gate, SysTick, PortCon, GPIO, backlight, SARADC, and the
-concrete ST7565 SPI0/reset startup executor in the pinned order. SARADC
-requires a caller-supplied `EXTTRIG_SEL`, and ST7565 requires a caller-provided
-millisecond delay and nonzero FIFO poll budget. When FM is enabled, the board
-path performs the BK1080 zero-frequency shutdown with a separate caller-provided
-microsecond delay, then conditionally initializes CRC for UART or AirCopy.
-This library path is not wired into the default firmware entry point, and its
-link-only witness does not provide an operational ADC IRQ handler or
-hardware-validation evidence.
+The [component guide](docs/components.md) describes these boundaries and links
+to subsystem behavior and focused checks. The [welcome boundary](docs/startup-version-display.md)
+also remains independently callable; the opt-in firmware path specifically
+uses its already-initialized-display continuation.
 
 ## Requirements and checks
 
@@ -70,6 +64,12 @@ python3 scripts/check_startup_layout.py \
 python3 -m unittest discover -s tests -v
 ```
 
+The opt-in entry additionally requires the caller to set every `UVK5_*`
+variable documented in [the entry contract](docs/firmware-entry-integration.md)
+and build with `--features firmware-integration`. The build has no production
+policy defaults; a structural CI build uses explicitly labelled offline
+fixtures and is neither executed nor packaged.
+
 The crate has no external dependencies or allocator requirement. The startup
 layout checker and memory-budget checker use only the Python standard library;
 the optional real-image memory-gate fixtures also use GNU ARM binutils.
@@ -86,9 +86,12 @@ checks are `Rust quality / Host checks` (formatting, Clippy, and host tests) and
 `Rust quality / Cortex-M0 release build`. Each job installs the toolchain,
 components, and target from `rust-toolchain.toml`; Cargo commands use the
 tracked lockfile. Host checks exercise startup-layout and ELF/raw-payload
-memory-budget fixtures with positive and negative cases. The target job checks
-the built ELF and linker map, records their SHA-256 hashes in the workflow
-summary, and always attaches those diagnostics after a successful link. The
+memory-budget fixtures with positive and negative cases. The Cortex-M0 job
+checks the default bootstrap ELF and linker map, then separately builds the
+opt-in integration with labelled offline-only structural inputs and inspects
+the selected entry call path, layout, and memory budget without packaging it.
+It records the bootstrap ELF and linker map hashes in the workflow summary and
+attaches those diagnostics after a successful link. The
 separate development-image artifact carries the packed version label `*M0HDY dev`
 and is uploaded only after the startup-layout,
 memory-budget, and packed-container checks pass. The raw and packed files are
@@ -101,7 +104,7 @@ no-flash-until-recoverable preflight and rollback evidence.
 
 ```mermaid
 flowchart LR
-  A[Build ELF and linker map] --> B[Generate raw with objcopy]
+  A[Build default bootstrap ELF and map] --> B[Generate raw with objcopy]
   B --> C[Pack raw container]
   C --> D[Startup layout check]
   D --> E[Memory budget and ELF/raw check]
@@ -111,6 +114,8 @@ flowchart LR
   I[Disposable negative build] --> J[Append one byte to raw]
   J --> K[Gate rejects raw span]
   K --> L[Retain ELF/map diagnostics only]
+  M[Offline structural integration build] --> N[Inspect Reset to firmware_main to executors]
+  N --> O[Layout and memory-budget checks; no packaging]
 ```
 
 For local offline inspection of a candidate raw payload, create it from the

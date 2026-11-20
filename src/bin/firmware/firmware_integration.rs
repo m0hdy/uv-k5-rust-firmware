@@ -27,9 +27,17 @@ struct TargetBootIo {
 }
 
 impl TargetBootIo {
-    fn new(ticks_per_microsecond: NonZeroU32) -> Self {
+    /// # Safety
+    ///
+    /// The caller must satisfy `TargetBoardHardwareIo::new` and the target
+    /// GPIO I²C backend's DP32G030 mapping and exclusive pin/register ownership
+    /// requirements. `ticks_per_microsecond` must come from verified clock
+    /// calibration; construction itself performs no MMIO.
+    unsafe fn new(ticks_per_microsecond: NonZeroU32) -> Self {
         Self {
-            board: boot_coordinator::TargetBoardHardwareIo,
+            // SAFETY: This constructor forwards its complete target ownership
+            // contract to the board backend.
+            board: unsafe { boot_coordinator::TargetBoardHardwareIo::new() },
             bus: None,
             ticks_per_microsecond,
         }
@@ -210,7 +218,9 @@ pub extern "C" fn firmware_integration_entry() -> ! {
     let Some((config, ticks_per_microsecond)) = policy() else {
         firmware_fail_closed();
     };
-    let mut io = TargetBootIo::new(ticks_per_microsecond);
+    // SAFETY: The selected policy is required at build time and carries the
+    // externally verified target mapping, ownership, and timing contract.
+    let mut io = unsafe { TargetBootIo::new(ticks_per_microsecond) };
     // SAFETY: These providers use the documented Cortex-M0 SysTick registers;
     // board startup configures the counter before any delay is requested.
     let mut display_delay =

@@ -173,6 +173,44 @@ jobs:
               target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.raw \
               target/thumbv6m-none-eabi/release/uv-k5-rust-firmware.packed
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Build and inspect opt-in firmware entry with offline structural policy
+        env:
+          UVK5_ENABLE_SWD: "false"
+          UVK5_ENABLE_FMRADIO: "false"
+          UVK5_ENABLE_UART: "false"
+          UVK5_ENABLED_AIRCOPY: "false"
+          UVK5_ENABLE_NOAA: "false"
+          UVK5_ENABLE_VOX: "false"
+          UVK5_ENABLE_BLMIN_TMP_OFF: "false"
+          UVK5_ADC_EXTTRIG_SEL: "1"
+          UVK5_ST7565_FIFO_POLL_LIMIT: "1"
+          UVK5_BATTERY_POLL_BUDGET: "1"
+          UVK5_BATTERY_CALIBRATION: "1"
+          UVK5_SYSTICK_TICKS_PER_MICROSECOND: "1"
+          ARM_BINUTILS_PREFIX: arm-none-eabi-
+          RUSTFLAGS: >-
+            -D warnings
+            -C link-arg=-Tlinker/firmware.ld
+            -C link-arg=-Map=target/firmware-integration/thumbv6m-none-eabi/release/uv-k5-rust-firmware.map
+        run: |
+          output=target/firmware-integration/thumbv6m-none-eabi/release
+          mkdir -p "$output"
+          cargo rustc --locked \
+            --target thumbv6m-none-eabi \
+            --target-dir target/firmware-integration \
+            --release \
+            --features firmware-integration \
+            --bin uv-k5-rust-firmware -- -D warnings
+          elf="$output/uv-k5-rust-firmware"
+          map="$output/uv-k5-rust-firmware.map"
+          raw="$output/uv-k5-rust-firmware.raw"
+          python3 scripts/check_firmware_entry.py --elf "$elf"
+          python3 scripts/check_startup_layout.py --elf "$elf" --map "$map"
+          arm-none-eabi-objcopy -O binary "$elf" "$raw"
+          python3 scripts/check_memory_budget.py \
+            --elf "$elf" \
+            --raw "$raw" \
+            --stack-reservation 0x800
       - name: Record target report hashes
         if: always() && steps.target-build.outcome == 'success'
         run: |

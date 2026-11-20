@@ -20,7 +20,73 @@ use crate::st7565_startup_executor::target_spi0::RegisterIo as DisplayRegisterIo
 use crate::startup_version_display::LCD_WIDTH;
 use crate::welcome_startup::{self, WelcomeError};
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-pub use board_startup_adapters::HardwareIo as TargetBoardHardwareIo;
+pub struct TargetBoardHardwareIo(board_startup_adapters::HardwareIo);
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+impl TargetBoardHardwareIo {
+    /// Creates the concrete DP32G030 board startup backend.
+    ///
+    /// # Safety
+    ///
+    /// The caller must execute on the supported DP32G030/Cortex-M0 mapping
+    /// with the required privilege and operational source clock. It must own
+    /// all touched clock, PORTCON, GPIO, PWM, SARADC, SPI0, CRC, and optional
+    /// FM registers for the entire boot sequence, serializing every
+    /// read-modify-write against unrelated-bit writers and interrupt handlers.
+    /// The active vector table must contain the valid SysTick return handler;
+    /// SARADC interrupt delivery must remain disabled for this bounded startup.
+    pub unsafe fn new() -> Self {
+        Self(board_startup_adapters::HardwareIo)
+    }
+}
+
+#[cfg(all(target_arch = "arm", target_os = "none"))]
+impl StartupIo for TargetBoardHardwareIo {
+    type FmError = core::convert::Infallible;
+
+    fn device_clock_gates(&mut self) {
+        self.0.device_clock_gates();
+    }
+
+    fn systick(&mut self, period_ticks: u32) -> Result<(), BoardStartupError<Self::FmError>> {
+        self.0.systick(period_ticks)
+    }
+
+    fn portcon(&mut self, enable_swd: bool) {
+        self.0.portcon(enable_swd);
+    }
+
+    fn gpio(&mut self, enable_fmradio: bool) {
+        self.0.gpio(enable_fmradio);
+    }
+
+    fn backlight_init_hardware(&mut self) {
+        self.0.backlight_init_hardware();
+    }
+
+    fn adc_init(&mut self, exttrig_sel: u16) {
+        self.0.adc_init(exttrig_sel);
+    }
+
+    fn st7565_init(
+        &mut self,
+        delay: &mut dyn DelayMs,
+        fifo_poll_limit: NonZeroU32,
+    ) -> Result<(), crate::st7565_line_transport::LineError> {
+        self.0.st7565_init(delay, fifo_poll_limit)
+    }
+
+    fn bk1080_shutdown(
+        &mut self,
+        delay: &mut dyn Delay1us,
+    ) -> Result<(), crate::bk1080_startup_adapter::ShutdownError<Self::FmError>> {
+        self.0.bk1080_shutdown(delay)
+    }
+
+    fn crc_init(&mut self) {
+        self.0.crc_init();
+    }
+}
 pub use board_startup_adapters::{
     Call as BoardCall, Defines as BoardDefines, StartupError as BoardStartupError, StartupIo,
 };

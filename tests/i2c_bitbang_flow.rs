@@ -8,6 +8,7 @@ use uv_k5_rust_firmware::i2c_bitbang_flow::target_gpio::{
 use uv_k5_rust_firmware::i2c_bitbang_flow::{
     Acknowledgement, Direction, I2cIo, Level, read_buffer, read_byte, start, stop, write_byte,
 };
+use uv_k5_rust_firmware::startup_version_display::StartupDisplayMode;
 
 use Direction::{Input, Output};
 use Level::{High, Low};
@@ -484,7 +485,7 @@ const STARTUP_FEATURES: Features = Features {
     blmin_tmp_off_enabled: true,
 };
 
-fn startup_samples(responses: &[[u8; 8]; 2]) -> Vec<Level> {
+fn startup_samples(responses: &[[u8; 8]]) -> Vec<Level> {
     let mut samples = Vec::new();
     for response in responses {
         samples.extend([Low; 4]);
@@ -499,7 +500,11 @@ fn startup_samples(responses: &[[u8; 8]; 2]) -> Vec<Level> {
 
 #[test]
 fn gpio_backend_reads_startup_settings_through_the_canonical_bridge() {
-    let responses = [[73, 8, 10, 1, 1, 1, 9, 4], [0x24, 3, 1, 4, 2, 5, 1, 1]];
+    let responses = [
+        [73, 8, 10, 1, 1, 1, 9, 4],
+        [0x24, 3, 1, 4, 2, 5, 1, 1],
+        [0, 0, 0, 0, 0, 0, 0, 3],
+    ];
     let (mut io, shared) = target_mock(startup_samples(&responses));
 
     let settings = read_settings_boot(&mut io, STARTUP_FEATURES).unwrap();
@@ -507,9 +512,10 @@ fn gpio_backend_reads_startup_settings_through_the_canonical_bridge() {
     assert_eq!(settings.core.vox_level, Some(9));
     assert_eq!(settings.display.channel_display_mode, 3);
     assert_eq!(settings.display.backlight_time, 5);
+    assert_eq!(settings.welcome_mode, StartupDisplayMode::None);
     {
         let state = shared.borrow();
-        assert_eq!(state.delays, 840);
+        assert_eq!(state.delays, 1_260);
         assert!(state.samples.is_empty());
         assert_eq!(state.values[0] & (SCL_MASK | SDA_MASK), SCL_MASK | SDA_MASK);
         assert_register_rmw_preserves_unrelated_bits(&state.events);

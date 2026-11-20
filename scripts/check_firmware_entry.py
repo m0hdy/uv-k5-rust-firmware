@@ -24,6 +24,22 @@ def function_body(disassembly: str, symbol: str) -> str:
     raise EntryError(f"disassembly is missing {symbol}")
 
 
+def function_body_containing(disassembly: str, symbol_fragment: str) -> str:
+    functions = list(FUNCTION.finditer(disassembly))
+    matches = [
+        index
+        for index, match in enumerate(functions)
+        if symbol_fragment in match.group(1)
+    ]
+    if len(matches) != 1:
+        raise EntryError(
+            f"disassembly must contain exactly one function matching {symbol_fragment}"
+        )
+    index = matches[0]
+    end = functions[index + 1].start() if index + 1 < len(functions) else len(disassembly)
+    return disassembly[functions[index].end() : end]
+
+
 def require_call(body: str, target: str) -> None:
     if not any(
         re.search(r"\bbl(?:\.n|\.w)?\b", line) and target in line
@@ -36,12 +52,14 @@ def inspect_disassembly(disassembly: str, symbols: str) -> None:
     reset = function_body(disassembly, "Reset_Handler")
     main = function_body(disassembly, "firmware_main")
     entry = function_body(disassembly, "firmware_integration_entry")
+    coordinator = function_body_containing(disassembly, "coordinate_with_welcome::<")
     fail_closed = function_body(disassembly, "firmware_fail_closed")
     systick = function_body(disassembly, "SysTick_Handler")
 
     require_call(reset, "firmware_main")
     require_call(main, "firmware_integration_entry")
     require_call(entry, "firmware_fail_closed")
+    require_call(entry, "coordinate_with_welcome::<")
     if not re.search(r"\bbx\s+lr\b", systick):
         raise EntryError("selected vector table's SysTick_Handler is not a valid return handler")
     if not re.search(r"\bcpsid\s+i\b", fail_closed) or not re.search(r"\bwfi\b", fail_closed):
@@ -55,8 +73,8 @@ def inspect_disassembly(disassembly: str, symbols: str) -> None:
         "StartupIo>::adc_init",
         "StartupIo>::st7565_init",
     ):
-        require_call(entry, stage)
-    if entry.count("eeprom_read_transport::execute_read::<") != 3:
+        require_call(coordinator, stage)
+    if coordinator.count("eeprom_read_transport::execute_read::<") != 3:
         raise EntryError("firmware entry must execute the three fallible EEPROM settings reads")
     for executor in (
         "adc_samples::decode_adc_sample",
@@ -64,8 +82,8 @@ def inspect_disassembly(disassembly: str, symbols: str) -> None:
         "startup_version_display::startup_version_display_plan",
         "startup_version_row_plan::compose_startup_version_row",
     ):
-        require_call(entry, executor)
-    if entry.count("StartupIo>::st7565_init") != 1:
+        require_call(coordinator, executor)
+    if coordinator.count("StartupIo>::st7565_init") != 1:
         raise EntryError("firmware entry must initialize the board display exactly once")
     if "GpioI2cIo<" not in symbols or "systick_delay_adapter::SysTickDelay<" not in symbols:
         raise EntryError("selected entry lacks the concrete GPIO I2C/SysTick delay backend")
