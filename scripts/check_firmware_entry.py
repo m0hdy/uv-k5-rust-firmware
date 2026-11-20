@@ -243,7 +243,7 @@ def function_has_mmio_store(body: str) -> bool:
                 state[register] = frozenset({int(immediate.group(1))})
             elif not (
                 mnemonic.startswith("str")
-                or mnemonic.startswith("b")
+                or CONDITIONAL_BRANCH.fullmatch(mnemonic)
                 or mnemonic in non_writing
             ):
                 state[register] = None
@@ -423,7 +423,7 @@ def error_store_kinds(body: str) -> dict[int, str]:
                 )
             elif not (
                 mnemonic.startswith("str")
-                or mnemonic.startswith("b")
+                or CONDITIONAL_BRANCH.fullmatch(mnemonic)
                 or mnemonic in {"cmp", "cpsid", "nop", "push", "tst", "udf", "wfi"}
             ):
                 registers[register] = None

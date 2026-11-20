@@ -178,6 +178,20 @@ class FirmwareEntryTests(unittest.TestCase):
         with self.assertRaisesRegex(EntryError, "gpio executor has no reachable hardware effect"):
             self.inspect(broken)
 
+    def test_flag_setting_instruction_clobbers_mmio_address(self):
+        broken = DISASSEMBLY.replace(
+            "620: ldr r1, [pc, #4]\n 622: str r0, [r1]\n 624: bx lr",
+            "620: ldr r1, [pc, #4]\n"
+            " 622: bics r1, r1\n"
+            " 624: str r0, [r1]\n"
+            " 626: bx lr",
+            1,
+        )
+        with self.assertRaisesRegex(
+            EntryError, "gpio executor has no reachable hardware effect"
+        ):
+            self.inspect(broken)
+
     def test_unchecked_eeprom_result_is_rejected(self):
         broken = DISASSEMBLY.replace(
             "520: beq.n 526", "520: nop", 1
@@ -226,6 +240,20 @@ class FirmwareEntryTests(unittest.TestCase):
     def test_eeprom_error_rejects_indirect_escape(self):
         broken = DISASSEMBLY.replace("590: bx lr", "590: bx r0", 1)
         with self.assertRaisesRegex(EntryError, "unsupported return or escape"):
+            self.inspect(broken)
+
+    def test_eeprom_error_rejects_clobbered_stack_address(self):
+        broken = DISASSEMBLY.replace(
+            "590: bx lr",
+            "590: add r1, sp, #0\n"
+            " 592: bics r1, r1\n"
+            " 594: str r0, [r1]\n"
+            " 596: bx lr",
+            1,
+        )
+        with self.assertRaisesRegex(
+            EntryError, "first-error path reaches an unapproved store effect"
+        ):
             self.inspect(broken)
 
     def test_fail_closed_terminal_must_be_reachable(self):
