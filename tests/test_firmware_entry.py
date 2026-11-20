@@ -4,7 +4,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from check_firmware_entry import EntryError, inspect_disassembly  # noqa: E402
+from check_firmware_entry import (  # noqa: E402
+    EntryError,
+    error_store_kinds,
+    inspect_disassembly,
+)
 
 
 DISASSEMBLY = """
@@ -218,6 +222,23 @@ class FirmwareEntryTests(unittest.TestCase):
             EntryError, "first-error path reaches an unapproved store effect"
         ):
             self.inspect(broken)
+
+    def test_partial_stack_write_invalidates_only_overlapping_pointer_slot(self):
+        overlap = """
+00000500 <coordinate_with_welcome::<TargetBootIo>>:
+ 500: str r0, [sp, #0]
+ 502: movs r1, #64
+ 504: add r2, sp, #3
+ 506: strb r1, [r2]
+ 508: ldr r0, [sp, #0]
+ 50a: str r1, [r0]
+ 50c: bx lr
+"""
+        untouched = overlap.replace(
+            "504: add r2, sp, #3", "504: add r2, sp, #8"
+        )
+        self.assertEqual(error_store_kinds(overlap)[0x50A], "unknown")
+        self.assertEqual(error_store_kinds(untouched)[0x50A], "data")
 
 
 if __name__ == "__main__":

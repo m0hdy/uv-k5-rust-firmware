@@ -334,6 +334,8 @@ def error_store_kinds(body: str) -> dict[int, str]:
         )
         if mnemonic.startswith("str"):
             stores[address] = "unknown"
+            if store is None:
+                memory.clear()
         if mnemonic.startswith("str") and store:
             base_name = store.group(2)
             offset = int(store.group(3) or 0)
@@ -353,15 +355,28 @@ def error_store_kinds(body: str) -> dict[int, str]:
                 stores[address] = "mmio"
             else:
                 stores[address] = "unknown"
-            if base_name == "sp":
-                if mnemonic == "str":
-                    source = registers[int(store.group(1))]
-                    if source is None:
-                        memory.pop(offset, None)
-                    else:
-                        memory[offset] = source
+            if base is None:
+                memory.clear()
+            elif kinds == {"stack"}:
+                width = {"str": 4, "strh": 2, "strb": 1}.get(mnemonic)
+                if width is None:
+                    memory.clear()
                 else:
-                    memory.pop(offset, None)
+                    stack_offsets = {value for _, value in base}
+                    memory = {
+                        slot: value
+                        for slot, value in memory.items()
+                        if all(
+                            slot + 4 <= written or written + width <= slot
+                            for written in stack_offsets
+                        )
+                    }
+                    if mnemonic == "str" and len(stack_offsets) == 1:
+                        source = registers[int(store.group(1))]
+                        if source is not None:
+                            memory[next(iter(stack_offsets))] = source
+            elif stores[address] == "unknown":
+                memory.clear()
 
         destination = re.match(r"\s*r([0-7])\s*,", operands)
         if mnemonic in {"bl", "blx"}:
