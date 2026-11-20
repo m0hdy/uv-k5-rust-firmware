@@ -386,7 +386,7 @@ def error_effect_kinds(body: str) -> tuple[dict[int, str], dict[int, bool]]:
         ):
             destination = registers[0]
             length = registers[2]
-            copy_calls[address] = bool(
+            safe_copy = bool(
                 destination
                 and {kind for kind, _ in destination}
                 in ({"stack"}, {"result"})
@@ -397,6 +397,20 @@ def error_effect_kinds(body: str) -> tuple[dict[int, str], dict[int, bool]]:
                     for _, value in length
                 )
             )
+            copy_calls[address] = safe_copy
+            if not safe_copy:
+                memory.clear()
+            elif {kind for kind, _ in destination} == {"stack"}:
+                memory = {
+                    slot: value
+                    for slot, value in memory.items()
+                    if all(
+                        slot + 4 <= copied_to
+                        or copied_to + copied_length <= slot
+                        for _, copied_to in destination
+                        for _, copied_length in length
+                    )
+                }
         multiple_store = re.fullmatch(
             r"r([0-7])!?,\s*\{[^}]+\}", clean_operands
         )

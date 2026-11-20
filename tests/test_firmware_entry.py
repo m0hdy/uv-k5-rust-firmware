@@ -286,6 +286,29 @@ class FirmwareEntryTests(unittest.TestCase):
                 ):
                     self.inspect(broken)
 
+    def test_eeprom_error_memcpy_invalidates_overwritten_pointer_slot(self):
+        broken = DISASSEMBLY.replace(
+            "500: bl 600 <board::StartupIo>::systick>",
+            "500: str r0, [sp, #12]\n"
+            " 502: bl 600 <board::StartupIo>::systick>",
+            1,
+        ).replace(
+            "590: bx lr",
+            "590: add r0, sp, #12\n"
+            " 592: ldr r1, [pc, #16]\n"
+            " 594: movs r2, #4\n"
+            " 596: bl 730 <__aeabi_memcpy>\n"
+            " 59a: ldr r1, [sp, #12]\n"
+            " 59c: str r0, [r1]\n"
+            " 59e: bx lr\n"
+            " 5a4: .word 0x40060000",
+            1,
+        )
+        with self.assertRaisesRegex(
+            EntryError, "first-error path reaches an unapproved store effect"
+        ):
+            self.inspect(broken)
+
     def test_eeprom_error_cannot_write_inline_mmio(self):
         broken = DISASSEMBLY.replace(
             "590: bx lr",
