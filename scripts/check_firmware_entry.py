@@ -286,6 +286,165 @@ def has_mmio_store(functions: dict[str, str], reached: set[str], start: str) -> 
     return False
 
 
+def error_store_kinds(body: str) -> dict[int, str]:
+    rows = instructions(body)
+    live = reachable_instruction_addresses(rows)
+    indices = {address: index for index, (address, _, _) in enumerate(rows)}
+    words = {
+        int(address, 16): int(value, 16)
+        for address, value in re.findall(
+            r"(?m)^\s*([0-9a-fA-F]+):\s+(?:[0-9a-fA-F]+\s+)?"
+            r"\.word\s+0x([0-9a-fA-F]+)\b",
+            body,
+        )
+    }
+    Value = frozenset[tuple[str, int]]
+    initial_registers: tuple[Value | None, ...] = tuple(
+        frozenset({("data", register)}) if register < 4 else None
+        for register in range(8)
+    )
+    states: dict[
+        int,
+        tuple[
+            tuple[Value | None, ...],
+            tuple[tuple[int, Value], ...],
+        ],
+    ] = {rows[0][0]: (initial_registers, ())}
+    pending = [rows[0][0]]
+    stores: dict[int, str] = {}
+
+    def add_offset(value: Value | None, offset: int) -> Value | None:
+        if value is None:
+            return None
+        return frozenset((kind, base + offset) for kind, base in value)
+
+    def merge_value(left: Value | None, right: Value | None) -> Value | None:
+        return None if left is None or right is None else left | right
+
+    while pending:
+        address = pending.pop()
+        register_state, memory_state = states[address]
+        registers = list(register_state)
+        memory = dict(memory_state)
+        _, mnemonic, operands = rows[indices[address]]
+        clean_operands = operands.split("@")[0].strip()
+        store = re.fullmatch(
+            r"r([0-7]),\s*\[(sp|r[0-7])(?:,\s*#(\d+))?\]",
+            clean_operands,
+        )
+        if mnemonic.startswith("str"):
+            stores[address] = "unknown"
+        if mnemonic.startswith("str") and store:
+            base_name = store.group(2)
+            offset = int(store.group(3) or 0)
+            base = (
+                frozenset({("stack", offset)})
+                if base_name == "sp"
+                else add_offset(registers[int(base_name[1])], offset)
+            )
+            kinds = {kind for kind, _ in base} if base is not None else set()
+            if base and kinds == {"stack"}:
+                stores[address] = "stack"
+            elif base and kinds == {"data"}:
+                stores[address] = "data"
+            elif base and kinds == {"const"} and all(
+                is_mmio_address(value) for _, value in base
+            ):
+                stores[address] = "mmio"
+            else:
+                stores[address] = "unknown"
+            if base_name == "sp":
+                if mnemonic == "str":
+                    source = registers[int(store.group(1))]
+                    if source is None:
+                        memory.pop(offset, None)
+                    else:
+                        memory[offset] = source
+                else:
+                    memory.pop(offset, None)
+
+        destination = re.match(r"\s*r([0-7])\s*,", operands)
+        if mnemonic in {"bl", "blx"}:
+            registers[:4] = [None] * 4
+        elif mnemonic == "pop":
+            for register in re.findall(r"\br([0-7])\b", operands):
+                registers[int(register)] = None
+        elif re.fullmatch(r"(?:add|sub)\s+sp,\s*#\d+.*", f"{mnemonic} {clean_operands}"):
+            memory.clear()
+        elif destination:
+            register = int(destination.group(1))
+            pc_load = re.fullmatch(r"r[0-7],\s*\[pc,\s*#(\d+)\]", clean_operands)
+            sp_load = re.fullmatch(r"r[0-7],\s*\[sp,\s*#(\d+)\]", clean_operands)
+            copied = re.fullmatch(r"r[0-7],\s*r([0-7])", clean_operands)
+            added = re.fullmatch(
+                r"r[0-7],\s*(sp|r[0-7]),\s*#(\d+)", clean_operands
+            )
+            added_in_place = re.fullmatch(r"r[0-7],\s*#(\d+)", clean_operands)
+            immediate = re.fullmatch(r"r[0-7],\s*#(\d+)", clean_operands)
+            if mnemonic == "ldr" and pc_load:
+                literal = ((address + 4) & ~3) + int(pc_load.group(1))
+                value = words.get(literal)
+                registers[register] = (
+                    frozenset({("const", value)}) if value is not None else None
+                )
+            elif mnemonic == "ldr" and sp_load:
+                registers[register] = memory.get(int(sp_load.group(1)))
+            elif mnemonic == "mov" and copied:
+                registers[register] = registers[int(copied.group(1))]
+            elif mnemonic in {"add", "adds"} and added:
+                source = (
+                    frozenset({("stack", 0)})
+                    if added.group(1) == "sp"
+                    else registers[int(added.group(1)[1])]
+                )
+                registers[register] = add_offset(source, int(added.group(2)))
+            elif mnemonic in {"add", "adds"} and added_in_place:
+                registers[register] = add_offset(
+                    registers[register], int(added_in_place.group(1))
+                )
+            elif mnemonic == "movs" and immediate:
+                registers[register] = frozenset(
+                    {("const", int(immediate.group(1)))}
+                )
+            elif not (
+                mnemonic.startswith("str")
+                or mnemonic.startswith("b")
+                or mnemonic in {"cmp", "cpsid", "nop", "push", "tst", "udf", "wfi"}
+            ):
+                registers[register] = None
+
+        outgoing = (tuple(registers), tuple(sorted(memory.items())))
+        for successor in instruction_successors(rows, indices[address]):
+            if successor not in live:
+                continue
+            current = states.get(successor)
+            if current is None:
+                merged = outgoing
+            else:
+                current_registers, current_memory_items = current
+                merged_registers = tuple(
+                    merge_value(left, right)
+                    for left, right in zip(current_registers, outgoing[0])
+                )
+                current_memory = dict(current_memory_items)
+                outgoing_memory = dict(outgoing[1])
+                merged_memory = {
+                    offset: merged_value
+                    for offset in current_memory.keys() & outgoing_memory.keys()
+                    if (
+                        merged_value := merge_value(
+                            current_memory[offset], outgoing_memory[offset]
+                        )
+                    )
+                    is not None
+                }
+                merged = (merged_registers, tuple(sorted(merged_memory.items())))
+            if merged != current:
+                states[successor] = merged
+                pending.append(successor)
+    return stores
+
+
 def has_nontrivial_instruction(body: str) -> bool:
     rows = instructions(body)
     live = reachable_instruction_addresses(rows)
@@ -448,6 +607,7 @@ def require_result_guards(
     ]
     if len(calls) != expected_calls:
         raise EntryError(f"selected coordinator must call {called_fragment} exactly {expected_calls} times")
+    guarded_paths = []
     for index in calls:
         result_slot = result_slot_before_call(rows, index)
         following = [
@@ -578,6 +738,23 @@ def require_result_guards(
         if not short_path & returns:
             raise EntryError(
                 f"{called_fragment} first-error path does not return from the coordinator"
+            )
+        guarded_paths.append((error_path, success_path))
+
+    common_handoff = set.intersection(
+        *(error_path for error_path, _ in guarded_paths),
+        guarded_paths[-1][1],
+    )
+    stores = error_store_kinds(body)
+    for error_path, _ in guarded_paths:
+        for address in error_path:
+            kind = stores.get(address)
+            if kind is None or kind in {"stack", "data"}:
+                continue
+            if kind == "mmio" and address in common_handoff:
+                continue
+            raise EntryError(
+                f"{called_fragment} first-error path reaches an unapproved store effect"
             )
 
 
