@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from check_firmware_entry import (  # noqa: E402
     EntryError,
     error_store_kinds,
+    function_has_mmio_store,
     inspect_disassembly,
 )
 
@@ -192,6 +193,24 @@ class FirmwareEntryTests(unittest.TestCase):
         ):
             self.inspect(broken)
 
+    def test_writeback_clobbers_mmio_address(self):
+        broken = DISASSEMBLY.replace(
+            "620: ldr r1, [pc, #4]\n"
+            " 622: str r0, [r1]\n"
+            " 624: bx lr\n"
+            " 628: .word 0x40060000",
+            "620: ldr r1, [pc, #8]\n"
+            " 622: ldmia r1!, {r0}\n"
+            " 624: str r0, [r1]\n"
+            " 626: bx lr\n"
+            " 62c: .word 0x5ffffffc",
+            1,
+        )
+        with self.assertRaisesRegex(
+            EntryError, "gpio executor has no reachable hardware effect"
+        ):
+            self.inspect(broken)
+
     def test_unchecked_eeprom_result_is_rejected(self):
         broken = DISASSEMBLY.replace(
             "520: beq.n 526", "520: nop", 1
@@ -281,6 +300,27 @@ class FirmwareEntryTests(unittest.TestCase):
         )
         self.assertEqual(error_store_kinds(overlap)[0x50A], "unknown")
         self.assertEqual(error_store_kinds(untouched)[0x50A], "data")
+
+    def test_address_analysis_widens_looping_values(self):
+        mmio_loop = """
+00000000 <f>:
+ 0: ldr r1, [pc, #8]
+ 2: adds r1, r1, #4
+ 4: cmp r0, #0
+ 6: bne.n 2
+ 8: str r0, [r1]
+ a: bx lr
+ c: .word 0x20000000
+"""
+        error_loop = """
+00000000 <f>:
+ 0: adds r1, r1, #4
+ 2: cmp r0, #0
+ 4: bne.n 0
+ 6: bx lr
+"""
+        self.assertFalse(function_has_mmio_store(mmio_loop))
+        self.assertEqual(error_store_kinds(error_loop), {})
 
 
 if __name__ == "__main__":

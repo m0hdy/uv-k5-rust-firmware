@@ -23,6 +23,7 @@ CONDITIONAL_BRANCH = re.compile(
 )
 EEPROM_SUCCESS_TAG = 2
 PREDICATE_PRESERVING_INSTRUCTIONS = {"nop", "str", "strb", "strh"}
+MAX_ABSTRACT_VALUES = 8
 
 
 def function_body(disassembly: str, symbol: str) -> str:
@@ -164,6 +165,21 @@ def is_mmio_address(address: int) -> bool:
     return 0x40000000 <= address < 0x60000000 or 0xE0000000 <= address < 0xE0100000
 
 
+def written_back_registers(operands: str) -> set[int]:
+    clean_operands = operands.split("@")[0].strip()
+    registers = {
+        int(match)
+        for match in re.findall(r"(?:^|\[)r([0-7])!", clean_operands)
+    }
+    registers.update(
+        int(match)
+        for match in re.findall(
+            r"\[r([0-7])(?:,\s*[^\]]+)?\](?:!|,\s*#)", clean_operands
+        )
+    )
+    return registers
+
+
 def function_has_mmio_store(body: str) -> bool:
     rows = instructions(body)
     if not rows:
@@ -195,6 +211,8 @@ def function_has_mmio_store(body: str) -> bool:
         address = pending.pop()
         state = list(states[address])
         _, mnemonic, operands = rows[indices[address]]
+        for register in written_back_registers(operands):
+            state[register] = None
         store = re.fullmatch(
             r"r[0-7],\s*\[(r[0-7])(?:,\s*#(\d+))?\]",
             operands.split("@")[0].strip(),
@@ -234,9 +252,15 @@ def function_has_mmio_store(body: str) -> bool:
             elif mnemonic in {"add", "adds"} and added:
                 source = state[int(added.group(1))]
                 offset = int(added.group(2))
-                state[register] = (
+                values = (
                     frozenset(value + offset for value in source)
                     if source is not None
+                    else None
+                )
+                state[register] = (
+                    values
+                    if values is not None
+                    and len(values) <= MAX_ABSTRACT_VALUES
                     else None
                 )
             elif mnemonic == "movs" and immediate:
@@ -259,7 +283,11 @@ def function_has_mmio_store(body: str) -> bool:
                 merged = tuple(
                     None
                     if left is None or right is None
-                    else left | right
+                    else (
+                        values
+                        if len(values := left | right) <= MAX_ABSTRACT_VALUES
+                        else None
+                    )
                     for left, right in zip(current, outgoing)
                 )
             if merged != current:
@@ -316,10 +344,14 @@ def error_store_kinds(body: str) -> dict[int, str]:
     def add_offset(value: Value | None, offset: int) -> Value | None:
         if value is None:
             return None
-        return frozenset((kind, base + offset) for kind, base in value)
+        shifted = frozenset((kind, base + offset) for kind, base in value)
+        return shifted if len(shifted) <= MAX_ABSTRACT_VALUES else None
 
     def merge_value(left: Value | None, right: Value | None) -> Value | None:
-        return None if left is None or right is None else left | right
+        if left is None or right is None:
+            return None
+        merged = left | right
+        return merged if len(merged) <= MAX_ABSTRACT_VALUES else None
 
     while pending:
         address = pending.pop()
@@ -328,6 +360,8 @@ def error_store_kinds(body: str) -> dict[int, str]:
         memory = dict(memory_state)
         _, mnemonic, operands = rows[indices[address]]
         clean_operands = operands.split("@")[0].strip()
+        for register in written_back_registers(operands):
+            registers[register] = None
         store = re.fullmatch(
             r"r([0-7]),\s*\[(sp|r[0-7])(?:,\s*#(\d+))?\]",
             clean_operands,
