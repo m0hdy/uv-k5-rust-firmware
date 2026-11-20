@@ -224,6 +224,40 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
         ):
             self.validate(probe)
 
+    def test_actual_eeprom_result_definition_cannot_be_bypassed(self):
+        _, body = self.coordinator()
+        rows = entry_check.instructions(body)
+        first_read = next(
+            index
+            for index, (_, mnemonic, operands) in enumerate(rows)
+            if mnemonic.startswith("bl")
+            and "eeprom_read_transport::execute_read::<" in operands
+            and "+0x" not in operands
+        )
+        definition = next(
+            index
+            for index in range(first_read - 1, -1, -1)
+            if rows[index][1] == "add"
+            and re.fullmatch(
+                r"r0,\s*sp,\s*#\d+",
+                rows[index][2].split("@")[0].strip(),
+            )
+        )
+        branch_address, replaced_mnemonic, _ = rows[definition - 1]
+        self.assertIn(replaced_mnemonic, {"str", "strb", "strh"})
+        target = rows[definition + 1][0]
+        displacement = target - (branch_address + 4)
+        self.assertEqual(displacement & 1, 0)
+        self.assertTrue(-2048 <= displacement <= 2046)
+        encoding = 0xE000 | ((displacement >> 1) & 0x7FF)
+        probe = self.patch_halfword(
+            "eeprom-result-definition-bypass.elf", branch_address, encoding
+        )
+        with self.assertRaisesRegex(
+            entry_check.EntryError, "dominating stack-relative definition"
+        ):
+            self.validate(probe)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,7 +23,6 @@ CONDITIONAL_BRANCH = re.compile(
 )
 EEPROM_SUCCESS_TAG = 2
 PREDICATE_PRESERVING_INSTRUCTIONS = {"nop", "str", "strb", "strh"}
-SRET_SETUP_PRESERVING_INSTRUCTIONS = {"add", "ldr", "mov"}
 
 
 def function_body(disassembly: str, symbol: str) -> str:
@@ -188,27 +187,75 @@ def has_nontrivial_instruction(body: str) -> bool:
     )
 
 
+def preserves_result_address(mnemonic: str, operands: str) -> bool:
+    if mnemonic not in {"add", "ldr", "mov"}:
+        return False
+    destination = re.match(r"\s*(r[0-7]|sp)\s*,", operands)
+    return destination is not None and destination.group(1) not in {"r0", "sp"}
+
+
 def result_slot_before_call(
     rows: list[tuple[int, str, str]], call_index: int
 ) -> int:
-    for _, mnemonic, operands in reversed(rows[max(0, call_index - 8) : call_index]):
-        destination = re.match(r"\s*(r[0-7]|sp)\s*,", operands)
-        if destination and destination.group(1) == "r0":
-            definition = re.fullmatch(
-                r"r0,\s*sp,\s*#(\d+)", operands.split("@")[0].strip()
+    live = reachable_instruction_addresses(rows)
+    indices = {address: index for index, (address, _, _) in enumerate(rows)}
+    predecessors = {address: set() for address in live}
+    for address in live:
+        for successor in instruction_successors(rows, indices[address]):
+            if successor in live:
+                predecessors[successor].add(address)
+
+    entry = rows[0][0]
+    dominators = {
+        address: {address} if address == entry else set(live)
+        for address in live
+    }
+    changed = True
+    while changed:
+        changed = False
+        for address in live - {entry}:
+            incoming = predecessors[address]
+            updated = {address} | (
+                set.intersection(*(dominators[item] for item in incoming))
+                if incoming
+                else set()
             )
-            if mnemonic != "add" or definition is None:
-                break
-            return int(definition.group(1))
-        if (
-            mnemonic not in SRET_SETUP_PRESERVING_INSTRUCTIONS
-            or destination is None
-            or destination.group(1) == "sp"
+            if updated != dominators[address]:
+                dominators[address] = updated
+                changed = True
+
+    call_address = rows[call_index][0]
+    ancestors = set()
+    pending = [call_address]
+    while pending:
+        address = pending.pop()
+        if address in ancestors:
+            continue
+        ancestors.add(address)
+        pending.extend(predecessors[address])
+
+    valid = []
+    for address in dominators[call_address]:
+        _, mnemonic, operands = rows[indices[address]]
+        definition = re.fullmatch(
+            r"r0,\s*sp,\s*#(\d+)", operands.split("@")[0].strip()
+        )
+        if mnemonic != "add" or definition is None:
+            continue
+        between = (
+            reachable_instruction_addresses(rows, [address]) & ancestors
+        ) - {address, call_address}
+        if all(
+            preserves_result_address(row_mnemonic, row_operands)
+            for item in between
+            for _, row_mnemonic, row_operands in [rows[indices[item]]]
         ):
-            break
-    raise EntryError(
-        "EEPROM result address lacks a supported stack-relative reaching definition"
-    )
+            valid.append(int(definition.group(1)))
+    if len(valid) != 1:
+        raise EntryError(
+            "EEPROM result address lacks one dominating stack-relative definition"
+        )
+    return valid[0]
 
 
 def vector_words(vector_dump: str) -> list[int]:
