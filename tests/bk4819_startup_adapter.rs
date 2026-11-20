@@ -75,6 +75,9 @@ fn bits_to_u16(bits: &[bool]) -> u16 {
 impl WordIo for Bus {
     fn read_word(&mut self, register: Register) -> u32 {
         let mut value = self.current_word(register);
+        if register == Register::GpioCData && self.initial_gpio_events.len() < 6 {
+            self.initial_gpio_events.push((false, value));
+        }
         if register == Register::GpioCData
             && self.direction & startup::transport::SDA_MASK == 0
             && self.transaction_active
@@ -90,7 +93,6 @@ impl WordIo for Bus {
         match register {
             Register::GpioCData => {
                 if self.initial_gpio_events.len() < 6 {
-                    self.initial_gpio_events.push((false, self.data));
                     self.initial_gpio_events.push((true, value));
                 }
 
