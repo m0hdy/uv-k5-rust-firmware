@@ -223,6 +223,20 @@ class FirmwareEntryTests(unittest.TestCase):
         ):
             self.inspect(broken)
 
+    def test_eeprom_error_rejects_indirect_escape(self):
+        broken = DISASSEMBLY.replace("590: bx lr", "590: bx r0", 1)
+        with self.assertRaisesRegex(EntryError, "unsupported return or escape"):
+            self.inspect(broken)
+
+    def test_fail_closed_terminal_must_be_reachable(self):
+        broken = DISASSEMBLY.replace(
+            "400: cpsid i\n 402: wfi\n 404: b.n 402",
+            "400: bx lr\n 402: cpsid i\n 404: wfi\n 406: b.n 404",
+            1,
+        )
+        with self.assertRaisesRegex(EntryError, "reachable return or escape"):
+            self.inspect(broken)
+
     def test_partial_stack_write_invalidates_only_overlapping_pointer_slot(self):
         overlap = """
 00000500 <coordinate_with_welcome::<TargetBootIo>>:

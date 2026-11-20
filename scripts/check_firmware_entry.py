@@ -14,8 +14,8 @@ class EntryError(ValueError):
 
 FUNCTION = re.compile(r"^\s*[0-9a-fA-F]+\s+<(.+)>:\s*$", re.MULTILINE)
 INSTRUCTION = re.compile(
-    r"^\s*([0-9a-fA-F]+):\s+(?:(?:[0-9a-fA-F]{4,8})\s+)*"
-    r"([A-Za-z][A-Za-z0-9.]*)\s*(.*?)$",
+    r"^[ \t]*([0-9a-fA-F]+):[ \t]+(?:(?:[0-9a-fA-F]{4,8})[ \t]+)*"
+    r"([A-Za-z][A-Za-z0-9.]*)[ \t]*(.*?)$",
     re.MULTILINE,
 )
 CONDITIONAL_BRANCH = re.compile(
@@ -592,6 +592,104 @@ def vector_words(vector_dump: str) -> list[int]:
     return words
 
 
+def is_supported_return(mnemonic: str, operands: str) -> bool:
+    clean_operands = operands.split("@")[0].strip()
+    return (
+        (mnemonic == "bx" and clean_operands == "lr")
+        or (
+            mnemonic == "pop"
+            and re.search(r"\bpc\b", clean_operands) is not None
+        )
+    )
+
+
+def require_fail_closed_terminal(body: str) -> None:
+    rows = instructions(body)
+    live = reachable_instruction_addresses(rows)
+    indices = {address: index for index, (address, _, _) in enumerate(rows)}
+    predecessors = {address: set() for address in live}
+    for address in live:
+        for successor in instruction_successors(rows, indices[address]):
+            if successor in live:
+                predecessors[successor].add(address)
+    dominators = {
+        address: {address} if address == rows[0][0] else set(live)
+        for address in live
+    }
+    changed = True
+    while changed:
+        changed = False
+        for address in live - {rows[0][0]}:
+            incoming = predecessors[address]
+            updated = {address} | (
+                set.intersection(*(dominators[item] for item in incoming))
+                if incoming
+                else set()
+            )
+            if updated != dominators[address]:
+                dominators[address] = updated
+                changed = True
+
+    masks = {
+        address
+        for address, mnemonic, operands in rows
+        if address in live and (mnemonic, operands.strip()) == ("cpsid", "i")
+    }
+    parks = []
+    for address, mnemonic, _ in rows:
+        if address not in live or mnemonic != "wfi":
+            continue
+        from_wfi = reachable_instruction_addresses(rows, [address])
+        component = {
+            candidate
+            for candidate in from_wfi
+            if address in reachable_instruction_addresses(rows, [candidate])
+        }
+        if not component or not any(
+            all(mask in dominators[node] for node in component)
+            for mask in masks
+        ):
+            continue
+        if any(
+            successor not in component
+            for node in component
+            for successor in instruction_successors(rows, indices[node])
+        ):
+            continue
+        if len(component) == 1 and address not in instruction_successors(
+            rows, indices[address]
+        ):
+            continue
+        parks.append(component)
+
+    for address, mnemonic, operands in rows:
+        if address not in live:
+            continue
+        target = branch_target(operands)
+        if (
+            mnemonic in {"bl", "blx"}
+            or mnemonic.startswith("bx")
+            or (mnemonic.startswith("pop") and re.search(r"\bpc\b", operands))
+            or re.match(r"\s*pc\s*,", operands)
+            or (
+                mnemonic.startswith("b")
+                and target is not None
+                and target not in indices
+            )
+        ):
+            raise EntryError("firmware_fail_closed has a reachable return or escape")
+    if not parks or not any(
+        all(
+            reachable_instruction_addresses(rows, [address]) & component
+            for address in live
+        )
+        for component in parks
+    ):
+        raise EntryError(
+            "firmware_fail_closed must reach an interrupt-masked closed WFI loop"
+        )
+
+
 def function_address(disassembly: str, symbol: str) -> int:
     for match in FUNCTION.finditer(disassembly):
         if match.group(1) == symbol:
@@ -747,9 +845,32 @@ def require_result_guards(
         returns = {
             address
             for address, mnemonic, operands in rows
-            if mnemonic.startswith("bx")
-            or (mnemonic.startswith("pop") and re.search(r"\bpc\b", operands))
+            if is_supported_return(mnemonic, operands)
         }
+        for address, mnemonic, operands in rows:
+            if address not in short_path:
+                continue
+            target = branch_target(operands)
+            if (
+                mnemonic.startswith("bx")
+                and not is_supported_return(mnemonic, operands)
+                or mnemonic == "blx"
+                or (
+                    mnemonic.startswith("pop")
+                    and re.search(r"\bpc\b", operands)
+                    and not is_supported_return(mnemonic, operands)
+                )
+                or re.match(r"\s*pc\s*,", operands)
+                or (
+                    mnemonic.startswith("b")
+                    and not mnemonic.startswith("bl")
+                    and target is not None
+                    and target not in indices
+                )
+            ):
+                raise EntryError(
+                    f"{called_fragment} first-error path has an unsupported return or escape"
+                )
         if not short_path & returns:
             raise EntryError(
                 f"{called_fragment} first-error path does not return from the coordinator"
@@ -803,8 +924,7 @@ def inspect_disassembly(disassembly: str, symbols: str, vector_dump: str) -> Non
     require_call(entry, "firmware_fail_closed")
     if not re.search(r"\bbx\s+lr\b", systick):
         raise EntryError("selected vector table's SysTick_Handler is not a valid return handler")
-    if not re.search(r"\bcpsid\s+i\b", fail_closed) or not re.search(r"\bwfi\b", fail_closed):
-        raise EntryError("firmware_fail_closed must mask interrupts and park")
+    require_fail_closed_terminal(fail_closed)
 
     words = vector_words(vector_dump)
     if len(words) != 48:
