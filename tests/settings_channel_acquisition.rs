@@ -6,12 +6,15 @@ mod settings_channel_acquisition;
 use settings_channel_acquisition::{
     ChannelSelectionBootDefaults, SettingsChannelAcquisitionError, acquire_with_transport,
 };
+use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::convert::Infallible;
+use std::rc::Rc;
 use uv_k5_rust_firmware::eeprom_i2c_bridge::I2cBitbangTransport;
 use uv_k5_rust_firmware::eeprom_read_transport::{Acknowledgement, I2cTransport, ReadError};
 use uv_k5_rust_firmware::i2c_bitbang_flow::Level;
 use uv_k5_rust_firmware::i2c_bitbang_flow::target_gpio::{
-    Delay1us, GpioI2cIo, Register, RegisterIo, SDA_MASK,
+    Delay1us, GpioI2cIo, Register, RegisterIo, SCL_MASK, SDA_MASK,
 };
 use uv_k5_rust_firmware::settings_boot_composition::{
     BacklightMinStatus, Features, SettingsBootBlock, SettingsBootReadError, compose_with_transport,
@@ -350,35 +353,35 @@ fn every_write_nack_cleans_up_and_prevents_later_blocks() {
     }
 }
 
-struct MockRegisters {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GpioBusEdge {
+    Start,
+    Stop,
+}
+
+struct RegisterState {
     values: [u32; 4],
     samples: VecDeque<Level>,
     last_input: Level,
     pending_sample: bool,
+    writes: Vec<(Register, u32)>,
+    bus_edges: Vec<GpioBusEdge>,
 }
 
-impl MockRegisters {
-    fn with_responses(responses: &[[u8; 8]; 3]) -> Self {
-        let mut samples = VecDeque::new();
-        for response in responses {
-            samples.extend([Level::Low; 4]);
-            for byte in response {
-                for bit in (0..8).rev() {
-                    samples.push_back(if byte & (1 << bit) == 0 {
-                        Level::Low
-                    } else {
-                        Level::High
-                    });
-                }
-            }
-        }
-        let mut values = [0; 4];
-        values[1] = uv_k5_rust_firmware::i2c_bitbang_flow::target_gpio::SCL_MASK | SDA_MASK;
+impl RegisterState {
+    fn new(samples: impl IntoIterator<Item = Level>) -> Self {
         Self {
-            values,
-            samples,
+            values: [
+                0x1234_5678 | SCL_MASK | SDA_MASK,
+                0x89ab_cdef | SDA_MASK,
+                0x1357_9bdf & !SDA_MASK,
+                0x2468_ace0 & !SDA_MASK,
+            ],
+            samples: samples.into_iter().collect(),
             last_input: Level::High,
             pending_sample: false,
+            writes: Vec::new(),
+            bus_edges: Vec::new(),
         }
     }
 
@@ -390,9 +393,7 @@ impl MockRegisters {
             Register::PortAOpenDrain => 3,
         }
     }
-}
 
-impl RegisterIo for MockRegisters {
     fn read(&mut self, register: Register) -> u32 {
         if self.pending_sample {
             if let Some(level) = self.samples.pop_front() {
@@ -415,8 +416,102 @@ impl RegisterIo for MockRegisters {
 
     fn write(&mut self, register: Register, value: u32) {
         self.pending_sample = false;
-        self.values[Self::index(register)] = value;
+        let index = Self::index(register);
+        if register == Register::GpioAData {
+            let previous = self.values[index];
+            let was_scl_high = previous & SCL_MASK != 0;
+            let is_scl_high = value & SCL_MASK != 0;
+            let was_sda_high = previous & SDA_MASK != 0;
+            let is_sda_high = value & SDA_MASK != 0;
+            if was_scl_high && is_scl_high && was_sda_high && !is_sda_high {
+                self.bus_edges.push(GpioBusEdge::Start);
+            } else if was_scl_high && is_scl_high && !was_sda_high && is_sda_high {
+                self.bus_edges.push(GpioBusEdge::Stop);
+            }
+        }
+        self.values[index] = value;
+        self.writes.push((register, value));
     }
+}
+
+type SharedRegisterState = Rc<RefCell<RegisterState>>;
+
+struct MockRegisters(SharedRegisterState);
+
+impl MockRegisters {
+    fn new(samples: impl IntoIterator<Item = Level>) -> (Self, SharedRegisterState) {
+        let state = Rc::new(RefCell::new(RegisterState::new(samples)));
+        (Self(state.clone()), state)
+    }
+}
+
+impl RegisterIo for MockRegisters {
+    fn read(&mut self, register: Register) -> u32 {
+        self.0.borrow_mut().read(register)
+    }
+
+    fn write(&mut self, register: Register, value: u32) {
+        self.0.borrow_mut().write(register, value);
+    }
+}
+
+fn response_samples(responses: &[[u8; 8]]) -> Vec<Level> {
+    let mut samples = Vec::new();
+    for response in responses {
+        samples.extend([Level::Low; 4]);
+        for byte in response {
+            for bit in (0..8).rev() {
+                samples.push(if byte & (1 << bit) == 0 {
+                    Level::Low
+                } else {
+                    Level::High
+                });
+            }
+        }
+    }
+    samples
+}
+
+fn nack_samples(block: usize, write: usize) -> Vec<Level> {
+    let mut samples = response_samples(&responses(CHANNEL_DATA)[..block]);
+    samples.extend(std::iter::repeat_n(Level::Low, write));
+    samples.extend([Level::High; 255]);
+    samples
+}
+
+fn expected_gpio_nack(block: usize) -> SettingsChannelAcquisitionError<Infallible> {
+    let error = ReadError::NotAcknowledged;
+    match block {
+        0 => SettingsChannelAcquisitionError::SettingsBoot(SettingsBootReadError {
+            block: SettingsBootBlock::Core,
+            error,
+        }),
+        1 => SettingsChannelAcquisitionError::SettingsBoot(SettingsBootReadError {
+            block: SettingsBootBlock::Display,
+            error,
+        }),
+        _ => SettingsChannelAcquisitionError::ChannelSelection(error),
+    }
+}
+
+fn expected_gpio_edges(block: usize, write: usize) -> Vec<GpioBusEdge> {
+    let mut edges = Vec::new();
+    for _ in 0..block {
+        edges.extend([GpioBusEdge::Start, GpioBusEdge::Start, GpioBusEdge::Stop]);
+    }
+    edges.push(GpioBusEdge::Start);
+    if write == 3 {
+        edges.push(GpioBusEdge::Start);
+    }
+    edges.push(GpioBusEdge::Stop);
+    edges
+}
+
+fn assert_keypad_mode(state: &RegisterState) {
+    assert_eq!(state.values[0] & (SCL_MASK | SDA_MASK), SCL_MASK | SDA_MASK);
+    assert_eq!(state.values[1] & SDA_MASK, SDA_MASK);
+    assert_eq!(state.values[2] & SDA_MASK, 0);
+    assert_eq!(state.values[3] & SDA_MASK, 0);
 }
 
 struct NoDelay;
@@ -428,7 +523,8 @@ impl Delay1us for NoDelay {
 #[test]
 fn gpio_register_mock_runs_all_three_blocks_through_the_existing_bridge() {
     let data = responses(CHANNEL_DATA);
-    let mut io = GpioI2cIo::new(MockRegisters::with_responses(&data), NoDelay);
+    let (registers, _) = MockRegisters::new(response_samples(&data));
+    let mut io = GpioI2cIo::new(registers, NoDelay);
     let mut transport = I2cBitbangTransport::new(&mut io);
 
     let result = acquire_with_transport(&mut transport, FEATURES).unwrap();
@@ -440,37 +536,53 @@ fn gpio_register_mock_runs_all_three_blocks_through_the_existing_bridge() {
 }
 
 #[test]
-fn gpio_register_mock_nack_on_third_block_is_distinct_and_stops_cleanly() {
-    let first_two_responses = [CORE_DATA, DISPLAY_DATA];
-    let mut samples = VecDeque::new();
-    for response in &first_two_responses {
-        samples.extend([Level::Low; 4]);
-        for byte in response {
-            for bit in (0..8).rev() {
-                samples.push_back(if byte & (1 << bit) == 0 {
-                    Level::Low
+fn gpio_register_mock_cleans_up_each_write_nack_before_owner_release() {
+    for block in 0..3 {
+        for write in 0..4 {
+            for handoff in [false, true] {
+                let (registers, shared) = MockRegisters::new(nack_samples(block, write));
+                let mut io = GpioI2cIo::new(registers, NoDelay);
+                {
+                    let mut transport = I2cBitbangTransport::new(&mut io);
+                    assert_eq!(
+                        acquire_with_transport(&mut transport, FEATURES),
+                        Err(expected_gpio_nack(block)),
+                        "NACK at block {block}, write {write}"
+                    );
+                }
+
+                {
+                    let state = shared.borrow();
+                    assert_eq!(
+                        state.bus_edges,
+                        expected_gpio_edges(block, write),
+                        "bus edges at block {block}, write {write}"
+                    );
+                    assert!(
+                        state.samples.is_empty(),
+                        "unread GPIO samples at block {block}, write {write}"
+                    );
+                    let data_writes = state
+                        .writes
+                        .iter()
+                        .filter_map(|(register, value)| {
+                            (*register == Register::GpioAData)
+                                .then_some(value & (SCL_MASK | SDA_MASK))
+                        })
+                        .collect::<Vec<_>>();
+                    assert!(
+                        data_writes.ends_with(&[0, 0, SCL_MASK, SCL_MASK | SDA_MASK]),
+                        "missing cleanup STOP write trace at block {block}, write {write}"
+                    );
+                }
+
+                if handoff {
+                    io.handoff_to_keypad();
                 } else {
-                    Level::High
-                });
+                    drop(io);
+                }
+                assert_keypad_mode(&shared.borrow());
             }
         }
     }
-    samples.extend([Level::High; 255]);
-    let mut values = [0; 4];
-    values[1] = uv_k5_rust_firmware::i2c_bitbang_flow::target_gpio::SCL_MASK | SDA_MASK;
-    let registers = MockRegisters {
-        values,
-        samples,
-        last_input: Level::High,
-        pending_sample: false,
-    };
-    let mut io = GpioI2cIo::new(registers, NoDelay);
-    let mut transport = I2cBitbangTransport::new(&mut io);
-
-    assert_eq!(
-        acquire_with_transport(&mut transport, FEATURES),
-        Err(SettingsChannelAcquisitionError::ChannelSelection(
-            ReadError::NotAcknowledged
-        ))
-    );
 }
