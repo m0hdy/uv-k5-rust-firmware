@@ -22,6 +22,7 @@ CONDITIONAL_BRANCH = re.compile(
     r"b(?:eq|ne|cs|cc|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.n|\.w)?"
 )
 EEPROM_SUCCESS_TAG = 2
+PREDICATE_PRESERVING_INSTRUCTIONS = {"nop", "str", "strb", "strh"}
 
 
 def function_body(disassembly: str, symbol: str) -> str:
@@ -244,43 +245,40 @@ def require_result_guards(
         )
         if conditional is None:
             raise EntryError(f"{called_fragment} result is not conditionally checked before later effects")
-        for _, mnemonic, _ in following[: conditional + 1]:
-            if mnemonic.startswith("bl"):
-                raise EntryError(
-                    f"{called_fragment} result is not checked before the next executor"
-                )
         comparisons = [
             (offset, re.fullmatch(r"(r[0-7]),\s*#(\d+)", operands.strip()))
             for offset, (_, mnemonic, operands) in enumerate(following[:conditional])
             if mnemonic == "cmp"
         ]
-        comparisons = [
-            (offset, match) for offset, match in comparisons if match is not None
-        ]
-        if not comparisons:
+        if len(comparisons) != 1 or comparisons[0][1] is None:
             raise EntryError(
-                f"{called_fragment} payload result tag is not compared"
+                f"{called_fragment} payload result predicate is not a single comparison"
             )
-        comparison, comparison_match = comparisons[-1]
+        comparison, comparison_match = comparisons[0]
         compared_register = comparison_match.group(1)
         if int(comparison_match.group(2)) != EEPROM_SUCCESS_TAG:
             raise EntryError(
                 f"{called_fragment} payload result tag does not use the success code"
             )
-        payload_load = next(
-            (
-                (mnemonic, operands)
-                for _, mnemonic, operands in reversed(following[:comparison])
-                if re.match(rf"{compared_register}\s*,", operands)
-            ),
-            None,
-        )
-        if payload_load is None or payload_load[0] != "ldr" or not re.fullmatch(
+        before_comparison = following[:comparison]
+        if len(before_comparison) != 1:
+            raise EntryError(
+                f"{called_fragment} result payload has unknown control or operand changes"
+            )
+        _, payload_mnemonic, payload_operands = before_comparison[0]
+        if payload_mnemonic != "ldr" or not re.fullmatch(
             rf"{compared_register},\s*\[sp,\s*#\d+\]",
-            payload_load[1].split("@")[0].strip(),
+            payload_operands.split("@")[0].strip(),
         ):
             raise EntryError(
                 f"{called_fragment} comparison is not loaded from its result payload"
+            )
+        if any(
+            mnemonic not in PREDICATE_PRESERVING_INSTRUCTIONS
+            for _, mnemonic, _ in following[comparison + 1 : conditional]
+        ):
+            raise EntryError(
+                f"{called_fragment} payload result predicate flags are overwritten"
             )
         branch_address = following[conditional][0]
         branch_mnemonic = following[conditional][1]

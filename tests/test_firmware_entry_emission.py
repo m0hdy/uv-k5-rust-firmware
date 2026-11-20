@@ -22,7 +22,9 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
         cls.elf = Path(ELF_ENV).resolve()
         if not cls.elf.is_file():
             raise RuntimeError(f"linked firmware entry is missing: {cls.elf}")
-        cls.probes = ROOT / "target/firmware-entry-probes"
+        cls.probes = (
+            ROOT / "target/firmware-entry-probes" / cls.elf.parents[2].name
+        )
         shutil.rmtree(cls.probes, ignore_errors=True)
         cls.probes.mkdir(parents=True)
         cls.disassembly = cls.run_objdump(cls.elf, "-d", "-C", "--wide")
@@ -149,6 +151,36 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             entry_check.EntryError, "success tag does not select continuation"
+        ):
+            self.validate(probe)
+
+    def test_actual_eeprom_predicate_flags_are_preserved(self):
+        _, body = self.coordinator()
+        rows = entry_check.instructions(body)
+        first_read = next(
+            index
+            for index, (_, mnemonic, operands) in enumerate(rows)
+            if mnemonic.startswith("bl")
+            and "eeprom_read_transport::execute_read::<" in operands
+            and "+0x" not in operands
+        )
+        conditional = next(
+            index
+            for index in range(first_read + 1, first_read + 9)
+            if entry_check.CONDITIONAL_BRANCH.fullmatch(rows[index][1])
+        )
+        comparison = next(
+            index
+            for index in range(first_read + 1, conditional)
+            if rows[index][1] == "cmp"
+        )
+        address, mnemonic, _ = rows[comparison + 1]
+        self.assertIn(mnemonic, {"str", "strb", "strh"})
+        probe = self.patch_halfword(
+            "eeprom-predicate-flags.elf", address, 0x4280
+        )
+        with self.assertRaisesRegex(
+            entry_check.EntryError, "predicate.*single comparison|flags are overwritten"
         ):
             self.validate(probe)
 
