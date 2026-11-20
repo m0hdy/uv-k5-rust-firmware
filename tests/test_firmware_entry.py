@@ -152,7 +152,9 @@ class FirmwareEntryTests(unittest.TestCase):
         broken = DISASSEMBLY.replace(
             "51e: beq.n 524", "51e: nop", 1
         )
-        with self.assertRaisesRegex(EntryError, "not conditionally checked|not checked"):
+        with self.assertRaisesRegex(
+            EntryError, "not conditionally checked|not checked|exactly 3 times"
+        ):
             self.inspect(broken)
 
     def test_unmasked_adc_nvic_is_rejected(self):

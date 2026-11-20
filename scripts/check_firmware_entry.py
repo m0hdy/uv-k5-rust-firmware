@@ -18,6 +18,9 @@ INSTRUCTION = re.compile(
     r"([A-Za-z][A-Za-z0-9.]*)\s*(.*?)$",
     re.MULTILINE,
 )
+CONDITIONAL_BRANCH = re.compile(
+    r"b(?:eq|ne|cs|cc|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.n|\.w)?"
+)
 
 
 def function_body(disassembly: str, symbol: str) -> str:
@@ -62,9 +65,52 @@ def instructions(body: str) -> list[tuple[int, str, str]]:
     ]
 
 
+def branch_target(operands: str) -> int | None:
+    target = re.match(r"\s*([0-9a-fA-F]+)\b", operands)
+    return int(target.group(1), 16) if target else None
+
+
+def instruction_successors(
+    rows: list[tuple[int, str, str]], index: int
+) -> list[int]:
+    _, mnemonic, operands = rows[index]
+    following = rows[index + 1][0] if index + 1 < len(rows) else None
+    target = branch_target(operands)
+    if mnemonic in {"b", "b.n", "b.w"}:
+        return [target] if target is not None else []
+    if CONDITIONAL_BRANCH.fullmatch(mnemonic) or mnemonic in {"cbz", "cbnz"}:
+        return [address for address in (target, following) if address is not None]
+    if mnemonic.startswith("bx") or (
+        mnemonic.startswith("pop") and re.search(r"\bpc\b", operands)
+    ) or mnemonic.startswith("udf"):
+        return []
+    return [following] if following is not None else []
+
+
+def reachable_instruction_addresses(
+    rows: list[tuple[int, str, str]], starts: list[int] | None = None
+) -> set[int]:
+    if not rows:
+        return set()
+    indices = {address: index for index, (address, _, _) in enumerate(rows)}
+    pending = list(starts or [rows[0][0]])
+    reached = set()
+    while pending:
+        address = pending.pop()
+        if address in reached or address not in indices:
+            continue
+        reached.add(address)
+        pending.extend(instruction_successors(rows, indices[address]))
+    return reached
+
+
 def call_targets(body: str) -> list[str]:
     targets = []
-    for _, mnemonic, operands in instructions(body):
+    rows = instructions(body)
+    reached = reachable_instruction_addresses(rows)
+    for address, mnemonic, operands in rows:
+        if address not in reached:
+            continue
         if mnemonic.startswith("bl"):
             target = re.search(r"<(.+)>", operands)
             if target:
@@ -112,7 +158,12 @@ def has_store(functions: dict[str, str], reached: set[str], start: str) -> bool:
         if current in visited:
             continue
         visited.add(current)
-        if any(mnemonic.startswith("str") for _, mnemonic, _ in instructions(functions[current])):
+        rows = instructions(functions[current])
+        live = reachable_instruction_addresses(rows)
+        if any(
+            address in live and mnemonic.startswith("str")
+            for address, mnemonic, _ in rows
+        ):
             return True
         pending.extend(
             target
@@ -120,6 +171,18 @@ def has_store(functions: dict[str, str], reached: set[str], start: str) -> bool:
             if target in reached and target not in visited
         )
     return False
+
+
+def has_nontrivial_instruction(body: str) -> bool:
+    rows = instructions(body)
+    live = reachable_instruction_addresses(rows)
+    return any(
+        address in live
+        and mnemonic not in {"bx", "pop", "push", "nop", "mov", "movs"}
+        and not mnemonic.startswith("b")
+        and not mnemonic.startswith("udf")
+        for address, mnemonic, _ in rows
+    )
 
 
 def vector_words(vector_dump: str) -> list[int]:
@@ -153,10 +216,13 @@ def require_result_guards(
     function_end: int,
 ) -> None:
     rows = instructions(body)
+    live = reachable_instruction_addresses(rows)
+    indices = {address: index for index, (address, _, _) in enumerate(rows)}
     calls = [
         index
-        for index, (_, mnemonic, operands) in enumerate(rows)
-        if mnemonic.startswith("bl")
+        for index, (address, mnemonic, operands) in enumerate(rows)
+        if address in live
+        and mnemonic.startswith("bl")
         and (target := re.search(r"<(.+)>", operands))
         and called_fragment in target.group(1)
         and "+0x" not in target.group(1)
@@ -164,29 +230,69 @@ def require_result_guards(
     if len(calls) != expected_calls:
         raise EntryError(f"selected coordinator must call {called_fragment} exactly {expected_calls} times")
     for index in calls:
-        following = rows[index + 1 : index + 9]
+        following = [
+            row for row in rows[index + 1 : index + 9] if row[0] in live
+        ]
         conditional = next(
             (
                 offset
                 for offset, (_, mnemonic, _) in enumerate(following)
-                if re.fullmatch(r"b(?:eq|ne|cs|cc|mi|pl|vs|vc|hi|ls|ge|lt|gt|le)(?:\.n|\.w)?", mnemonic)
+                if CONDITIONAL_BRANCH.fullmatch(mnemonic)
             ),
             None,
         )
         if conditional is None:
             raise EntryError(f"{called_fragment} result is not conditionally checked before later effects")
-        for _, mnemonic, operands in following[: conditional + 1]:
+        for _, mnemonic, _ in following[: conditional + 1]:
             if mnemonic.startswith("bl"):
                 raise EntryError(
                     f"{called_fragment} result is not checked before the next executor"
                 )
-        branch_target = re.match(r"\s*([0-9a-fA-F]+)\b", following[conditional][2])
-        if (
-            branch_target is None
-            or not function_start <= int(branch_target.group(1), 16) < function_end
-        ):
+        branch_address = following[conditional][0]
+        target = branch_target(following[conditional][2])
+        if target is None or not function_start <= target < function_end:
             raise EntryError(
                 f"{called_fragment} failure branch does not remain in the coordinator"
+            )
+
+        call_number = calls.index(index)
+        if call_number + 1 < len(calls):
+            continuation = rows[calls[call_number + 1]][0]
+        else:
+            continuation = next(
+                (
+                    address
+                    for address, mnemonic, operands in rows[index + 1 :]
+                    if address in live
+                    and mnemonic.startswith("bl")
+                    and "adc_samples::decode_adc_sample" in operands
+                ),
+                None,
+            )
+        if continuation is None:
+            raise EntryError(
+                f"{called_fragment} result has no reachable later startup stage"
+            )
+        successors = instruction_successors(rows, indices[branch_address])
+        reaches_continuation = [
+            continuation in reachable_instruction_addresses(rows, [successor])
+            for successor in successors
+        ]
+        if len(successors) != 2 or reaches_continuation.count(True) != 1:
+            raise EntryError(
+                f"{called_fragment} result does not split continuation from first-error return"
+            )
+        short_circuit = successors[reaches_continuation.index(False)]
+        short_path = reachable_instruction_addresses(rows, [short_circuit])
+        returns = {
+            address
+            for address, mnemonic, operands in rows
+            if mnemonic.startswith("bx")
+            or (mnemonic.startswith("pop") and re.search(r"\bpc\b", operands))
+        }
+        if not short_path & returns:
+            raise EntryError(
+                f"{called_fragment} first-error path does not return from the coordinator"
             )
 
 
@@ -272,10 +378,7 @@ def inspect_disassembly(disassembly: str, symbols: str, vector_dump: str) -> Non
         "startup_version_row_plan::compose_startup_version_row",
     ):
         name = require_reachable(startup_path, executor)
-        if not any(
-            mnemonic not in {"bx", "pop", "push", "nop", "mov", "movs"}
-            for _, mnemonic, _ in instructions(functions[name])
-        ):
+        if not has_nontrivial_instruction(functions[name]):
             raise EntryError(f"selected {executor} executor is a no-op")
     display_initializers = sum(
         "StartupIo>::st7565_init" in target and target in functions
@@ -292,10 +395,7 @@ def inspect_disassembly(disassembly: str, symbols: str, vector_dump: str) -> Non
         if "SysTickDelay<" in name and ("::delay_ms" in name or "::delay_1us" in name)
     ]
     if not delay_functions or any(
-        not any(
-            mnemonic not in {"bx", "pop", "push", "nop", "mov", "movs"}
-            for _, mnemonic, _ in instructions(functions[name])
-        )
+        not has_nontrivial_instruction(functions[name])
         for name in delay_functions
     ):
         raise EntryError("selected entry lacks emitted counter-polling delay providers")

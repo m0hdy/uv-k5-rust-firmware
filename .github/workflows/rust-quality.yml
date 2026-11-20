@@ -205,6 +205,7 @@ jobs:
           map="$output/uv-k5-rust-firmware.map"
           raw="$output/uv-k5-rust-firmware.raw"
           python3 scripts/check_firmware_entry.py --elf "$elf"
+          FIRMWARE_ENTRY_ELF="$elf" python3 tests/test_firmware_entry_emission.py -v
           python3 scripts/check_startup_layout.py --elf "$elf" --map "$map"
           arm-none-eabi-objcopy -O binary "$elf" "$raw"
           python3 scripts/check_memory_budget.py \
