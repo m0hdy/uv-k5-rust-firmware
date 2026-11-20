@@ -979,12 +979,32 @@ ST7565_EXECUTOR_PATH = """
  300: 4770 bx lr
 """
 
-ST7565_INIT_ENTRY_WORD_LOOP = CONNECTED_DISPATCH.replace(
-    " 1400: b580 push {r7, lr}", " 1400: e7fe e7fe .word 0xe7fee7fe"
-)
-ST7565_MMIO_ENTRY_WORD_LOOP = CONNECTED_DISPATCH.replace(
-    " 1b00: b580 push {r7, lr}", " 1b00: e7fe e7fe .word 0xe7fee7fe"
-)
+def _prepend_entry_word(disassembly, address):
+    header = rf"(?m)^{address:08x} <.*>:\n"
+    match = re.search(header, disassembly)
+    assert match is not None
+    end = re.search(r"(?m)^([0-9a-f]+) <.*>:\s*$", disassembly[match.end():])
+    assert end is not None
+    body_end = match.end() + end.start()
+    body = disassembly[match.end():body_end]
+    relocated = re.sub(
+        r"(?m)^(\s*)([0-9a-f]+)(:)",
+        lambda instruction: (
+            f"{instruction.group(1)}{int(instruction.group(2), 16) + 4:x}"
+            f"{instruction.group(3)}"
+        ),
+        body,
+    )
+    return (
+        disassembly[:match.end()]
+        + f" {address:x}: e7fe e7fe .word 0xe7fee7fe\n"
+        + relocated
+        + disassembly[body_end:]
+    )
+
+
+ST7565_INIT_ENTRY_WORD_LOOP = _prepend_entry_word(CONNECTED_DISPATCH, 0x1400)
+ST7565_MMIO_ENTRY_WORD_LOOP = _prepend_entry_word(CONNECTED_DISPATCH, 0x1B00)
 
 ST7565_DISPATCH_CASE = """
  100: 9b02 ldr r3, [sp, #8]
@@ -1700,11 +1720,11 @@ class StartupWitnessCheckerTests(unittest.TestCase):
 
     def test_rejects_hardware_display_wrapper_entry_word_loop(self):
         with self.assertRaisesRegex(WitnessError, "no instruction at its symbol entry"):
-            validate_call_path(ST7565_INIT_ENTRY_WORD_LOOP)
+            self.inspect_fixture_elf(ST7565_INIT_ENTRY_WORD_LOOP)
 
     def test_rejects_mmio_display_wrapper_entry_word_loop(self):
         with self.assertRaisesRegex(WitnessError, "no instruction at its symbol entry"):
-            validate_call_path(ST7565_MMIO_ENTRY_WORD_LOOP)
+            self.inspect_fixture_elf(ST7565_MMIO_ENTRY_WORD_LOOP)
 
     def test_accepts_immediate_systick_return_at_symbol_entry(self):
         validate_systick_handler(SYSTICK_RETURN, 0x100)
