@@ -3,6 +3,8 @@
 pub mod adc_battery_acquisition;
 pub mod adc_battery_register_adapter;
 pub mod adc_samples;
+#[allow(dead_code)]
+mod app_500ms_service_timers;
 pub mod bk1080_startup_adapter;
 #[allow(unused_attributes)]
 pub mod boot_coordinator;
