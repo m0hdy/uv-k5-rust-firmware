@@ -98,6 +98,24 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
         offset = self.text_offset + address - self.text_vma
         return int.from_bytes(self.elf.read_bytes()[offset : offset + 2], "little")
 
+    @staticmethod
+    def encode_thumb_bl(address, target):
+        displacement = target - (address + 4)
+        if displacement & 1 or not -(1 << 24) <= displacement < (1 << 24):
+            raise AssertionError("BL target is out of range")
+        value = displacement & ((1 << 25) - 1)
+        sign = (value >> 24) & 1
+        i1, i2 = (value >> 23) & 1, (value >> 22) & 1
+        j1, j2 = 1 ^ i1 ^ sign, 1 ^ i2 ^ sign
+        first = 0xF000 | (sign << 10) | ((value >> 12) & 0x3FF)
+        second = (
+            0xD000
+            | (j1 << 13)
+            | (j2 << 11)
+            | ((value >> 1) & 0x7FF)
+        )
+        return first | (second << 16)
+
     def coordinator(self):
         functions = entry_check.function_bodies(self.disassembly)
         name = next(
@@ -141,6 +159,41 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
         ):
             self.validate(probe)
 
+    def test_actual_display_initialization_requires_prerequisite_order(self):
+        _, body = self.coordinator()
+        stage_calls = {}
+        for address, mnemonic, operands in entry_check.instructions(body):
+            if mnemonic != "bl":
+                continue
+            for fragment in (
+                "StartupIo>::portcon",
+                "StartupIo>::st7565_init",
+            ):
+                if fragment in operands:
+                    stage_calls[fragment] = (
+                        address,
+                        entry_check.branch_target(operands),
+                    )
+        self.assertEqual(len(stage_calls), 2)
+        portcon_address, portcon_target = stage_calls["StartupIo>::portcon"]
+        display_address, display_target = stage_calls["StartupIo>::st7565_init"]
+        self.assertIsNotNone(portcon_target)
+        self.assertIsNotNone(display_target)
+        self.assertLess(portcon_address, display_address)
+        probe = self.patch_words(
+            "display-before-prerequisites.elf",
+            {
+                portcon_address: self.encode_thumb_bl(
+                    portcon_address, display_target
+                ),
+                display_address: self.encode_thumb_bl(
+                    display_address, portcon_target
+                ),
+            },
+        )
+        with self.assertRaisesRegex(entry_check.EntryError, "canonical order"):
+            self.validate(probe)
+
     def test_actual_coordinator_entry_self_loop_is_rejected(self):
         name, body = self.coordinator()
         address = entry_check.function_address(self.disassembly, name)
@@ -150,7 +203,7 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
         self.assertEqual(rows[1][0] - address, 2)
         probe = self.patch_halfword("coordinator-self-loop.elf", address, 0xE7FE)
         with self.assertRaisesRegex(
-            entry_check.EntryError, "cannot reach|exactly 3 times"
+            entry_check.EntryError, "cannot reach|exactly 3 times|top level"
         ):
             self.validate(probe)
 

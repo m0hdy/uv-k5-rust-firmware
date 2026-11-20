@@ -143,6 +143,25 @@ class FirmwareEntryTests(unittest.TestCase):
     def test_selected_entry_reaches_all_required_stages(self):
         self.inspect()
 
+    def test_display_initialization_requires_canonical_prerequisite_order(self):
+        broken = DISASSEMBLY.replace(
+            "500: bl 600 <board::StartupIo>::systick>\n"
+            " 504: bl 610 <board::StartupIo>::portcon>\n"
+            " 508: bl 620 <board::StartupIo>::gpio>\n"
+            " 50c: bl 630 <board::StartupIo>::backlight_init_hardware>\n"
+            " 510: bl 640 <board::StartupIo>::adc_init>\n"
+            " 514: bl 650 <board::StartupIo>::st7565_init>",
+            "500: bl 600 <board::StartupIo>::systick>\n"
+            " 504: bl 650 <board::StartupIo>::st7565_init>\n"
+            " 508: bl 610 <board::StartupIo>::portcon>\n"
+            " 50c: bl 620 <board::StartupIo>::gpio>\n"
+            " 510: bl 630 <board::StartupIo>::backlight_init_hardware>\n"
+            " 514: bl 640 <board::StartupIo>::adc_init>",
+            1,
+        )
+        with self.assertRaisesRegex(EntryError, "canonical order"):
+            self.inspect(broken)
+
     def test_reset_entry_self_loop_is_rejected(self):
         broken = DISASSEMBLY.replace(
             "c0: b672 cpsid i", "c0: e7fe b.n c0 <Reset_Handler>", 1
@@ -354,6 +373,30 @@ class FirmwareEntryTests(unittest.TestCase):
         with self.assertRaisesRegex(
             EntryError, "first-error path reaches an unapproved store effect"
         ):
+            self.inspect(broken)
+
+    def test_eeprom_error_rejects_store_after_stack_pointer_clobber(self):
+        broken = DISASSEMBLY.replace(
+            "590: bx lr",
+            "590: ldr r1, [pc, #4]\n"
+            " 592: mov sp, r1\n"
+            " 594: str r0, [sp, #0]\n"
+            " 596: bx lr\n"
+            " 598: .word 0x40060000",
+            1,
+        )
+        with self.assertRaisesRegex(
+            EntryError, "first-error path reaches an unapproved store effect"
+        ):
+            self.inspect(broken)
+
+    def test_fail_closed_terminal_cannot_reenable_interrupts(self):
+        broken = DISASSEMBLY.replace(
+            "400: cpsid i\n 402: wfi",
+            "400: cpsid i\n 401: cpsie i\n 402: wfi",
+            1,
+        )
+        with self.assertRaisesRegex(EntryError, "must not unmask interrupts"):
             self.inspect(broken)
 
     def test_fail_closed_terminal_must_be_reachable(self):

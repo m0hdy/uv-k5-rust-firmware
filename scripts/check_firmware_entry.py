@@ -162,6 +162,62 @@ def require_reachable(reached: set[str], fragment: str) -> str:
     return matches[0]
 
 
+def require_reachable_call_sequence(body: str, fragments: tuple[str, ...]) -> None:
+    rows = instructions(body)
+    live = reachable_instruction_addresses(rows)
+    indices = {address: index for index, (address, _, _) in enumerate(rows)}
+    predecessors = {address: set() for address in live}
+    for address in live:
+        for successor in instruction_successors(rows, indices[address]):
+            if successor in live:
+                predecessors[successor].add(address)
+    entry = rows[0][0]
+    dominators = {
+        address: {address} if address == entry else set(live)
+        for address in live
+    }
+    changed = True
+    while changed:
+        changed = False
+        for address in live - {entry}:
+            incoming = predecessors[address]
+            updated = {address} | (
+                set.intersection(*(dominators[item] for item in incoming))
+                if incoming
+                else set()
+            )
+            if updated != dominators[address]:
+                dominators[address] = updated
+                changed = True
+
+    calls = []
+    for fragment in fragments:
+        matching_calls = [
+            address
+            for address, mnemonic, operands in rows
+            if address in live
+            and mnemonic == "bl"
+            and (target := re.search(r"<(.+)>", operands))
+            and fragment in target.group(1)
+            and "+0x" not in target.group(1)
+        ]
+        if len(matching_calls) != 1:
+            raise EntryError(
+                f"selected startup must call {fragment} exactly once at top level"
+            )
+        calls.append(matching_calls[0])
+
+    for earlier, later in zip(calls, calls[1:]):
+        if earlier not in dominators[later]:
+            raise EntryError(
+                "selected startup top-level hardware stages are not in canonical order"
+            )
+        if earlier in reachable_instruction_addresses(rows, [later]):
+            raise EntryError(
+                "selected startup top-level hardware stages form an ordering cycle"
+            )
+
+
 def is_mmio_address(address: int) -> bool:
     return 0x40000000 <= address < 0x60000000 or 0xE0000000 <= address < 0xE0100000
 
@@ -353,8 +409,9 @@ def error_effect_kinds(body: str) -> tuple[dict[int, str], dict[int, bool]]:
         tuple[
             tuple[Value | None, ...],
             tuple[tuple[int, Value], ...],
+            bool,
         ],
-    ] = {rows[0][0]: (initial_registers, ())}
+    ] = {rows[0][0]: (initial_registers, (), True)}
     pending = [rows[0][0]]
     stores: dict[int, str] = {}
     copy_calls: dict[int, bool] = {}
@@ -373,7 +430,7 @@ def error_effect_kinds(body: str) -> tuple[dict[int, str], dict[int, bool]]:
 
     while pending:
         address = pending.pop()
-        register_state, memory_state = states[address]
+        register_state, memory_state, stack_trusted = states[address]
         registers = list(register_state)
         memory = dict(memory_state)
         _, mnemonic, operands = rows[indices[address]]
@@ -444,7 +501,11 @@ def error_effect_kinds(body: str) -> tuple[dict[int, str], dict[int, bool]]:
             base_name = store.group(2)
             offset = int(store.group(3) or 0)
             base = (
-                frozenset({("stack", offset)})
+                (
+                    frozenset({("stack", offset)})
+                    if stack_trusted
+                    else None
+                )
                 if base_name == "sp"
                 else add_offset(registers[int(base_name[1])], offset)
             )
@@ -492,6 +553,9 @@ def error_effect_kinds(body: str) -> tuple[dict[int, str], dict[int, bool]]:
                 registers[int(register)] = None
         elif re.fullmatch(r"(?:add|sub)\s+sp,\s*#\d+.*", f"{mnemonic} {clean_operands}"):
             memory.clear()
+        elif re.match(r"sp\s*,", clean_operands):
+            stack_trusted = False
+            memory.clear()
         elif destination:
             register = int(destination.group(1))
             pc_load = re.fullmatch(r"r[0-7],\s*\[pc,\s*#(\d+)\]", clean_operands)
@@ -514,7 +578,11 @@ def error_effect_kinds(body: str) -> tuple[dict[int, str], dict[int, bool]]:
                 registers[register] = registers[int(copied.group(1))]
             elif mnemonic in {"add", "adds"} and added:
                 source = (
-                    frozenset({("stack", 0)})
+                    (
+                        frozenset({("stack", 0)})
+                        if stack_trusted
+                        else None
+                    )
                     if added.group(1) == "sp"
                     else registers[int(added.group(1)[1])]
                 )
@@ -534,7 +602,11 @@ def error_effect_kinds(body: str) -> tuple[dict[int, str], dict[int, bool]]:
             ):
                 registers[register] = None
 
-        outgoing = (tuple(registers), tuple(sorted(memory.items())))
+        outgoing = (
+            tuple(registers),
+            tuple(sorted(memory.items())),
+            stack_trusted,
+        )
         for successor in instruction_successors(rows, indices[address]):
             if successor not in live:
                 continue
@@ -542,7 +614,11 @@ def error_effect_kinds(body: str) -> tuple[dict[int, str], dict[int, bool]]:
             if current is None:
                 merged = outgoing
             else:
-                current_registers, current_memory_items = current
+                (
+                    current_registers,
+                    current_memory_items,
+                    current_stack_trusted,
+                ) = current
                 merged_registers = tuple(
                     merge_value(left, right)
                     for left, right in zip(current_registers, outgoing[0])
@@ -559,7 +635,11 @@ def error_effect_kinds(body: str) -> tuple[dict[int, str], dict[int, bool]]:
                     )
                     is not None
                 }
-                merged = (merged_registers, tuple(sorted(merged_memory.items())))
+                merged = (
+                    merged_registers,
+                    tuple(sorted(merged_memory.items())),
+                    current_stack_trusted and outgoing[2],
+                )
             if merged != current:
                 states[successor] = merged
                 pending.append(successor)
@@ -1060,6 +1140,17 @@ def inspect_disassembly(disassembly: str, symbols: str, vector_dump: str) -> Non
     coordinator = require_reachable(selected, "coordinate_with_welcome::<")
     startup_path = reachable_functions(functions, coordinator)
     coordinator_address = function_address(disassembly, coordinator)
+    require_reachable_call_sequence(
+        functions[coordinator],
+        (
+            "StartupIo>::systick",
+            "StartupIo>::portcon",
+            "StartupIo>::gpio",
+            "StartupIo>::backlight_init_hardware",
+            "StartupIo>::adc_init",
+            "StartupIo>::st7565_init",
+        ),
+    )
     require_result_guards(
         functions[coordinator],
         "eeprom_read_transport::execute_read::<",
