@@ -43,6 +43,12 @@ mod st7565_startup;
 #[path = "../../src/st7565_startup_executor.rs"]
 #[allow(dead_code, unused_attributes, unused_imports)]
 mod st7565_startup_executor;
+#[path = "../../src/startup_version_display.rs"]
+#[allow(dead_code, unused_attributes, unused_imports)]
+mod startup_version_display;
+#[path = "../../src/systick_timing.rs"]
+#[allow(dead_code, unused_attributes, unused_imports)]
+mod systick_timing;
 #[path = "../../src/board_startup_adapters.rs"]
 #[allow(unused_attributes)]
 mod board_startup_adapters;

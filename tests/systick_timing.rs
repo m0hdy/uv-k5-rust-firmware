@@ -1,7 +1,4 @@
-#[path = "../src/systick_timing.rs"]
-mod systick_timing;
-
-use systick_timing::{
+use uv_k5_rust_firmware::systick_timing::{
     SYS_TICK_MULTIPLIER, SYS_TICK_PERIOD_TICKS, delay_target_ticks, elapsed_after_sample,
     reload_value,
 };

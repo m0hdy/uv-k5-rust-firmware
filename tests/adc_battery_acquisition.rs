@@ -1,7 +1,4 @@
-#[path = "../src/adc_battery_acquisition.rs"]
-mod adc_battery_acquisition;
-
-use adc_battery_acquisition::{
+use uv_k5_rust_firmware::adc_battery_acquisition::{
     AcquisitionError, BatterySamples, ReadRegister, RegisterIo, WriteRegister,
     acquire_battery_samples,
 };

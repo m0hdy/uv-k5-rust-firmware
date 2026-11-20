@@ -1,3 +1,5 @@
+pub use uv_k5_rust_firmware::systick_timing;
+
 #[path = "../src/board_startup_adapters.rs"]
 mod board_startup_adapters;
 #[path = "../src/st7565_display.rs"]

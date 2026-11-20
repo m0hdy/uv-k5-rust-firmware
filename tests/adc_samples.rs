@@ -1,7 +1,4 @@
-#[path = "../src/adc_samples.rs"]
-mod adc_samples;
-
-use adc_samples::{
+use uv_k5_rust_firmware::adc_samples::{self,
     AdcRegisterSnapshot, CalibrationError, calibrated_battery_voltage, decode_adc_sample,
 };
 

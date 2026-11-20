@@ -1,7 +1,4 @@
-#[path = "../src/startup_battery_sampling.rs"]
-mod startup_battery_sampling;
-
-use startup_battery_sampling::{
+use uv_k5_rust_firmware::startup_battery_sampling::{
     AcquisitionError, CalibrationError, ReadRegister, RegisterIo, StartupBatteryError,
     StartupBatteryReadings, WriteRegister, sample_startup_battery,
 };

@@ -1,15 +1,11 @@
 //! Isolated DP32G030 register adapter for composed SARADC battery sampling.
 
-#[allow(dead_code, unused_attributes)]
-#[path = "startup_battery_sampling.rs"]
-mod startup_battery_sampling;
-
-pub use startup_battery_sampling::{ReadRegister, WriteRegister};
+pub use crate::startup_battery_sampling::{ReadRegister, WriteRegister};
 
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-use startup_battery_sampling::{RegisterIo, sample_startup_battery};
+use crate::startup_battery_sampling::{RegisterIo, sample_startup_battery};
 #[cfg(all(target_arch = "arm", target_os = "none"))]
-pub use startup_battery_sampling::{StartupBatteryError, StartupBatteryReadings};
+pub use crate::startup_battery_sampling::{StartupBatteryError, StartupBatteryReadings};
 
 const SARADC_BASE: usize = 0x400b_a000;
 const SARADC_START: usize = SARADC_BASE + 0x04;

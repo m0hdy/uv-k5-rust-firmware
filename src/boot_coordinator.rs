@@ -5,10 +5,6 @@
 #[allow(dead_code, unused_attributes, unused_imports)]
 #[path = "board_startup_adapters.rs"]
 mod board_startup_adapters;
-#[allow(dead_code, unused_attributes)]
-#[path = "startup_battery_sampling.rs"]
-mod startup_battery_sampling;
-
 use crate::i2c_bitbang_flow::target_gpio::Delay1us;
 use crate::settings_boot_composition;
 pub use crate::settings_boot_composition::{
@@ -91,8 +87,8 @@ pub use board_startup_adapters::{
     Call as BoardCall, Defines as BoardDefines, StartupError as BoardStartupError, StartupIo,
 };
 use core::num::NonZeroU32;
-use startup_battery_sampling::sample_startup_battery;
-pub use startup_battery_sampling::{
+use crate::startup_battery_sampling::sample_startup_battery;
+pub use crate::startup_battery_sampling::{
     ReadRegister as BatteryReadRegister, RegisterIo as BatteryRegisterIo, StartupBatteryError,
     StartupBatteryReadings, WriteRegister as BatteryWriteRegister,
 };
