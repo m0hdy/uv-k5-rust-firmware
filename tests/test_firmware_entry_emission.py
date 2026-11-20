@@ -164,8 +164,9 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
         stores = entry_check.function_proven_stores(body)
         gate_writes = [
             address
-            for address, (targets, values) in stores.items()
-            if targets
+            for address, (mnemonic, targets, values) in stores.items()
+            if mnemonic == "str"
+            and targets
             == frozenset({entry_check.DEVICE_CLOCK_GATE_ADDRESS})
             and values
             == frozenset({entry_check.DEFAULT_DEVICE_CLOCK_GATES})
@@ -178,13 +179,31 @@ class FirmwareEntryEmissionTests(unittest.TestCase):
             if row[0] == gate_write
         )
         self.assertEqual(row[1], "str")
-        probe = self.patch_halfword(
-            "missing-device-clock-gate-write.elf", gate_write, 0xBF00
-        )
-        with self.assertRaisesRegex(
-            entry_check.EntryError, "device clock gate write"
+        for name, replacement, expected_mnemonic in (
+            ("missing-device-clock-gate-write.elf", 0xBF00, "nop"),
+            ("byte-device-clock-gate-write.elf", 0x7001, "strb"),
+            ("halfword-device-clock-gate-write.elf", 0x8001, "strh"),
         ):
-            self.validate(probe)
+            with self.subTest(name=name):
+                probe = self.patch_halfword(name, gate_write, replacement)
+                mutated = entry_check.function_bodies(
+                    self.run_objdump(probe, "-d", "-C", "--wide")
+                )
+                coordinator = next(
+                    symbol
+                    for symbol in mutated
+                    if "coordinate_with_welcome::<" in symbol
+                )
+                mutated_row = next(
+                    row
+                    for row in entry_check.instructions(mutated[coordinator])
+                    if row[0] == gate_write
+                )
+                self.assertEqual(mutated_row[1], expected_mnemonic)
+                with self.assertRaisesRegex(
+                    entry_check.EntryError, "device clock gate write"
+                ):
+                    self.validate(probe)
 
     def test_actual_display_initialization_requires_prerequisite_order(self):
         _, body = self.coordinator()

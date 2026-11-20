@@ -253,7 +253,7 @@ def clobbered_address_registers(mnemonic: str, operands: str) -> set[int]:
 
 def function_proven_stores(
     body: str,
-) -> dict[int, tuple[frozenset[int], frozenset[int] | None]]:
+) -> dict[int, tuple[str, frozenset[int], frozenset[int] | None]]:
     rows = instructions(body)
     if not rows:
         return {}
@@ -297,6 +297,7 @@ def function_proven_stores(
             offset = int(store.group(3) or 0)
             if base:
                 proven_stores[address] = (
+                    mnemonic,
                     frozenset(value + offset for value in base),
                     source,
                 )
@@ -379,7 +380,7 @@ def function_proven_stores(
 def function_has_mmio_store(body: str) -> bool:
     return any(
         all(is_mmio_address(target) for target in targets)
-        for targets, _ in function_proven_stores(body).values()
+        for _, targets, _ in function_proven_stores(body).values()
     )
 
 
@@ -402,8 +403,11 @@ def require_device_clock_gate_before_stages(
         )
     gate_stores = [
         address
-        for address, (targets, values) in function_proven_stores(body).items()
+        for address, (mnemonic, targets, values) in function_proven_stores(
+            body
+        ).items()
         if address in live
+        and mnemonic == "str"
         and targets == frozenset({DEVICE_CLOCK_GATE_ADDRESS})
         and values == frozenset({DEFAULT_DEVICE_CLOCK_GATES})
     ]

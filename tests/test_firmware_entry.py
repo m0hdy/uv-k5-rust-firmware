@@ -151,6 +151,12 @@ class FirmwareEntryTests(unittest.TestCase):
     def test_device_clock_gate_write_must_precede_systick(self):
         for broken in (
             DISASSEMBLY.replace("4fc: str r1, [r0]", "4fc: nop", 1),
+            DISASSEMBLY.replace(
+                "4fc: str r1, [r0]", "4fc: strb r1, [r0]", 1
+            ),
+            DISASSEMBLY.replace(
+                "4fc: str r1, [r0]", "4fc: strh r1, [r0]", 1
+            ),
             DISASSEMBLY.replace("5a0: .word 0x1a100487", "5a0: .word 0", 1),
         ):
             with self.subTest(broken=broken):
