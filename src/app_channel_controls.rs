@@ -20,6 +20,48 @@ impl Direction {
     }
 }
 
+/// Mirrors `FREQUENCY_RoundToStep`, including the special 8.33 kHz channel
+/// scheme and the legacy half-step used for step sizes of at least 1 kHz.
+pub const fn round_frequency_to_step(frequency: u32, step: u16) -> Option<u32> {
+    if step == 0 {
+        return None;
+    }
+    if step == 833 {
+        let base = frequency / 2_500 * 2_500;
+        let channel = (frequency - base) / 700;
+        return Some(base + channel * 833 + (channel == 3) as u32);
+    }
+    if step == 1 {
+        return Some(frequency);
+    }
+    let step = if step >= 1_000 { step / 2 } else { step };
+    let step = step as u32;
+    let rounded = frequency.wrapping_add(step.div_ceil(2)) / step * step;
+    Some(rounded)
+}
+
+/// Mirrors `APP_SetFreqByStepAndLimits` with explicit wrapping arithmetic.
+pub fn set_frequency_by_step_and_limits(
+    current: u32,
+    direction: Direction,
+    step: u16,
+    lower: u32,
+    upper: u32,
+) -> Option<u32> {
+    if step == 0 {
+        return None;
+    }
+    let signed_step = i32::from(direction.signed()) * i32::from(step);
+    let stepped = current.wrapping_add(signed_step as u32);
+    let mut frequency = round_frequency_to_step(stepped, step)?;
+    if frequency >= upper {
+        frequency = lower;
+    } else if frequency < lower {
+        frequency = round_frequency_to_step(upper.wrapping_sub(u32::from(step)), step)?;
+    }
+    Some(frequency)
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Context {
     pub screen_channel: u8,

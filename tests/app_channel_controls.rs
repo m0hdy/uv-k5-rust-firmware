@@ -167,3 +167,52 @@ fn input_box_blocks_up_down_and_long_release_can_announce_memory_channel() {
     );
     assert_eq!(collect(announce), [Effect::RequestVoiceChannelNumber(13)]);
 }
+
+#[test]
+fn frequency_rounding_matches_half_step_and_833_schemes() {
+    use app_channel_controls::round_frequency_to_step;
+
+    assert_eq!(round_frequency_to_step(10_000_249, 1), Some(10_000_249));
+    assert_eq!(round_frequency_to_step(10_000_249, 500), Some(10_000_000));
+    assert_eq!(round_frequency_to_step(10_000_251, 500), Some(10_000_500));
+    assert_eq!(round_frequency_to_step(10_000_750, 1_000), Some(10_001_000));
+    assert_eq!(round_frequency_to_step(10_002_100, 833), Some(10_002_500));
+    assert_eq!(round_frequency_to_step(10_002_200, 833), Some(10_002_500));
+    assert_eq!(round_frequency_to_step(10_002_300, 833), Some(10_002_500));
+    assert_eq!(round_frequency_to_step(10_002_400, 833), Some(10_002_500));
+    assert_eq!(round_frequency_to_step(1, 0), None);
+}
+
+#[test]
+fn frequency_step_wraps_at_band_limits_and_preserves_unsigned_underflow() {
+    use app_channel_controls::set_frequency_by_step_and_limits;
+
+    assert_eq!(
+        set_frequency_by_step_and_limits(
+            145_999_000,
+            Direction::Up,
+            1_000,
+            144_000_000,
+            146_000_000
+        ),
+        Some(144_000_000)
+    );
+    assert_eq!(
+        set_frequency_by_step_and_limits(
+            144_000_000,
+            Direction::Down,
+            1_000,
+            144_000_000,
+            146_000_000
+        ),
+        Some(145_999_000)
+    );
+    assert_eq!(
+        set_frequency_by_step_and_limits(1_000, Direction::Down, 1_000, 144_000_000, 146_000_000),
+        Some(145_999_000)
+    );
+    assert_eq!(
+        set_frequency_by_step_and_limits(145_000_000, Direction::Up, 0, 144_000_000, 146_000_000),
+        None
+    );
+}

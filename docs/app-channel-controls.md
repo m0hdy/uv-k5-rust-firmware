@@ -7,6 +7,10 @@ key-event policy from the frequency-step, receive-band validation, next-memory
 channel search, scanner, radio, persistence, and voice operations supplied by
 the eventual firmware adapter.
 
+The same module includes the pinned frequency rounding and step-with-band-limit
+helpers. These preserve the 8.33 kHz channel calculation, the legacy half-step
+for steps at or above 1 kHz, unsigned addition wrap, and band-edge wraparound.
+
 The model preserves short-press beeps, input-box rejection, long-release
 channel announcement, frequency rejection before radio effects, memory-channel
 no-op behavior, NOAA wraparound, and scan pause reset ordering. Effect traces
