@@ -534,7 +534,7 @@ class FirmwareEntryTests(unittest.TestCase):
             "400: cpsid i\n 401: cpsie i\n 402: wfi",
             1,
         )
-        with self.assertRaisesRegex(EntryError, "must not unmask interrupts"):
+        with self.assertRaisesRegex(EntryError, "interrupt-masked closed WFI loop"):
             self.inspect(broken)
 
     def test_fail_closed_terminal_must_be_reachable(self):
