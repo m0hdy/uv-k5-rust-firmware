@@ -1,5 +1,3 @@
-#![cfg_attr(not(test), no_std)]
-
 //! Offline composition of matrix polling and 10 ms application key decisions.
 
 #[path = "keyboard_decisions.rs"]

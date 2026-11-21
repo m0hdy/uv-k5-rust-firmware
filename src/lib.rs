@@ -3,12 +3,11 @@
 pub mod adc_battery_acquisition;
 pub mod adc_battery_register_adapter;
 pub mod adc_samples;
-#[allow(dead_code)]
-mod app_500ms_service_timers;
-#[allow(dead_code)]
-mod app_500ms_timeouts;
+pub mod app_500ms_service_timers;
+pub mod app_500ms_timeouts;
 #[allow(dead_code)]
 mod app_vfo_resume_timer;
+pub mod application_runtime;
 pub mod bk1080_startup_adapter;
 #[allow(unused_attributes)]
 pub mod boot_coordinator;
@@ -26,6 +25,8 @@ pub mod eeprom_welcome_startup;
 pub mod firmware_container_checksum;
 #[allow(unused_attributes)]
 pub mod i2c_bitbang_flow;
+pub mod keyboard_poll_flow;
+pub mod numeric_input_box;
 pub mod scan_decisions;
 pub mod scheduler;
 pub mod scheduler_countdowns;

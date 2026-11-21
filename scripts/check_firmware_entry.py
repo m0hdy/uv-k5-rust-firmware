@@ -1510,12 +1510,16 @@ def inspect_disassembly(disassembly: str, symbols: str, vector_dump: str) -> Non
     coordinate_indices = [
         index for index, target in enumerate(entry_calls) if "coordinate_with_welcome::<" in target
     ]
-    if not coordinate_indices or any(
-        "firmware_fail_closed" not in target for target in entry_calls[coordinate_indices[0] + 1 :]
+    if not coordinate_indices or not any(
+        "firmware_application_loop" in target
+        for target in entry_calls[coordinate_indices[0] + 1 :]
     ):
-        raise EntryError("startup result must terminate fail-closed without later entry effects")
-    if re.search(r"\bcpsie\s+i\b", disassembly):
-        raise EntryError("selected startup must not unmask interrupts without installed handlers")
+        raise EntryError("successful startup must transfer to the Rust application loop")
+    entry_reachable = reachable_functions(functions, "firmware_integration_entry")
+    application_loop_name = require_reachable(entry_reachable, "firmware_application_loop")
+    application_loop = functions[application_loop_name]
+    if not re.search(r"\bcpsie\s+i\b", application_loop):
+        raise EntryError("application loop must unmask installed SysTick delivery")
     if "0xe000e180" not in disassembly or "0xe000e100" in disassembly:
         raise EntryError("SARADC must remain masked without an NVIC enable write")
 

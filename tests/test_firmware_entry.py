@@ -22,7 +22,12 @@ DISASSEMBLY = """
  200: bl 300 <firmware_integration_entry>
 00000300 <firmware_integration_entry>:
  300: bl 4f8 <coordinate_with_welcome::<TargetBootIo>>
- 304: bl 400 <firmware_fail_closed>
+304: bl 480 <firmware_application_loop>
+308: bl 400 <firmware_fail_closed>
+00000480 <firmware_application_loop>:
+ 480: cpsie i
+ 482: wfi
+ 484: b.n 480 <firmware_application_loop>
 00000400 <firmware_fail_closed>:
  400: cpsid i
  402: wfi
