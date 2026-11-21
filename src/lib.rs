@@ -36,6 +36,8 @@ pub mod settings_boot_composition;
 #[allow(unused_attributes)]
 pub mod settings_boot_defaults;
 #[allow(unused_attributes)]
+pub mod settings_channel_acquisition;
+#[allow(unused_attributes)]
 pub mod settings_extended_boot;
 #[allow(unused_attributes)]
 pub mod st7565_display;

@@ -1,7 +1,7 @@
-pub use uv_k5_rust_firmware::{eeprom_read_transport, settings_boot_composition};
-
-#[path = "../src/settings_channel_acquisition.rs"]
-mod settings_channel_acquisition;
+pub use uv_k5_rust_firmware::{
+    eeprom_read_transport, settings_boot_composition, settings_channel_acquisition,
+    settings_extended_boot,
+};
 
 use settings_channel_acquisition::{
     ChannelSelectionBootDefaults, SettingsChannelAcquisitionError, acquire_with_transport,

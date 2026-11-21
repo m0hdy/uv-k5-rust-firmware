@@ -18,7 +18,10 @@ EEPROM access and performs no hardware action.
 This decoder does not claim to implement `SETTINGS_InitEEPROM` as a whole.
 The optional `0x0E88` FM configuration and `0x0E40` FM channel data, DTMF
 calling strings at `0x0EE0..0x0F17`, `0x0F30` custom AES key, channel
-attributes, EEPROM acquisition integration, and calibration loading remain
-separate work. These fields are not silently treated as validated or as
-checksummed. The pinned settings code does not define an EEPROM settings
+attributes, target-entry wiring, and calibration loading remain separate
+work. `settings_channel_acquisition::acquire_full_portable_with_transport`
+reads the existing `0x0E70`, `0x0E78`, and `0x0E80` sequence followed by the
+eight offsets above, stopping at the first I/O error. The optional FM read is
+not issued by this API. These fields are not silently treated as validated or
+as checksummed. The pinned settings code does not define an EEPROM settings
 checksum; the firmware-container CRC is unrelated.

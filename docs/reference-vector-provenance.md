@@ -56,8 +56,10 @@ decoders for the core, display, channel-selection, and standard extended blocks
 (`0x0E90` through `0x0F40`), with their source mapping documented in
 [`settings-extended-boot-provenance.md`](settings-extended-boot-provenance.md).
 The full C initialization path is still not executed by the host parity
-fixture, and optional FM data, DTMF calling strings, AES key handling, channel
-attributes, acquisition integration, and calibration loading remain uncovered.
+fixture. Standard block acquisition is available as a portable transport
+composition, but target-entry wiring and optional FM data, DTMF calling
+strings, AES key handling, channel attributes, and calibration loading remain
+uncovered.
 No settings checksum routine was identified in `SETTINGS_SaveSettings`; the
 firmware-container CRC fixture does not test settings validation or a settings
 checksum.
