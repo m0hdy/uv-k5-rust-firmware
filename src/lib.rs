@@ -28,6 +28,7 @@ pub mod firmware_container_checksum;
 pub mod i2c_bitbang_flow;
 pub mod scan_decisions;
 pub mod scheduler;
+pub mod scheduler_countdowns;
 #[allow(unused_attributes)]
 pub mod settings_boot_composition;
 #[allow(unused_attributes)]
