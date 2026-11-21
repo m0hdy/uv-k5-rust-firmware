@@ -77,11 +77,15 @@ fn global_and_transmitter_settings_use_pinned_defaults() {
     assert_eq!(global.backlight_on_tx_rx, 3);
 
     assert_eq!(
-        decode_roger_and_transmitter([0, 3, 11, 2, 8, 0, 0, 0], 4).roger,
+        decode_roger_and_transmitter([0, 3, 11, 2, 8, 0, 0, 0]).roger,
         0
     );
     assert_eq!(
-        decode_roger_and_transmitter([0, 3, 11, 2, 8, 0, 0, 0], 4).battery_type,
+        decode_roger_and_transmitter([0, 3, 11, 2, 1, 0, 0, 0]).battery_type,
+        1
+    );
+    assert_eq!(
+        decode_roger_and_transmitter([0, 3, 11, 2, 2, 0, 0, 0]).battery_type,
         0
     );
 }
@@ -138,7 +142,6 @@ fn standard_blocks_compose_in_declared_eeprom_order() {
             dtmf_calling_enabled: true,
             audio_bar_enabled: true,
             am_fix_enabled: true,
-            battery_type_count: 5,
             lock_mode_count: 8,
         },
     );

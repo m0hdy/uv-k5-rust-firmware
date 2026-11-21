@@ -20,6 +20,7 @@ pub const DTMF_DOWN_OFFSET: u16 = 0x0f08;
 pub const FM_CONFIG_OFFSET: u16 = 0x0e88;
 pub const FM_CHANNELS_OFFSET: u16 = 0x0e40;
 pub const FM_CHANNEL_COUNT: usize = 20;
+pub const BATTERY_TYPE_UNKNOWN: u8 = 2;
 pub const EEPROM_OFFSETS: [u16; 8] = [
     0x0e90, 0x0e98, 0x0ea0, 0x0ea8, 0x0ed0, 0x0ed8, 0x0f18, 0x0f40,
 ];
@@ -321,15 +322,12 @@ pub struct RogerAndTransmitterSettings {
     pub battery_type: u8,
 }
 
-pub const fn decode_roger_and_transmitter(
-    data: [u8; 8],
-    battery_type_count: u8,
-) -> RogerAndTransmitterSettings {
+pub const fn decode_roger_and_transmitter(data: [u8; 8]) -> RogerAndTransmitterSettings {
     RogerAndTransmitterSettings {
         roger: if data[1] < 3 { data[1] } else { 0 },
         repeater_tail_tone_elimination: if data[2] < 11 { data[2] } else { 0 },
         tx_vfo: if data[3] < 2 { data[3] } else { 0 },
-        battery_type: if data[4] < battery_type_count {
+        battery_type: if data[4] < BATTERY_TYPE_UNKNOWN {
             data[4]
         } else {
             0
@@ -496,7 +494,6 @@ pub struct ExtendedBootFeatures {
     pub dtmf_calling_enabled: bool,
     pub audio_bar_enabled: bool,
     pub am_fix_enabled: bool,
-    pub battery_type_count: u8,
     pub lock_mode_count: u8,
 }
 
@@ -528,7 +525,7 @@ pub const fn decode_extended_boot(
             features.rssi_bar_enabled,
         ),
         alarm: decode_alarm(blocks[3], features.alarm_enabled),
-        roger_and_transmitter: decode_roger_and_transmitter(blocks[3], features.battery_type_count),
+        roger_and_transmitter: decode_roger_and_transmitter(blocks[3]),
         dtmf: decode_dtmf(blocks[4], blocks[5], features.dtmf_calling_enabled),
         scan_lists: decode_scan_lists(blocks[6]),
         global: decode_global(

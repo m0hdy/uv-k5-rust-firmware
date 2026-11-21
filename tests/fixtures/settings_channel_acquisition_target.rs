@@ -1,7 +1,8 @@
 #![no_std]
 
 pub use uv_k5_rust_firmware::{
-    eeprom_i2c_bridge, eeprom_read_transport, i2c_bitbang_flow, settings_boot_composition,
+    bk1080_receive_adapter, eeprom_i2c_bridge, eeprom_read_transport, i2c_bitbang_flow,
+    settings_boot_composition, settings_extended_boot,
 };
 
 #[path = "../../src/settings_channel_acquisition.rs"]

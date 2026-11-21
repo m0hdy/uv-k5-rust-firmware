@@ -94,7 +94,6 @@ fn full_portable_acquisition_reads_and_decodes_the_standard_settings_sequence() 
             dtmf_calling_enabled: true,
             audio_bar_enabled: false,
             am_fix_enabled: false,
-            battery_type_count: 5,
             lock_mode_count: 8,
         },
     )
