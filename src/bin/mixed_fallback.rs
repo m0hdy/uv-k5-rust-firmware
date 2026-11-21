@@ -9,6 +9,9 @@ mod rust_impl;
 
 global_asm!(include_str!("startup.S"));
 
+#[unsafe(no_mangle)]
+pub extern "C" fn SysTick_Handler() {}
+
 #[cfg(feature = "mixed-fallback-c")]
 unsafe extern "C" {
     fn mixed_c_channel_valid(channel: u16) -> u8;

@@ -69,22 +69,28 @@ impl<E: ApplicationEffects> Backend for CompositionBackend<'_, E> {
         self.effects.update();
     }
 
-    fn is_10ms_pending(&mut self) -> bool {
-        self.flags.pending_10ms()
+    fn take_10ms_pending(&mut self) -> bool {
+        let pending = self.flags.pending_10ms();
+        if pending {
+            self.flags.acknowledge_10ms();
+        }
+        pending
     }
 
     fn timeslice_10ms(&mut self) {
-        self.flags.acknowledge_10ms();
         let flags = &mut self.flags;
         self.effects.timeslice_10ms(&mut || flags.tick());
     }
 
-    fn is_500ms_pending(&mut self) -> bool {
-        self.flags.pending_500ms()
+    fn take_500ms_pending(&mut self) -> bool {
+        let pending = self.flags.pending_500ms();
+        if pending {
+            self.flags.acknowledge_500ms();
+        }
+        pending
     }
 
     fn timeslice_500ms(&mut self) {
-        self.flags.acknowledge_500ms();
         self.effects.timeslice_500ms();
     }
 }

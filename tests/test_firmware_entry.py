@@ -22,7 +22,12 @@ DISASSEMBLY = """
  200: bl 300 <firmware_integration_entry>
 00000300 <firmware_integration_entry>:
  300: bl 4f8 <coordinate_with_welcome::<TargetBootIo>>
- 304: bl 400 <firmware_fail_closed>
+304: bl 480 <firmware_application_loop>
+308: bl 400 <firmware_fail_closed>
+00000480 <firmware_application_loop>:
+ 480: cpsie i
+ 482: wfi
+ 484: b.n 480 <firmware_application_loop>
 00000400 <firmware_fail_closed>:
  400: cpsid i
  402: wfi
@@ -131,7 +136,15 @@ DISASSEMBLY = """
  784: bne.n 780 <SysTickDelay<Counter>::delay_1us>
  786: bx lr
 00000900 <SysTick_Handler>:
- 900: bx lr
+ 900: push {r7, lr}
+ 902: bl 910 <firmware_integration::systick_interrupt>
+ 906: pop {r7, pc}
+00000910 <firmware_integration::systick_interrupt>:
+ 910: push {r7, lr}
+ 912: bl 920 <uv_k5_rust_firmware::scheduler::interrupt::on_systick>
+ 916: pop {r7, pc}
+00000920 <uv_k5_rust_firmware::scheduler::interrupt::on_systick>:
+ 920: bx lr
 """
 
 _VECTOR_WORDS = [0x20003FF0, 0x000000C1] + [0x00000109] * 13 + [0x00000901]
@@ -182,6 +195,75 @@ class FirmwareEntryTests(unittest.TestCase):
             with self.subTest(broken=broken):
                 with self.assertRaisesRegex(EntryError, "device clock gate write"):
                     self.inspect(broken)
+
+    def test_systick_vector_reaches_the_concrete_scheduler_tick(self):
+        self.inspect(DISASSEMBLY)
+        broken = DISASSEMBLY.replace(
+            "912: bl 920 <uv_k5_rust_firmware::scheduler::interrupt::on_systick>",
+            "912: bl 920 <unrelated_handler>",
+            1,
+        )
+        with self.assertRaisesRegex(EntryError, "entry path does not transfer to scheduler::interrupt::on_systick"):
+            self.inspect(broken)
+
+    def test_systick_validator_accepts_tail_calls_that_preserve_exception_return(self):
+        tail_calls = DISASSEMBLY.replace(
+            " 900: push {r7, lr}\n"
+            " 902: bl 910 <firmware_integration::systick_interrupt>\n"
+            " 906: pop {r7, pc}",
+            " 900: b.n 910 <firmware_integration::systick_interrupt>",
+            1,
+        ).replace(
+            " 910: push {r7, lr}\n"
+            " 912: bl 920 <uv_k5_rust_firmware::scheduler::interrupt::on_systick>\n"
+            " 916: pop {r7, pc}",
+            " 910: b.n 920 <uv_k5_rust_firmware::scheduler::interrupt::on_systick>",
+            1,
+        )
+        self.inspect(tail_calls)
+
+    def test_systick_transfer_after_unreachable_return_is_rejected(self):
+        broken = DISASSEMBLY.replace(
+            " 902: bl 910 <firmware_integration::systick_interrupt>",
+            " 902: bl 930 <unrelated_handler>",
+            1,
+        ).replace(
+            " 906: pop {r7, pc}",
+            " 906: pop {r7, pc}\n 908: b.n 910 <firmware_integration::systick_interrupt>",
+            1,
+        )
+        with self.assertRaisesRegex(
+            EntryError, "does not transfer to firmware_integration::systick_interrupt"
+        ):
+            self.inspect(broken)
+
+    def test_scheduler_transfer_after_unreachable_return_is_rejected(self):
+        broken = DISASSEMBLY.replace(
+            " 912: bl 920 <uv_k5_rust_firmware::scheduler::interrupt::on_systick>",
+            " 912: bl 930 <unrelated_handler>",
+            1,
+        ).replace(
+            " 916: pop {r7, pc}",
+            " 916: pop {r7, pc}\n 918: b.n 920 "
+            "<uv_k5_rust_firmware::scheduler::interrupt::on_systick>",
+            1,
+        )
+        with self.assertRaisesRegex(
+            EntryError, "does not transfer to scheduler::interrupt::on_systick"
+        ):
+            self.inspect(broken)
+
+    def test_unreachable_exception_return_after_scheduler_loop_is_rejected(self):
+        broken = DISASSEMBLY.replace(
+            "00000920 <uv_k5_rust_firmware::scheduler::interrupt::on_systick>:\n 920: bx lr",
+            "00000920 <uv_k5_rust_firmware::scheduler::interrupt::on_systick>:\n"
+            " 920: b.n 920\n 922: bx lr",
+            1,
+        )
+        with self.assertRaisesRegex(
+            EntryError, "scheduler tick has no reachable exception return"
+        ):
+            self.inspect(broken)
 
     def test_display_initialization_requires_canonical_prerequisite_order(self):
         broken = DISASSEMBLY.replace(

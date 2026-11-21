@@ -29,6 +29,24 @@ pub extern "C" fn firmware_main() -> ! {
 }
 
 #[cfg(target_arch = "arm")]
+#[unsafe(no_mangle)]
+#[inline(never)]
+/// Handles the installed SysTick exception.
+///
+/// # Safety
+///
+/// Must only be invoked by the active SysTick vector after scheduler state
+/// has been initialized by firmware startup.
+pub unsafe extern "C" fn SysTick_Handler() {
+    #[cfg(feature = "firmware-integration")]
+    // SAFETY: The vector table calls this function only for the SysTick
+    // exception, satisfying the scheduler's single-writer contract.
+    unsafe {
+        firmware_integration::systick_interrupt()
+    };
+}
+
+#[cfg(target_arch = "arm")]
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
     loop {

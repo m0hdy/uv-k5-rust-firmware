@@ -1,5 +1,3 @@
-#![cfg_attr(not(test), no_std)]
-
 //! Caller-state model of the countdown mutations in the pinned scheduler tick.
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -25,6 +23,40 @@ pub struct CountdownState {
     pub schedule_fm: bool,
     pub vox_stop_countdown_10ms: u16,
     pub boot_counter_10ms: u8,
+}
+
+impl CountdownState {
+    pub const fn new() -> Self {
+        Self {
+            noaa_countdown_10ms: 0,
+            found_cdcss_countdown_10ms: 0,
+            found_ctcss_countdown_10ms: 0,
+            battery_save_countdown_10ms: 0,
+            schedule_power_save: false,
+            power_save_10ms: 0,
+            power_save_countdown_expired: false,
+            dual_watch_countdown_10ms: 0,
+            schedule_dual_watch: false,
+            noaa_schedule_countdown_10ms: 0,
+            schedule_noaa: false,
+            scan_pause_delay_in_10ms: 0,
+            schedule_scan_listen: false,
+            tail_tone_elimination_countdown_10ms: 0,
+            tail_tone_elimination_complete: false,
+            countdown_to_play_next_voice_10ms: 0,
+            play_queued_voice: false,
+            fm_play_countdown_10ms: 0,
+            schedule_fm: false,
+            vox_stop_countdown_10ms: 0,
+            boot_counter_10ms: 0,
+        }
+    }
+}
+
+impl Default for CountdownState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

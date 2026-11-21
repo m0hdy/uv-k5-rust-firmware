@@ -139,6 +139,29 @@ def require_call(body: str, target: str, minimum: int = 1) -> None:
         raise EntryError(f"entry path does not call {target}")
 
 
+def require_transfer(body: str, target: str) -> None:
+    rows = instructions(body)
+    reachable = reachable_instruction_addresses(rows)
+    if not any(
+        address in reachable and mnemonic.startswith("b") and target in operands
+        for address, mnemonic, operands in rows
+    ):
+        raise EntryError(f"entry path does not transfer to {target}")
+
+
+def has_reachable_exception_return(body: str) -> bool:
+    rows = instructions(body)
+    reachable = reachable_instruction_addresses(rows)
+    return any(
+        address in reachable
+        and (
+            re.fullmatch(r"bx\s+lr", f"{mnemonic} {operands}".strip())
+            or (mnemonic.startswith("pop") and re.search(r"\bpc\b", operands))
+        )
+        for address, mnemonic, operands in rows
+    )
+
+
 def reachable_functions(functions: dict[str, str], start: str) -> set[str]:
     if start not in functions:
         raise EntryError(f"disassembly is missing {start}")
@@ -1372,9 +1395,31 @@ def inspect_disassembly(disassembly: str, symbols: str, vector_dump: str) -> Non
     require_call(main, "firmware_integration_entry")
     require_call(entry, "coordinate_with_welcome::<")
     require_call(entry, "firmware_fail_closed")
-    if not re.search(r"\bbx\s+lr\b", systick):
-        raise EntryError("selected vector table's SysTick_Handler is not a valid return handler")
+    require_transfer(systick, "firmware_integration::systick_interrupt")
+    interrupt_body = next(
+        (
+            body
+            for name, body in functions.items()
+            if "firmware_integration::systick_interrupt" in name
+        ),
+        None,
+    )
+    if interrupt_body is None:
+        raise EntryError("disassembly is missing the concrete SysTick integration")
+    require_transfer(interrupt_body, "scheduler::interrupt::on_systick")
+    tick_body = next(
+        (
+            body
+            for name, body in functions.items()
+            if "scheduler::interrupt::on_systick" in name
+        ),
+        None,
+    )
+    if tick_body is None or not has_reachable_exception_return(tick_body):
+        raise EntryError("SysTick scheduler tick has no reachable exception return")
     require_fail_closed_terminal(fail_closed)
+    if re.search(r"\bcpsie\s+i\b", fail_closed):
+        raise EntryError("firmware_fail_closed must not unmask interrupts")
 
     words = vector_words(vector_dump)
     if len(words) != 48:
@@ -1480,12 +1525,16 @@ def inspect_disassembly(disassembly: str, symbols: str, vector_dump: str) -> Non
     coordinate_indices = [
         index for index, target in enumerate(entry_calls) if "coordinate_with_welcome::<" in target
     ]
-    if not coordinate_indices or any(
-        "firmware_fail_closed" not in target for target in entry_calls[coordinate_indices[0] + 1 :]
+    if not coordinate_indices or not any(
+        "firmware_application_loop" in target
+        for target in entry_calls[coordinate_indices[0] + 1 :]
     ):
-        raise EntryError("startup result must terminate fail-closed without later entry effects")
-    if re.search(r"\bcpsie\s+i\b", disassembly):
-        raise EntryError("selected startup must not unmask interrupts without installed handlers")
+        raise EntryError("successful startup must transfer to the Rust application loop")
+    entry_reachable = reachable_functions(functions, "firmware_integration_entry")
+    application_loop_name = require_reachable(entry_reachable, "firmware_application_loop")
+    application_loop = functions[application_loop_name]
+    if not re.search(r"\bcpsie\s+i\b", application_loop):
+        raise EntryError("application loop must unmask installed SysTick delivery")
     if "0xe000e180" not in disassembly or "0xe000e100" in disassembly:
         raise EntryError("SARADC must remain masked without an NVIC enable write")
 

@@ -1,5 +1,3 @@
-#![cfg_attr(not(test), no_std)]
-
 pub const SLOT_COUNT: usize = 8;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

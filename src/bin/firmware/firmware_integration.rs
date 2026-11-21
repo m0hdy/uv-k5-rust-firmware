@@ -4,12 +4,23 @@ use core::num::NonZeroU32;
 use uv_k5_rust_firmware::adc_battery_register_adapter::{
     ReadRegister as MmioReadRegister, WriteRegister as MmioWriteRegister,
 };
+use uv_k5_rust_firmware::app_500ms_service_timers::BacklightMenuItem;
+use uv_k5_rust_firmware::app_500ms_timeouts::CenterLine;
+use uv_k5_rust_firmware::application_runtime::{
+    Context as ApplicationContext, State as ApplicationState,
+};
 use uv_k5_rust_firmware::boot_coordinator::{
     self, BatteryReadRegister, BatteryRegisterIo, BatteryWriteRegister, BoardDefines, BootConfig,
     I2cTransport, StartupIo,
 };
 use uv_k5_rust_firmware::eeprom_i2c_bridge::I2cBitbangTransport;
 use uv_k5_rust_firmware::i2c_bitbang_flow::target_gpio::{self, GpioI2cIo, TargetRegisters};
+use uv_k5_rust_firmware::keyboard_gpio_adapter::{self, KeyboardGpioAdapter};
+use uv_k5_rust_firmware::keyboard_poll_flow::{KeyEvent, KeypadEffects as KeypadEffectsTrait};
+use uv_k5_rust_firmware::scheduler::interrupt;
+use uv_k5_rust_firmware::scheduler_countdowns::{
+    Features as SchedulerFeatures, ScanDirection, SchedulerFunction, TickContext,
+};
 use uv_k5_rust_firmware::settings_boot_composition::Features as SettingsFeatures;
 use uv_k5_rust_firmware::st7565_startup_executor::target_spi0::{
     DelayMs, RegisterIo as DisplayRegisterIo,
@@ -19,6 +30,67 @@ use uv_k5_rust_firmware::systick_delay_adapter::{SysTickDelay, VolatileSysTickCo
 
 type Delay = SysTickDelay<VolatileSysTickCounter>;
 type I2cBus = GpioI2cIo<TargetRegisters, Delay>;
+type Keypad = KeyboardGpioAdapter<keyboard_gpio_adapter::TargetRegisters, Delay>;
+
+#[inline(never)]
+pub unsafe fn systick_interrupt() {
+    // SAFETY: The only caller is the installed SysTick exception handler.
+    unsafe { interrupt::on_systick() };
+}
+
+struct FirmwareApplication {
+    keypad: Keypad,
+    state: ApplicationState,
+    context: ApplicationContext,
+}
+
+impl FirmwareApplication {
+    fn new(keypad: Keypad, settings: boot_coordinator::SettingsBoot, config: BootConfig) -> Self {
+        Self {
+            keypad,
+            state: ApplicationState::new(),
+            context: ApplicationContext {
+                enable_rssi_bar: false,
+                center_line: CenterLine::None,
+                enable_fmradio: config.board.enable_fmradio,
+                fm_radio_mode: false,
+                ask_to_save: false,
+                css_background_scan: false,
+                backlight_menu_item: BacklightMenuItem::Other,
+                backlight_time: settings.display.backlight_time,
+            },
+        }
+    }
+}
+
+struct ApplicationKeypadEffects<'a> {
+    state: &'a mut ApplicationState,
+}
+
+impl KeypadEffectsTrait for ApplicationKeypadEffects<'_> {
+    fn cancel_boot_counter(&mut self) {
+        interrupt::cancel_boot_counter();
+    }
+
+    fn key_event(&mut self, event: KeyEvent) {
+        self.state.on_key_event(event, 40);
+    }
+}
+
+impl interrupt::ApplicationEffects for FirmwareApplication {
+    fn update(&mut self) {}
+
+    fn timeslice_10ms(&mut self) {
+        let mut effects = ApplicationKeypadEffects {
+            state: &mut self.state,
+        };
+        self.keypad.poll(&mut effects);
+    }
+
+    fn timeslice_500ms(&mut self) {
+        self.state.timeslice_500ms(self.context);
+    }
+}
 
 struct TargetBootIo {
     board: boot_coordinator::TargetBoardHardwareIo,
@@ -228,26 +300,59 @@ pub extern "C" fn firmware_integration_entry() -> ! {
     let mut fm_delay =
         unsafe { SysTickDelay::new(VolatileSysTickCounter::new(), ticks_per_microsecond) };
     let mut pages = [[0; LCD_WIDTH]; 8];
-    if boot_coordinator::coordinate_with_welcome(
+    let startup = match boot_coordinator::coordinate_with_welcome(
         &mut io,
         &mut display_delay,
         &mut fm_delay,
         config,
         Some(env!("CARGO_PKG_VERSION")),
         &mut pages,
-    )
-    .is_err()
-    {
-        firmware_fail_closed();
+    ) {
+        Ok(startup) => startup,
+        Err(_) => firmware_fail_closed(),
+    };
+    interrupt::set_tick_context(TickContext {
+        features: SchedulerFeatures {
+            enable_noaa: config.settings.noaa_enabled,
+            enable_voice: false,
+            enable_fmradio: config.board.enable_fmradio,
+            enable_vox: config.settings.vox_enabled,
+        },
+        function: SchedulerFunction::Foreground,
+        scan_direction: ScanDirection::Off,
+        css_background_scan: false,
+        dual_watch_enabled: false,
+        is_noaa_mode: false,
+        fm_scan_active: false,
+    });
+    let settings = startup.settings;
+    drop(io);
+    // SAFETY: startup configured SysTick and handed PA10/PA11 from I2C to
+    // the keypad. The build policy supplies the verified timer calibration.
+    let keypad_delay =
+        unsafe { SysTickDelay::new(VolatileSysTickCounter::new(), ticks_per_microsecond) };
+    // SAFETY: boot completed board GPIO setup and transferred pin ownership.
+    let keypad = unsafe { KeyboardGpioAdapter::new_target(keypad_delay) };
+    let mut application = FirmwareApplication::new(keypad, settings, config);
+    firmware_application_loop(&mut application)
+}
+
+#[inline(never)]
+fn firmware_application_loop(application: &mut FirmwareApplication) -> ! {
+    // Board startup installed the SysTick exception handler before this point.
+    unsafe { core::arch::asm!("cpsie i", options(nomem, nostack, preserves_flags)) }
+    loop {
+        interrupt::run_iteration(application);
+        if !interrupt::pending_10ms() {
+            unsafe { core::arch::asm!("wfi", options(nomem, nostack, preserves_flags)) }
+        }
     }
-    firmware_fail_closed();
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn firmware_fail_closed() -> ! {
-    // No application loop is implemented. Mask delivery and park after either
-    // a completed welcome or the first startup failure.
+    // Startup policy failures and every startup error mask delivery and park.
     unsafe { core::arch::asm!("cpsid i", options(nomem, nostack, preserves_flags)) }
     loop {
         unsafe { core::arch::asm!("wfi", options(nomem, nostack, preserves_flags)) }

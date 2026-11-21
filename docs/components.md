@@ -10,9 +10,11 @@ inputs or a mock backend without starting firmware.
 See the [README diagram](../README.md#selected-firmware-entry) for the entry
 connections. With `firmware-integration` enabled, startup composes board
 adapters, acquires settings, samples battery state, and continues the
-initialized display before parking. The default firmware entry remains a
-non-installable bootstrap. No application loop is wired yet. The scheduler
-translates ticks into application work; it does not decode keys, make tuning
+initialized display before entering the Rust application loop. The loop enables
+SysTick delivery, polls the keypad on the 10 ms timeslice, and advances the
+ported 500 ms state transitions. The default firmware entry remains a
+non-installable bootstrap. The scheduler translates ticks into application
+work; it does not decode keys, make tuning
 decisions, or draw to the LCD. Application flows consume typed inputs and
 request effects through peripheral interfaces. EEPROM and LCD adapters handle
 their respective bus and register operations.

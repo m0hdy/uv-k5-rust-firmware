@@ -70,10 +70,11 @@ execution are outside this module's contract.
 
 ## Scope and validation
 
-This standalone module is not declared in `src/lib.rs` and is not wired to
-firmware entry, scheduler cadence, PTT, or application event routing. It does
-not validate electrical behavior, device timing, or board revisions. The
-host register trace tests do not execute MMIO.
+The adapter is exported from `src/lib.rs` and the opt-in firmware entry polls
+it from the scheduler's 10 ms hook. Its target use assumes the startup keypad
+handoff and the exclusive GPIOA contract above. PTT and the full application
+event policy are not wired. Host register trace tests do not execute MMIO or
+validate electrical behavior, device timing, or board revisions.
 
 From the repository root:
 
