@@ -6,6 +6,14 @@ reset/vector path and linker layout, but remains an unqualified bootstrap, not
 a flashable firmware image. It makes no assumptions about the radio's boot ROM,
 bootloader handoff, clock state, or physical hardware revision.
 
+## Licensing
+
+Original project work is licensed under the ISC License; see [`LICENSE`](LICENSE).
+Apache-2.0 exceptions, third-party notices, and the full provenance inventory
+are recorded in [`NOTICE`](NOTICE),
+[`LICENSE-APACHE-2.0`](LICENSE-APACHE-2.0), and
+[`docs/licensing.md`](docs/licensing.md).
+
 ## Selected firmware entry
 
 The default `firmware_main` is still a non-installable bootstrap and performs
@@ -223,3 +231,15 @@ and vectors in `src/bin/startup.S`, the memory layout in `linker/firmware.ld`,
 and the offline ELF/map and image checks in `scripts/`. There is no second
 startup path. The pinned C firmware remains the reference owner of its source
 and is unchanged. Current CI publishes no raw or packed image.
+
+## Contributing and community
+
+See [contributing guidance](CONTRIBUTING.md) for issue-driven work, host and
+target checks, and required firmware evidence. Read the
+[Code of Conduct](CODE_OF_CONDUCT.md) and [security reporting guidance](SECURITY.md)
+before participating or reporting a concern. Use the
+[bug report](.github/ISSUE_TEMPLATE/bug_report.yml) or
+[feature request](.github/ISSUE_TEMPLATE/feature_request.yml) form in the
+[issue form picker](https://github.com/m0hdy/uv-k5-rust-firmware/issues/new/choose)
+for public project requests; do not report vulnerabilities or include
+sensitive device data in public issues.

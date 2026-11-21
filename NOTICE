@@ -1,0 +1,39 @@
+uv-k5-rust-firmware
+Copyright (c) 2026 Damien Hardy (@digimangos)
+
+This project contains original work under the ISC License. It also contains
+material adapted from egzumer/uv-k5-firmware-custom at pinned revision
+7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3.
+
+Copyright 2023 Dual Tachyon
+https://github.com/DualTachyon
+
+The adapted gFontSmall table in src/startup_version_display.rs and the adapted
+tuning/signalling routines and data in src/tuning_signalling.rs are licensed
+under the Apache License, Version 2.0. The upstream license text is reproduced
+in LICENSE-APACHE-2.0 and in the project-specific copy at
+tools/reference-vectors/LICENSE-APACHE-2.0.
+
+The following project files retain item-specific Apache-2.0 provenance and
+modification or adaptation notices:
+
+  src/startup_version_display.rs
+  src/tuning_signalling.rs
+  tools/reference-vectors/settings_capture_support.h
+  scripts/firmware_container.py
+
+The settings capture mock in
+tools/reference-vectors/settings_capture_support.h is a minimized, modified
+subset of the pinned upstream settings.h declaration.
+
+The 128-byte updater-container obfuscation table in
+scripts/firmware_container.py is reproduced from the pinned upstream
+fw-pack.py. Its provenance trace identifies OneOfEleven's initial import and
+later Egzumer version-handling changes; the pinned repository was licensed
+Apache-2.0 and this item is retained under that license.
+
+The pinned egzumer repository is not vendored as C source and has no
+repository-root NOTICE file in the inspected revision. Independent Rust
+implementations, test cases, documentation, host tooling, and the mixed C/Rust
+comparison fixtures are governed by the item's provenance record rather than
+by this notice in the absence of copied upstream text or data.
