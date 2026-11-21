@@ -25,6 +25,7 @@ pub mod eeprom_welcome_startup;
 pub mod firmware_container_checksum;
 #[allow(unused_attributes)]
 pub mod i2c_bitbang_flow;
+pub mod keyboard_gpio_adapter;
 pub mod keyboard_poll_flow;
 pub mod numeric_input_box;
 pub mod scan_decisions;
