@@ -1,5 +1,3 @@
-#![cfg_attr(not(test), no_std)]
-
 //! Caller-state model of the countdown mutations in the pinned scheduler tick.
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
