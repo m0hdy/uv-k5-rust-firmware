@@ -43,3 +43,10 @@ jobs:
           PY
       - name: Run Cortex-M0 release Clippy
         run: cargo clippy --locked --target thumbv6m-none-eabi --release -- -D warnings
+      - name: Compile the standalone settings acquisition fixture
+        run: |
+          cargo build --locked --lib --target thumbv6m-none-eabi --release
+          rustc --edition=2024 --crate-type=lib --target thumbv6m-none-eabi -D warnings \
+            --extern "uv_k5_rust_firmware=target/thumbv6m-none-eabi/release/libuv_k5_rust_firmware.rlib" \
+            tests/fixtures/settings_channel_acquisition_target.rs \
+            -o target/thumbv6m-none-eabi/release/libsettings_channel_acquisition_target.rlib

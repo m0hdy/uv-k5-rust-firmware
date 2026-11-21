@@ -8,6 +8,8 @@ pub mod app_500ms_timeouts;
 #[allow(dead_code)]
 mod app_vfo_resume_timer;
 pub mod application_runtime;
+#[allow(unused_attributes)]
+pub mod bk1080_receive_adapter;
 pub mod bk1080_startup_adapter;
 #[allow(unused_attributes)]
 pub mod boot_coordinator;
@@ -35,6 +37,10 @@ pub mod scheduler_countdowns;
 pub mod settings_boot_composition;
 #[allow(unused_attributes)]
 pub mod settings_boot_defaults;
+#[allow(unused_attributes)]
+pub mod settings_channel_acquisition;
+#[allow(unused_attributes)]
+pub mod settings_extended_boot;
 #[allow(unused_attributes)]
 pub mod st7565_display;
 #[allow(unused_attributes)]

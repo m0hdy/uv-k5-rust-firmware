@@ -17,16 +17,22 @@ START is not followed by STOP; an intermediate failure triggers one best-effort
 STOP without replacing the original error; a failed final STOP is not retried.
 No later block is attempted after failure.
 
-The channel decoder is included by path and is not changed or exported from
-`src/lib.rs`. The module is not wired into the firmware entry point. Target
-users can pass the existing `eeprom_i2c_bridge::I2cBitbangTransport`; the
-standalone target harness below checks that concrete bridge and the actual
-target GPIO constructor compile together. Callers remain responsible for the
-existing GPIOA/PortCon setup, exclusive PA10/PA11 ownership, serialization,
-and delay requirements documented in
+`acquire_full_portable_with_transport` extends this sequence with optional FM
+configuration/channel state, the standard `0x0e90..0x0f40` settings blocks,
+feature-gated DTMF strings, the channel-attribute table, and custom AES-key
+presence. It returns the first failing offset and error, and stops without
+starting later blocks. Pure decoding and the pinned C mappings are described
+in [`settings-extended-boot-provenance.md`](settings-extended-boot-provenance.md).
+
+The channel-selection decoder remains included by path, while the acquisition
+API is exported from `src/lib.rs`. Neither acquisition function is wired into
+the firmware entry point yet. Target users can pass the existing
+`eeprom_i2c_bridge::I2cBitbangTransport`; the standalone target harness checks
+that concrete bridge, acquisition module, and target GPIO constructor compile
+together. Callers remain responsible for the existing GPIOA/PortCon setup,
+exclusive PA10/PA11 ownership, serialization, and delay requirements documented in
 [`docs/eeprom-i2c-bridge.md`](eeprom-i2c-bridge.md). This bounded acquisition
-does not cover later `SETTINGS_InitEEPROM()` blocks or establish hardware,
-device, RF, or boot acceptance.
+does not load calibration or establish device, RF, or boot acceptance.
 
 From the repository root, with the `thumbv6m-none-eabi` target installed:
 

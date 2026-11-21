@@ -6,7 +6,8 @@ mod bk1080_tuning;
 
 use crate::eeprom_read_transport::{Acknowledgement, I2cTransport};
 
-pub use bk1080_tuning::FrequencyDeviation;
+#[allow(unused_imports)]
+pub use bk1080_tuning::{BandLimits, FrequencyDeviation, band_limits};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Register(u8);

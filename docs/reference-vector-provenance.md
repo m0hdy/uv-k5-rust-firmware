@@ -50,14 +50,19 @@ The EEPROM mock only accepts the ten expected 8-byte writes at their
 documented offsets, rejects any unexpected write address or count before
 copying its bytes, checks bounds and null data, and verifies the final count.
 
-Settings EEPROM read validation is not captured: [`SETTINGS_InitEEPROM`](https://github.com/egzumer/uv-k5-firmware-custom/blob/7607f0a4bd6203d1f06b70556fc1ce0d7399d6b3/settings.c#L41-L340)
-maps persisted values to defaults or clamps according to field-specific
-policies, including screen/memory/frequency-channel bounds, setting ranges,
-scan-list state, TX-lock mode, and DTMF code validation. Exercising that load
-path also pulls in UI, radio, and device helpers, so malformed EEPROM reads
-and their defaults remain an explicit gap. No settings checksum routine was
-identified in `SETTINGS_SaveSettings`; the firmware-container CRC fixture does
-not test settings validation or a settings checksum.
+The checked-in C/Rust golden fixture captures settings writes only; it does not
+capture `SETTINGS_InitEEPROM` read/default behavior. Rust now has pure startup
+decoders for the core, display, channel-selection, and standard extended blocks
+(`0x0E90` through `0x0F40`), with their source mapping documented in
+[`settings-extended-boot-provenance.md`](settings-extended-boot-provenance.md).
+The full C initialization path is still not executed by the host parity
+fixture. Standard blocks, DTMF calling codes, optional FM state, channel
+attributes, and custom AES key acquisition are available as a portable
+transport composition, but target-entry wiring and calibration loading remain
+uncovered.
+No settings checksum routine was identified in `SETTINGS_SaveSettings`; the
+firmware-container CRC fixture does not test settings validation or a settings
+checksum.
 
 ## Regeneration and test
 
