@@ -59,6 +59,9 @@ use st7565_startup_executor::target_spi0::DelayMs;
 
 global_asm!(include_str!("startup.S"));
 
+#[unsafe(no_mangle)]
+pub extern "C" fn SysTick_Handler() {}
+
 // Link-only forwarding input; this is not a production trigger selection.
 const LINK_ONLY_EXTTRIG_SEL: u16 = 0x5aa5;
 

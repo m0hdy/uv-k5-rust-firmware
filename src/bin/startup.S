@@ -74,13 +74,3 @@ Reset_Handler:
 Default_Handler:
     b Default_Handler
 .size Default_Handler, . - Default_Handler
-
-.section .text.SysTick_Handler,"ax",%progbits
-.balign 2
-.weak SysTick_Handler
-.global SysTick_Handler
-.type SysTick_Handler,%function
-.thumb_func
-SysTick_Handler:
-    bx lr
-.size SysTick_Handler, . - SysTick_Handler
