@@ -131,7 +131,15 @@ DISASSEMBLY = """
  784: bne.n 780 <SysTickDelay<Counter>::delay_1us>
  786: bx lr
 00000900 <SysTick_Handler>:
- 900: bx lr
+ 900: push {r7, lr}
+ 902: bl 910 <firmware_integration::systick_interrupt>
+ 906: pop {r7, pc}
+00000910 <firmware_integration::systick_interrupt>:
+ 910: push {r7, lr}
+ 912: bl 920 <uv_k5_rust_firmware::scheduler::interrupt::on_systick>
+ 916: pop {r7, pc}
+00000920 <uv_k5_rust_firmware::scheduler::interrupt::on_systick>:
+ 920: bx lr
 """
 
 _VECTOR_WORDS = [0x20003FF0, 0x000000C1] + [0x00000109] * 13 + [0x00000901]
@@ -182,6 +190,32 @@ class FirmwareEntryTests(unittest.TestCase):
             with self.subTest(broken=broken):
                 with self.assertRaisesRegex(EntryError, "device clock gate write"):
                     self.inspect(broken)
+
+    def test_systick_vector_reaches_the_concrete_scheduler_tick(self):
+        self.inspect(DISASSEMBLY)
+        broken = DISASSEMBLY.replace(
+            "912: bl 920 <uv_k5_rust_firmware::scheduler::interrupt::on_systick>",
+            "912: bl 920 <unrelated_handler>",
+            1,
+        )
+        with self.assertRaisesRegex(EntryError, "entry path does not transfer to scheduler::interrupt::on_systick"):
+            self.inspect(broken)
+
+    def test_systick_validator_accepts_tail_calls_that_preserve_exception_return(self):
+        tail_calls = DISASSEMBLY.replace(
+            " 900: push {r7, lr}\n"
+            " 902: bl 910 <firmware_integration::systick_interrupt>\n"
+            " 906: pop {r7, pc}",
+            " 900: b.n 910 <firmware_integration::systick_interrupt>",
+            1,
+        ).replace(
+            " 910: push {r7, lr}\n"
+            " 912: bl 920 <uv_k5_rust_firmware::scheduler::interrupt::on_systick>\n"
+            " 916: pop {r7, pc}",
+            " 910: b.n 920 <uv_k5_rust_firmware::scheduler::interrupt::on_systick>",
+            1,
+        )
+        self.inspect(tail_calls)
 
     def test_display_initialization_requires_canonical_prerequisite_order(self):
         broken = DISASSEMBLY.replace(

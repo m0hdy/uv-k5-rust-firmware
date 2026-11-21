@@ -29,6 +29,14 @@ pub extern "C" fn firmware_main() -> ! {
 }
 
 #[cfg(target_arch = "arm")]
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn SysTick_Handler() {
+    #[cfg(feature = "firmware-integration")]
+    firmware_integration::systick_interrupt();
+}
+
+#[cfg(target_arch = "arm")]
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
     loop {

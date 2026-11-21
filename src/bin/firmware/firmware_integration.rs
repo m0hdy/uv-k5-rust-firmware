@@ -10,6 +10,7 @@ use uv_k5_rust_firmware::boot_coordinator::{
 };
 use uv_k5_rust_firmware::eeprom_i2c_bridge::I2cBitbangTransport;
 use uv_k5_rust_firmware::i2c_bitbang_flow::target_gpio::{self, GpioI2cIo, TargetRegisters};
+use uv_k5_rust_firmware::scheduler::interrupt;
 use uv_k5_rust_firmware::settings_boot_composition::Features as SettingsFeatures;
 use uv_k5_rust_firmware::st7565_startup_executor::target_spi0::{
     DelayMs, RegisterIo as DisplayRegisterIo,
@@ -19,6 +20,12 @@ use uv_k5_rust_firmware::systick_delay_adapter::{SysTickDelay, VolatileSysTickCo
 
 type Delay = SysTickDelay<VolatileSysTickCounter>;
 type I2cBus = GpioI2cIo<TargetRegisters, Delay>;
+
+#[inline(never)]
+pub fn systick_interrupt() {
+    // SAFETY: The only caller is the installed SysTick exception handler.
+    unsafe { interrupt::on_systick() };
+}
 
 struct TargetBootIo {
     board: boot_coordinator::TargetBoardHardwareIo,

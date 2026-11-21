@@ -139,6 +139,14 @@ def require_call(body: str, target: str, minimum: int = 1) -> None:
         raise EntryError(f"entry path does not call {target}")
 
 
+def require_transfer(body: str, target: str) -> None:
+    if not any(
+        mnemonic.startswith("b") and target in operands
+        for _, mnemonic, operands in instructions(body)
+    ):
+        raise EntryError(f"entry path does not transfer to {target}")
+
+
 def reachable_functions(functions: dict[str, str], start: str) -> set[str]:
     if start not in functions:
         raise EntryError(f"disassembly is missing {start}")
@@ -1372,8 +1380,30 @@ def inspect_disassembly(disassembly: str, symbols: str, vector_dump: str) -> Non
     require_call(main, "firmware_integration_entry")
     require_call(entry, "coordinate_with_welcome::<")
     require_call(entry, "firmware_fail_closed")
-    if not re.search(r"\bbx\s+lr\b", systick):
-        raise EntryError("selected vector table's SysTick_Handler is not a valid return handler")
+    require_transfer(systick, "firmware_integration::systick_interrupt")
+    interrupt_body = next(
+        (
+            body
+            for name, body in functions.items()
+            if "firmware_integration::systick_interrupt" in name
+        ),
+        None,
+    )
+    if interrupt_body is None:
+        raise EntryError("disassembly is missing the concrete SysTick integration")
+    require_transfer(interrupt_body, "scheduler::interrupt::on_systick")
+    tick_body = next(
+        (
+            body
+            for name, body in functions.items()
+            if "scheduler::interrupt::on_systick" in name
+        ),
+        None,
+    )
+    if tick_body is None or not re.search(
+        r"\bbx\s+lr\b|\bpop\s+\{[^}]*\bpc\b", tick_body
+    ):
+        raise EntryError("SysTick scheduler transfer has no exception return")
     require_fail_closed_terminal(fail_closed)
 
     words = vector_words(vector_dump)

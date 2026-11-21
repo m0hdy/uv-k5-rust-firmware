@@ -77,6 +77,7 @@ Default_Handler:
 
 .section .text.SysTick_Handler,"ax",%progbits
 .balign 2
+.weak SysTick_Handler
 .global SysTick_Handler
 .type SysTick_Handler,%function
 .thumb_func
