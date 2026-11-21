@@ -7,6 +7,8 @@ pub mod adc_samples;
 mod app_500ms_service_timers;
 #[allow(dead_code)]
 mod app_500ms_timeouts;
+#[allow(dead_code)]
+mod app_vfo_resume_timer;
 pub mod bk1080_startup_adapter;
 #[allow(unused_attributes)]
 pub mod boot_coordinator;
