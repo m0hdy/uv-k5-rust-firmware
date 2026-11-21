@@ -238,18 +238,17 @@ pub extern "C" fn firmware_integration_entry() -> ! {
     let mut fm_delay =
         unsafe { SysTickDelay::new(VolatileSysTickCounter::new(), ticks_per_microsecond) };
     let mut pages = [[0; LCD_WIDTH]; 8];
-    if boot_coordinator::coordinate_with_welcome(
+    let _startup = match boot_coordinator::coordinate_with_welcome(
         &mut io,
         &mut display_delay,
         &mut fm_delay,
         config,
         Some(env!("CARGO_PKG_VERSION")),
         &mut pages,
-    )
-    .is_err()
-    {
-        firmware_fail_closed();
-    }
+    ) {
+        Ok(startup) => startup,
+        Err(_) => firmware_fail_closed(),
+    };
     interrupt::set_tick_context(TickContext {
         features: SchedulerFeatures {
             enable_noaa: config.settings.noaa_enabled,
