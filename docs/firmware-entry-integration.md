@@ -7,13 +7,17 @@ welcome mode through a distinct welcome-extended composition over GPIO I²C,
 hands the bus pins back after STOP, samples four real ADC
 conversions with the bounded battery executor, then continues on the display
 already initialized by board startup. It uses `CARGO_PKG_VERSION`. The
-`None` and `FullScreen` welcome modes produce no version-row transfer.
+`None` and `FullScreen` welcome modes produce no version-row transfer. On
+success, the entry transfers PA10/PA11 to the keypad adapter and starts the
+Rust application scheduler. SysTick drives its 10 ms keypad poll and 500 ms
+application state transitions.
 
 On the first typed stage error, no later startup or display stage runs. EEPROM
 failure performs the transport executor's cleanup STOP and returns the GPIO
 pins to keypad mode. The entry then masks interrupt delivery and parks with
-`WFI`. Success also parks with interrupts masked: there is no application loop,
-radio operation, keypad scan, or operational firmware behavior after welcome.
+`WFI`. Successful startup installs its tick context and then unmasks SysTick
+delivery in the application loop. The current loop polls keys and advances
+ported state transitions; full foreground radio/display work is not wired.
 The default bootstrap remains the default Cargo configuration and does not
 perform peripheral effects.
 
@@ -66,8 +70,9 @@ enables SysTick for the existing counter-poll delay provider. Its frequency is
 not inferred or measured by this path. Before ADC setup, the adapter disables
 the SARADC NVIC line and clears only SARADC interrupt-enable source fields,
 preserving unrelated register bits. It does not install an ADC handler, clear
-NVIC pending state, or depend on an ADC ISR. The selected path never
-re-enables interrupt delivery; the terminal entry remains masked and parks.
+NVIC pending state, or depend on an ADC ISR. Interrupts stay masked through
+startup; the application loop enables delivery only after the SysTick handler
+and scheduler state are ready. Startup errors remain masked and parked.
 
 ## Offline evidence and limits
 

@@ -46,7 +46,7 @@ flowchart LR
   WelcomeMode -->|STOP and I²C pin handoff| Battery["Bounded battery sampling"]
   Battery -->|coordinate_with_welcome| Welcome["Initialized-display continuation"]
   Battery -->|coordinate only| Ready["ApplicationStartup"]
-  Welcome --> Park["Entry masks interrupts and parks"]
+  Welcome --> App["Rust application scheduler shell"]
   Board -->|SysTick failure| BoardError["Board error; stop"]
   Display -->|Initialization failure| BoardError
   Settings -->|read failure| SettingsError["Settings error; stop"]
@@ -59,7 +59,7 @@ the initial `BOARD_ADC_GetBatteryInfo` before EEPROM settings; UART setup and
 version output; authentic-device checks; DTMF initialization; the C BK4819
 initialization; EEPROM build-option and calibration operations; radio/VFO
 configuration; `BATTERY_GetReadings(false)` and its display/charging policy;
-AM-fix setup; boot-mode and key-release handling; and application loop setup.
+AM-fix setup; boot-mode and key-release handling; and full application setup.
 No battery calibration value, battery poll budget, display delay,
 microsecond delay, or ST7565 FIFO poll budget is supplied by default. The board
 sequencer does not call initialize-and-show welcome. `coordinate_with_welcome`
@@ -73,9 +73,9 @@ The opt-in `firmware-integration` feature selects
 externally verified policy inputs documented in
 [the firmware-entry contract](firmware-entry-integration.md); no values are
 inferred from uninitialized C fields or the CI structural fixture. The default
-entry remains a non-installable bootstrap. Successful welcome and the
-fail-closed terminal after an error both mask interrupts and park; neither is
-an application loop or device-completion claim.
+entry remains a non-installable bootstrap. Successful welcome now transfers to
+the Rust application scheduler shell, while startup errors remain fail-closed
+with interrupts masked. This shell is not a device-completion claim.
 
 Production use requires concrete implementations of all three I/O boundaries.
 The board boundary must execute every required hardware stage with clocks,

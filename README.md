@@ -10,8 +10,9 @@ bootloader handoff, clock state, or physical hardware revision.
 
 The default `firmware_main` is still a non-installable bootstrap and performs
 no peripheral startup. The opt-in `firmware-integration` feature selects the
-real startup composition from that same entry, then parks after welcome because
-the application loop and radio/keypad behavior are not implemented. The
+real startup composition and a Rust application loop. The loop enables SysTick,
+polls the keypad at 10 ms, and advances 500 ms input/service state. Full
+foreground radio/display behavior and device validation are outstanding. The
 [entry contract](docs/firmware-entry-integration.md) specifies its required
 external policy inputs and the limits of offline evidence.
 
@@ -27,9 +28,11 @@ flowchart LR
   Settings -->|read failure| Park
   Battery -->|success| Welcome["Initialized-display continuation\nM0HDY + project version in text modes"]
   Battery -->|failure| Park
-  Welcome -->|success or first error| Park
+  Welcome -->|success| AppLoop["Rust application scheduler\nkeypad + 500 ms state transitions"]
+  Welcome -->|first error| Park
   Policy["Externally verified values:\nEXTTRIG_SEL, timing, calibration,\nfeatures and poll budgets"] -.-> Select
-  Park -.-> Future["Application loop and device validation\nremain outstanding"]
+  AppLoop -.-> Future["Foreground radio/display behavior\nand device validation remain outstanding"]
+  Park -.-> Future
 ```
 
 The selected integration reuses the
@@ -40,7 +43,8 @@ through the existing bounded executor, hands PA10/PA11 back after
 EEPROM STOP, and uses the already-initialized display for the version row.
 `None` and `FullScreen` modes issue no welcome-row transfer. ADC interrupt
 delivery is disabled before SARADC setup and remains masked; the startup does
-not rely on an ADC ISR. Successful welcome is not application completion.
+not rely on an ADC ISR. Successful welcome transfers into the Rust scheduler
+shell; it is not full application completion.
 
 The [component guide](docs/components.md) describes these boundaries and links
 to subsystem behavior and focused checks. The [welcome boundary](docs/startup-version-display.md)

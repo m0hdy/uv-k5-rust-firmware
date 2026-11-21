@@ -34,8 +34,9 @@ Each call receives feature presence, function, scan direction, CSS-background
 scan state, dual-watch state, NOAA mode, and FM scan state explicitly. The
 function and scan enums describe the pinned C names and predicates; they do not
 assign or assume C enum representations. No production defaults are inferred.
-The executor is not exported from the library and is not wired into the
-periodic tick, application dispatch, an interrupt, or hardware state.
+The executor is exported from the library and is called by the target SysTick
+handler through the interrupt-safe scheduler bridge. Its countdown mutations
+operate on RAM state only and do not perform peripheral work.
 
 ## Focused validation
 
