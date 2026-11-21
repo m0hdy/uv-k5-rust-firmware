@@ -56,7 +56,7 @@ fn key_input_and_500ms_timeout_follow_the_live_dispatch_order() {
     scheduler.run_iteration(&mut runtime);
 
     assert_eq!(scheduler.counter(), 50);
-    assert!(state.screen_is_menu());
+    assert!(runtime.state.screen_is_menu());
     assert_eq!(runtime.timer_effects.len(), 1);
     assert!(!runtime.timer_effects[0].exit_menu);
 
@@ -66,7 +66,7 @@ fn key_input_and_500ms_timeout_follow_the_live_dispatch_order() {
     scheduler.run_iteration(&mut runtime);
 
     assert_eq!(scheduler.counter(), 100);
-    assert!(!state.screen_is_menu());
+    assert!(!runtime.state.screen_is_menu());
     assert!(runtime.timer_effects[1].exit_menu);
-    assert!(state.update_display());
+    assert!(runtime.state.update_display());
 }
