@@ -10,6 +10,16 @@ pub const ACTION_MONITOR: u8 = 3;
 pub const ACTION_SCAN: u8 = 4;
 pub const CUSTOM_AES_KEY_OFFSET: u16 = 0x0f30;
 pub const CUSTOM_AES_KEY_LEN: usize = 16;
+pub const CHANNEL_ATTRIBUTES_OFFSET: u16 = 0x0d60;
+pub const CHANNEL_ATTRIBUTES_LEN: usize = 207;
+pub const DTMF_ANI_OFFSET: u16 = 0x0ee0;
+pub const DTMF_KILL_OFFSET: u16 = 0x0ee8;
+pub const DTMF_REVIVE_OFFSET: u16 = 0x0ef0;
+pub const DTMF_UP_OFFSET: u16 = 0x0ef8;
+pub const DTMF_DOWN_OFFSET: u16 = 0x0f08;
+pub const FM_CONFIG_OFFSET: u16 = 0x0e88;
+pub const FM_CHANNELS_OFFSET: u16 = 0x0e40;
+pub const FM_CHANNEL_COUNT: usize = 20;
 pub const EEPROM_OFFSETS: [u16; 8] = [
     0x0e90, 0x0e98, 0x0ea0, 0x0ea8, 0x0ed0, 0x0ed8, 0x0f18, 0x0f40,
 ];
@@ -30,6 +40,182 @@ pub const fn decode_custom_aes_key(bytes: [u8; CUSTOM_AES_KEY_LEN]) -> CustomAes
         index += 1;
     }
     CustomAesKey { bytes, present }
+}
+
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PersistedChannelAttributes(u8);
+
+impl PersistedChannelAttributes {
+    pub const fn band(self) -> u8 {
+        self.0 & 0x0f
+    }
+
+    pub const fn compander(self) -> u8 {
+        (self.0 >> 4) & 0x03
+    }
+
+    pub const fn scan_list_2(self) -> bool {
+        self.0 & 0x40 != 0
+    }
+
+    pub const fn scan_list_1(self) -> bool {
+        self.0 & 0x80 != 0
+    }
+}
+
+pub const fn decode_channel_attributes(
+    bytes: [u8; CHANNEL_ATTRIBUTES_LEN],
+) -> [PersistedChannelAttributes; CHANNEL_ATTRIBUTES_LEN] {
+    let mut decoded = [PersistedChannelAttributes(0); CHANNEL_ATTRIBUTES_LEN];
+    let mut index = 0;
+    while index < CHANNEL_ATTRIBUTES_LEN {
+        let value = bytes[index];
+        decoded[index] = if value == 0xff {
+            PersistedChannelAttributes(0x0f)
+        } else {
+            PersistedChannelAttributes(value)
+        };
+        index += 1;
+    }
+    decoded
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DtmfCode<const LEN: usize> {
+    /// Bytes after an EEPROM terminator are retained, as in the C buffer.
+    pub bytes: [u8; LEN],
+    pub used_fallback: bool,
+}
+
+pub const fn decode_dtmf_code<const LEN: usize>(
+    mut data: [u8; LEN],
+    fallback: [u8; LEN],
+) -> DtmfCode<LEN> {
+    if LEN == 0 || data[0] == 0xff || data[0] == 0 {
+        return DtmfCode {
+            bytes: fallback,
+            used_fallback: true,
+        };
+    }
+    let mut index = 0;
+    while index < LEN {
+        let value = data[index];
+        if value == 0xff || value == 0 {
+            data[index] = 0;
+            return DtmfCode {
+                bytes: data,
+                used_fallback: false,
+            };
+        }
+        if !valid_dtmf(value) {
+            return DtmfCode {
+                bytes: fallback,
+                used_fallback: true,
+            };
+        }
+        index += 1;
+    }
+    DtmfCode {
+        bytes: data,
+        used_fallback: false,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DtmfCodeSettings {
+    pub ani: Option<DtmfCode<8>>,
+    pub kill: Option<DtmfCode<8>>,
+    pub revive: Option<DtmfCode<8>>,
+    pub up: DtmfCode<16>,
+    pub down: DtmfCode<16>,
+}
+
+pub const fn decode_dtmf_codes(
+    calling: Option<[[u8; 8]; 3]>,
+    up: [u8; 16],
+    down: [u8; 16],
+) -> DtmfCodeSettings {
+    let (ani, kill, revive) = match calling {
+        Some(codes) => (
+            Some(decode_dtmf_code(codes[0], *b"123\0\0\0\0\0")),
+            Some(decode_dtmf_code(codes[1], *b"ABCD9\0\0\0")),
+            Some(decode_dtmf_code(codes[2], *b"9DCBA\0\0\0")),
+        ),
+        None => (None, None, None),
+    };
+    DtmfCodeSettings {
+        ani,
+        kill,
+        revive,
+        up: decode_dtmf_code(up, *b"12345\0\0\0\0\0\0\0\0\0\0\0"),
+        down: decode_dtmf_code(down, *b"54321\0\0\0\0\0\0\0\0\0\0\0"),
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FmBootSettings {
+    pub band: u8,
+    pub selected_frequency: u16,
+    pub selected_channel: u8,
+    pub memory_mode: bool,
+    pub playing_frequency: u16,
+    pub channels: [u16; FM_CHANNEL_COUNT],
+}
+
+pub const fn decode_fm_boot(config: [u8; 4], channel_bytes: [u8; 40]) -> FmBootSettings {
+    let selected_raw = u16::from_le_bytes([config[0], config[1]]);
+    let selected_channel = config[2];
+    let memory_mode = config[3] & 1 != 0;
+    let band = (config[3] >> 1) & 0x03;
+    let limits = crate::bk1080_receive_adapter::band_limits(band);
+    let selected_frequency = if selected_raw >= limits.low && selected_raw <= limits.high {
+        selected_raw
+    } else {
+        limits.low
+    };
+
+    let mut channels = [0; FM_CHANNEL_COUNT];
+    let mut index = 0;
+    while index < FM_CHANNEL_COUNT {
+        channels[index] =
+            u16::from_le_bytes([channel_bytes[index * 2], channel_bytes[index * 2 + 1]]);
+        index += 1;
+    }
+
+    let mut result = FmBootSettings {
+        band,
+        selected_frequency,
+        selected_channel,
+        memory_mode,
+        playing_frequency: selected_frequency,
+        channels,
+    };
+    if memory_mode {
+        let mut candidate = selected_channel;
+        let mut attempt = 0;
+        let mut found = false;
+        while attempt < FM_CHANNEL_COUNT {
+            if candidate == 0xff {
+                candidate = (FM_CHANNEL_COUNT - 1) as u8;
+            } else if candidate >= FM_CHANNEL_COUNT as u8 {
+                candidate = 0;
+            }
+            let frequency = channels[candidate as usize];
+            if frequency >= limits.low && frequency < limits.high {
+                result.selected_channel = candidate;
+                result.playing_frequency = frequency;
+                found = true;
+                break;
+            }
+            candidate = candidate.wrapping_add(1);
+            attempt += 1;
+        }
+        if !found {
+            result.memory_mode = false;
+        }
+    }
+    result
 }
 
 pub const fn decode_power_on_password(data: [u8; 8]) -> [u8; 4] {
@@ -303,6 +489,7 @@ pub const fn decode_global(
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ExtendedBootFeatures {
+    pub fm_enabled: bool,
     pub voice_enabled: bool,
     pub rssi_bar_enabled: bool,
     pub alarm_enabled: bool,

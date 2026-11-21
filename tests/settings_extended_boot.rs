@@ -1,8 +1,8 @@
 use uv_k5_rust_firmware::settings_extended_boot::{
-    EEPROM_OFFSETS, ExtendedBootFeatures, GlobalFeatures, decode_alarm, decode_custom_aes_key,
-    decode_dtmf, decode_extended_boot, decode_global, decode_key_and_scan,
-    decode_power_on_password, decode_roger_and_transmitter, decode_scan_lists,
-    decode_voice_and_rssi,
+    EEPROM_OFFSETS, ExtendedBootFeatures, GlobalFeatures, decode_alarm, decode_channel_attributes,
+    decode_custom_aes_key, decode_dtmf, decode_dtmf_code, decode_dtmf_codes, decode_extended_boot,
+    decode_fm_boot, decode_global, decode_key_and_scan, decode_power_on_password,
+    decode_roger_and_transmitter, decode_scan_lists, decode_voice_and_rssi,
 };
 
 #[test]
@@ -131,6 +131,7 @@ fn standard_blocks_compose_in_declared_eeprom_order() {
     let decoded = decode_extended_boot(
         blocks,
         ExtendedBootFeatures {
+            fm_enabled: false,
             voice_enabled: true,
             rssi_bar_enabled: true,
             alarm_enabled: true,
@@ -157,4 +158,57 @@ fn custom_aes_key_presence_matches_the_erased_word_check() {
     let mut key = [0xff; 16];
     key[7] = 0;
     assert!(decode_custom_aes_key(key).present);
+}
+
+#[test]
+fn channel_attributes_preserve_bitfields_and_normalize_erased_entries() {
+    let mut bytes = [0; 207];
+    bytes[0] = 0xff;
+    bytes[1] = 0xe3;
+    let decoded = decode_channel_attributes(bytes);
+    assert_eq!(decoded[0].band(), 0x0f);
+    assert_eq!(decoded[0].compander(), 0);
+    assert!(!decoded[0].scan_list_1());
+    assert!(!decoded[0].scan_list_2());
+    assert_eq!(decoded[1].band(), 3);
+    assert_eq!(decoded[1].compander(), 2);
+    assert!(decoded[1].scan_list_1());
+    assert!(decoded[1].scan_list_2());
+    assert_eq!(core::mem::size_of_val(&decoded), 207);
+}
+
+#[test]
+fn dtmf_code_validation_matches_fixed_length_c_termination_and_fallbacks() {
+    let accepted = decode_dtmf_code([b'1', b'2', b'A', 0xff, b'Z', 0, 0, 0], *b"123\0\0\0\0\0");
+    assert_eq!(accepted.bytes, [b'1', b'2', b'A', 0, b'Z', 0, 0, 0]);
+    assert!(!accepted.used_fallback);
+
+    let invalid = decode_dtmf_code(*b"ABZ\0\0\0\0\0", *b"123\0\0\0\0\0");
+    assert_eq!(invalid.bytes, *b"123\0\0\0\0\0");
+    assert!(invalid.used_fallback);
+    let empty = decode_dtmf_code([0xff; 8], *b"123\0\0\0\0\0");
+    assert_eq!(empty.bytes, *b"123\0\0\0\0\0");
+
+    let settings = decode_dtmf_codes(None, [0xff; 16], [0xff; 16]);
+    assert_eq!(settings.ani, None);
+    assert_eq!(settings.up.bytes, *b"12345\0\0\0\0\0\0\0\0\0\0\0");
+    assert_eq!(settings.down.bytes, *b"54321\0\0\0\0\0\0\0\0\0\0\0");
+}
+
+#[test]
+fn fm_boot_checks_selected_frequency_and_applies_memory_channel_fallback() {
+    let mut channel_bytes = [0xff; 40];
+    channel_bytes[0] = 900_u16 as u8;
+    channel_bytes[1] = (900_u16 >> 8) as u8;
+    let decoded = decode_fm_boot([100, 0, 0, 1], channel_bytes);
+    assert_eq!(decoded.band, 0);
+    assert_eq!(decoded.selected_frequency, 875);
+    assert_eq!(decoded.playing_frequency, 900);
+    assert_eq!(decoded.selected_channel, 0);
+    assert!(decoded.memory_mode);
+
+    let no_channels = decode_fm_boot([0x38, 0x04, 0, 1], [0xff; 40]);
+    assert_eq!(no_channels.selected_frequency, 1080);
+    assert_eq!(no_channels.playing_frequency, 1080);
+    assert!(!no_channels.memory_mode);
 }
