@@ -31,9 +31,13 @@ pub extern "C" fn firmware_main() -> ! {
 #[cfg(target_arch = "arm")]
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn SysTick_Handler() {
+pub unsafe extern "C" fn SysTick_Handler() {
     #[cfg(feature = "firmware-integration")]
-    firmware_integration::systick_interrupt();
+    // SAFETY: The vector table calls this function only for the SysTick
+    // exception, satisfying the scheduler's single-writer contract.
+    unsafe {
+        firmware_integration::systick_interrupt()
+    };
 }
 
 #[cfg(target_arch = "arm")]

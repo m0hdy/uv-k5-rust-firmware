@@ -22,7 +22,7 @@ type Delay = SysTickDelay<VolatileSysTickCounter>;
 type I2cBus = GpioI2cIo<TargetRegisters, Delay>;
 
 #[inline(never)]
-pub fn systick_interrupt() {
+pub unsafe fn systick_interrupt() {
     // SAFETY: The only caller is the installed SysTick exception handler.
     unsafe { interrupt::on_systick() };
 }
