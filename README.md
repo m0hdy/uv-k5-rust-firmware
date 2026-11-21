@@ -6,6 +6,14 @@ reset/vector path and linker layout, but remains an unqualified bootstrap, not
 a flashable firmware image. It makes no assumptions about the radio's boot ROM,
 bootloader handoff, clock state, or physical hardware revision.
 
+## Licensing
+
+Original project work is licensed under the ISC License; see [`LICENSE`](LICENSE).
+Apache-2.0 exceptions, third-party notices, and the full provenance inventory
+are recorded in [`NOTICE`](NOTICE),
+[`LICENSE-APACHE-2.0`](LICENSE-APACHE-2.0), and
+[`docs/licensing.md`](docs/licensing.md).
+
 ## Selected firmware entry
 
 The default `firmware_main` is still a non-installable bootstrap and performs
