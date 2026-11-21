@@ -9,7 +9,8 @@ use crate::settings_boot_composition::{
     Features, SettingsBoot, SettingsBootReadError, compose_with_transport,
 };
 use crate::settings_extended_boot::{
-    EEPROM_OFFSETS, ExtendedBootFeatures, ExtendedBootSettings, decode_extended_boot,
+    CUSTOM_AES_KEY_LEN, CUSTOM_AES_KEY_OFFSET, CustomAesKey, EEPROM_OFFSETS, ExtendedBootFeatures,
+    ExtendedBootSettings, decode_custom_aes_key, decode_extended_boot,
 };
 
 pub use channel_selection_boot_defaults::ChannelSelectionBootDefaults;
@@ -30,6 +31,7 @@ pub enum SettingsChannelAcquisitionError<E> {
 pub struct FullPortableSettingsAcquisition {
     pub base: SettingsChannelAcquisition,
     pub extended: ExtendedBootSettings,
+    pub custom_aes_key: CustomAesKey,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -83,8 +85,19 @@ pub fn acquire_full_portable_with_transport<T: I2cTransport>(
         execute_read(transport, plan_read(offset, 8), &mut blocks[index])
             .map_err(|error| FullPortableSettingsAcquisitionError::Extended { offset, error })?;
     }
+    let mut aes_key_data = [0; CUSTOM_AES_KEY_LEN];
+    execute_read(
+        transport,
+        plan_read(CUSTOM_AES_KEY_OFFSET, CUSTOM_AES_KEY_LEN as u8),
+        &mut aes_key_data,
+    )
+    .map_err(|error| FullPortableSettingsAcquisitionError::Extended {
+        offset: CUSTOM_AES_KEY_OFFSET,
+        error,
+    })?;
     Ok(FullPortableSettingsAcquisition {
         base,
         extended: decode_extended_boot(blocks, extended_features),
+        custom_aes_key: decode_custom_aes_key(aes_key_data),
     })
 }

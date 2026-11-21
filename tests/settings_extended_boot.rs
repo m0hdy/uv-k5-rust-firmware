@@ -1,7 +1,8 @@
 use uv_k5_rust_firmware::settings_extended_boot::{
-    EEPROM_OFFSETS, ExtendedBootFeatures, GlobalFeatures, decode_alarm, decode_dtmf,
-    decode_extended_boot, decode_global, decode_key_and_scan, decode_power_on_password,
-    decode_roger_and_transmitter, decode_scan_lists, decode_voice_and_rssi,
+    EEPROM_OFFSETS, ExtendedBootFeatures, GlobalFeatures, decode_alarm, decode_custom_aes_key,
+    decode_dtmf, decode_extended_boot, decode_global, decode_key_and_scan,
+    decode_power_on_password, decode_roger_and_transmitter, decode_scan_lists,
+    decode_voice_and_rssi,
 };
 
 #[test]
@@ -148,4 +149,12 @@ fn standard_blocks_compose_in_declared_eeprom_order() {
     assert_eq!(decoded.scan_lists.priority_ch2, [11, 13]);
     assert_eq!(decoded.global.tx_lock_mode, 0);
     assert_eq!(decoded.global.battery_text, 2);
+}
+
+#[test]
+fn custom_aes_key_presence_matches_the_erased_word_check() {
+    assert!(!decode_custom_aes_key([0xff; 16]).present);
+    let mut key = [0xff; 16];
+    key[7] = 0;
+    assert!(decode_custom_aes_key(key).present);
 }

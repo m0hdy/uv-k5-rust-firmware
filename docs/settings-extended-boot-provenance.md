@@ -14,14 +14,16 @@ EEPROM access and performs no hardware action.
 | `0x0ED0`, `0x0ED8` | `decode_dtmf` | DTMF calling fields are represented as `Option` when the feature is absent. Timing uses explicit `u16` tenths-of-10-ms multiplication and the per-field C fallbacks. |
 | `0x0F18` | `decode_scan_lists` | Enable bytes use the C `< 2` test; priority channel bytes are retained without validation. |
 | `0x0F40` | `decode_global` | Bitfields and invalid enum fallbacks match the pinned code. Build-specific killed, mic-bar, and AM-fix values remain `Option`. |
+| `0x0F30` | `decode_custom_aes_key` | Reads 16 bytes after the standard blocks and marks a custom key present when any byte differs from erased `0xFF`, equivalent to the C word scan. |
 
 This decoder does not claim to implement `SETTINGS_InitEEPROM` as a whole.
 The optional `0x0E88` FM configuration and `0x0E40` FM channel data, DTMF
-calling strings at `0x0EE0..0x0F17`, `0x0F30` custom AES key, channel
-attributes, target-entry wiring, and calibration loading remain separate
-work. `settings_channel_acquisition::acquire_full_portable_with_transport`
-reads the existing `0x0E70`, `0x0E78`, and `0x0E80` sequence followed by the
-eight offsets above, stopping at the first I/O error. The optional FM read is
-not issued by this API. These fields are not silently treated as validated or
-as checksummed. The pinned settings code does not define an EEPROM settings
-checksum; the firmware-container CRC is unrelated.
+calling strings at `0x0EE0..0x0F17`, channel attributes, target-entry wiring,
+and calibration loading remain separate work.
+`settings_channel_acquisition::acquire_full_portable_with_transport` reads the
+existing `0x0E70`, `0x0E78`, and `0x0E80` sequence followed by the eight
+offsets above and then the 16-byte custom AES key block, stopping at the first
+I/O error. The optional FM read is not issued by this API. These fields are not
+silently treated as validated or as checksummed. The pinned settings code does
+not define an EEPROM settings checksum; the firmware-container CRC is
+unrelated.

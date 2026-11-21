@@ -8,9 +8,29 @@ pub const ACTION_COUNT: u8 = 15;
 pub const ACTION_NONE: u8 = 0;
 pub const ACTION_MONITOR: u8 = 3;
 pub const ACTION_SCAN: u8 = 4;
+pub const CUSTOM_AES_KEY_OFFSET: u16 = 0x0f30;
+pub const CUSTOM_AES_KEY_LEN: usize = 16;
 pub const EEPROM_OFFSETS: [u16; 8] = [
     0x0e90, 0x0e98, 0x0ea0, 0x0ea8, 0x0ed0, 0x0ed8, 0x0f18, 0x0f40,
 ];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CustomAesKey {
+    pub bytes: [u8; CUSTOM_AES_KEY_LEN],
+    pub present: bool,
+}
+
+pub const fn decode_custom_aes_key(bytes: [u8; CUSTOM_AES_KEY_LEN]) -> CustomAesKey {
+    let mut present = false;
+    let mut index = 0;
+    while index < CUSTOM_AES_KEY_LEN {
+        if bytes[index] != 0xff {
+            present = true;
+        }
+        index += 1;
+    }
+    CustomAesKey { bytes, present }
+}
 
 pub const fn decode_power_on_password(data: [u8; 8]) -> [u8; 4] {
     [data[0], data[1], data[2], data[3]]

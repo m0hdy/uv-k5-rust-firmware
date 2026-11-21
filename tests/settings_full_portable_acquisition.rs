@@ -4,7 +4,9 @@ use uv_k5_rust_firmware::settings_boot_composition::Features;
 use uv_k5_rust_firmware::settings_channel_acquisition::{
     ChannelSelectionBootDefaults, acquire_full_portable_with_transport,
 };
-use uv_k5_rust_firmware::settings_extended_boot::{EEPROM_OFFSETS, ExtendedBootFeatures};
+use uv_k5_rust_firmware::settings_extended_boot::{
+    CUSTOM_AES_KEY_OFFSET, EEPROM_OFFSETS, ExtendedBootFeatures,
+};
 
 struct MockTransport {
     responses: Vec<[u8; 8]>,
@@ -33,7 +35,12 @@ impl I2cTransport for MockTransport {
         let offset = (u16::from(self.writes[self.writes.len() - 3]) << 8)
             | u16::from(self.writes[self.writes.len() - 2]);
         self.read_offsets.push(offset);
-        output.copy_from_slice(&self.responses[index]);
+        if output.len() == 16 {
+            output[..8].copy_from_slice(&self.responses[index]);
+            output[8..].copy_from_slice(&self.responses[index + 1]);
+        } else {
+            output.copy_from_slice(&self.responses[index]);
+        }
         Ok(())
     }
 
@@ -44,7 +51,7 @@ impl I2cTransport for MockTransport {
 
 #[test]
 fn full_portable_acquisition_reads_and_decodes_the_standard_settings_sequence() {
-    let mut responses = vec![[0; 8]; 11];
+    let mut responses = vec![[0; 8]; 13];
     responses[2] = [5, 205, 200, 6, 4, 203, 207, 216];
     responses[3] = [1, 2, 3, 4, 5, 2, 1, 3];
     responses[4] = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -54,6 +61,8 @@ fn full_portable_acquisition_reads_and_decodes_the_standard_settings_sequence() 
     responses[8] = [60, 70, 0, 0, 0, 0, 0, 0];
     responses[9] = [2, 1, 10, 11, 0, 12, 13, 0];
     responses[10] = [0, 1, 0, 1, 0, 1, 0, 0];
+    responses[11] = [0; 8];
+    responses[12] = [0xff; 8];
     let mut bus = MockTransport {
         responses,
         read_offsets: Vec::new(),
@@ -82,6 +91,7 @@ fn full_portable_acquisition_reads_and_decodes_the_standard_settings_sequence() 
 
     let mut expected_offsets = vec![0x0e70, 0x0e78, 0x0e80];
     expected_offsets.extend(EEPROM_OFFSETS);
+    expected_offsets.push(CUSTOM_AES_KEY_OFFSET);
     assert_eq!(bus.read_offsets, expected_offsets);
     assert_eq!(
         acquired.base.channel_selection,
@@ -95,4 +105,7 @@ fn full_portable_acquisition_reads_and_decodes_the_standard_settings_sequence() 
     assert_eq!(acquired.extended.power_on_password, [1, 2, 3, 4]);
     assert_eq!(acquired.extended.dtmf.preload_ms, 300);
     assert_eq!(acquired.extended.scan_lists.enabled, [true, false]);
+    assert!(acquired.custom_aes_key.present);
+    assert_eq!(acquired.custom_aes_key.bytes[0], 0);
+    assert_eq!(acquired.custom_aes_key.bytes[15], 0xff);
 }
