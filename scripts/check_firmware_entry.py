@@ -140,11 +140,26 @@ def require_call(body: str, target: str, minimum: int = 1) -> None:
 
 
 def require_transfer(body: str, target: str) -> None:
+    rows = instructions(body)
+    reachable = reachable_instruction_addresses(rows)
     if not any(
-        mnemonic.startswith("b") and target in operands
-        for _, mnemonic, operands in instructions(body)
+        address in reachable and mnemonic.startswith("b") and target in operands
+        for address, mnemonic, operands in rows
     ):
         raise EntryError(f"entry path does not transfer to {target}")
+
+
+def has_reachable_exception_return(body: str) -> bool:
+    rows = instructions(body)
+    reachable = reachable_instruction_addresses(rows)
+    return any(
+        address in reachable
+        and (
+            re.fullmatch(r"bx\s+lr", f"{mnemonic} {operands}".strip())
+            or (mnemonic.startswith("pop") and re.search(r"\bpc\b", operands))
+        )
+        for address, mnemonic, operands in rows
+    )
 
 
 def reachable_functions(functions: dict[str, str], start: str) -> set[str]:
@@ -1400,10 +1415,8 @@ def inspect_disassembly(disassembly: str, symbols: str, vector_dump: str) -> Non
         ),
         None,
     )
-    if tick_body is None or not re.search(
-        r"\bbx\s+lr\b|\bpop\s+\{[^}]*\bpc\b", tick_body
-    ):
-        raise EntryError("SysTick scheduler transfer has no exception return")
+    if tick_body is None or not has_reachable_exception_return(tick_body):
+        raise EntryError("SysTick scheduler tick has no reachable exception return")
     require_fail_closed_terminal(fail_closed)
     if re.search(r"\bcpsie\s+i\b", fail_closed):
         raise EntryError("firmware_fail_closed must not unmask interrupts")

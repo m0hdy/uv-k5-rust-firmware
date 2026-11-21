@@ -38,9 +38,11 @@ impl Backend for FakeBackend {
         }
     }
 
-    fn is_10ms_pending(&mut self) -> bool {
-        self.events.push(Event::Query10ms(self.pending_10ms));
-        self.pending_10ms
+    fn take_10ms_pending(&mut self) -> bool {
+        let pending = self.pending_10ms;
+        self.events.push(Event::Query10ms(pending));
+        self.pending_10ms = false;
+        pending
     }
 
     fn timeslice_10ms(&mut self) {
@@ -50,9 +52,11 @@ impl Backend for FakeBackend {
         }
     }
 
-    fn is_500ms_pending(&mut self) -> bool {
-        self.events.push(Event::Query500ms(self.pending_500ms));
-        self.pending_500ms
+    fn take_500ms_pending(&mut self) -> bool {
+        let pending = self.pending_500ms;
+        self.events.push(Event::Query500ms(pending));
+        self.pending_500ms = false;
+        pending
     }
 
     fn timeslice_500ms(&mut self) {

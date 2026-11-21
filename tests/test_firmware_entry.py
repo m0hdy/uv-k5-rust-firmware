@@ -222,6 +222,41 @@ class FirmwareEntryTests(unittest.TestCase):
         )
         self.inspect(tail_calls)
 
+    def test_systick_transfer_after_unreachable_return_is_rejected(self):
+        broken = DISASSEMBLY.replace(
+            " 906: pop {r7, pc}",
+            " 906: pop {r7, pc}\n 908: b.n 910 <firmware_integration::systick_interrupt>",
+            1,
+        )
+        with self.assertRaisesRegex(
+            EntryError, "does not transfer to firmware_integration::systick_interrupt"
+        ):
+            self.inspect(broken)
+
+    def test_scheduler_transfer_after_unreachable_return_is_rejected(self):
+        broken = DISASSEMBLY.replace(
+            " 916: pop {r7, pc}",
+            " 916: pop {r7, pc}\n 918: b.n 920 "
+            "<uv_k5_rust_firmware::scheduler::interrupt::on_systick>",
+            1,
+        )
+        with self.assertRaisesRegex(
+            EntryError, "does not transfer to scheduler::interrupt::on_systick"
+        ):
+            self.inspect(broken)
+
+    def test_unreachable_exception_return_after_scheduler_loop_is_rejected(self):
+        broken = DISASSEMBLY.replace(
+            "00000920 <uv_k5_rust_firmware::scheduler::interrupt::on_systick>:\n 920: bx lr",
+            "00000920 <uv_k5_rust_firmware::scheduler::interrupt::on_systick>:\n"
+            " 920: b.n 920\n 922: bx lr",
+            1,
+        )
+        with self.assertRaisesRegex(
+            EntryError, "scheduler tick has no reachable exception return"
+        ):
+            self.inspect(broken)
+
     def test_display_initialization_requires_canonical_prerequisite_order(self):
         broken = DISASSEMBLY.replace(
             "500: bl 600 <board::StartupIo>::systick>\n"

@@ -69,9 +69,7 @@ struct ApplicationKeypadEffects<'a> {
 
 impl KeypadEffectsTrait for ApplicationKeypadEffects<'_> {
     fn cancel_boot_counter(&mut self) {
-        let mut countdowns = interrupt::countdowns();
-        countdowns.boot_counter_10ms = 0;
-        interrupt::set_countdowns(countdowns);
+        interrupt::cancel_boot_counter();
     }
 
     fn key_event(&mut self, event: KeyEvent) {

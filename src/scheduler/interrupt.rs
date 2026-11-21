@@ -81,6 +81,16 @@ pub fn acknowledge_10ms() {
     with_state(|state| state.flags.acknowledge_10ms());
 }
 
+fn take_pending_10ms() -> bool {
+    with_state(|state| {
+        let pending = state.flags.pending_10ms();
+        if pending {
+            state.flags.acknowledge_10ms();
+        }
+        pending
+    })
+}
+
 pub fn pending_40ms() -> bool {
     with_state(|state| state.flags.pending_40ms())
 }
@@ -97,12 +107,19 @@ pub fn acknowledge_500ms() {
     with_state(|state| state.flags.acknowledge_500ms());
 }
 
-pub fn countdowns() -> CountdownState {
-    with_state(|state| state.countdowns)
+fn take_pending_500ms() -> bool {
+    with_state(|state| {
+        let pending = state.flags.pending_500ms();
+        if pending {
+            state.flags.acknowledge_500ms();
+        }
+        pending
+    })
 }
 
-pub fn set_countdowns(countdowns: CountdownState) {
-    with_state(|state| state.countdowns = countdowns);
+/// Cancels the boot wait without writing back a potentially stale countdown snapshot.
+pub fn cancel_boot_counter() {
+    with_state(|state| state.countdowns.boot_counter_10ms = 0);
 }
 
 pub fn set_tick_context(context: TickContext) {
@@ -162,21 +179,19 @@ impl<E: ApplicationEffects> Backend for InterruptBackend<'_, E> {
         self.effects.update();
     }
 
-    fn is_10ms_pending(&mut self) -> bool {
-        pending_10ms()
+    fn take_10ms_pending(&mut self) -> bool {
+        take_pending_10ms()
     }
 
     fn timeslice_10ms(&mut self) {
-        acknowledge_10ms();
         self.effects.timeslice_10ms();
     }
 
-    fn is_500ms_pending(&mut self) -> bool {
-        pending_500ms()
+    fn take_500ms_pending(&mut self) -> bool {
+        take_pending_500ms()
     }
 
     fn timeslice_500ms(&mut self) {
-        acknowledge_500ms();
         self.effects.timeslice_500ms();
     }
 }

@@ -14,8 +14,9 @@ The public reference is `egzumer/uv-k5-firmware-custom` at commit
 
 The composition delegates tick progression and sticky flag state to
 `PeriodicSchedulerFlags`, and delegates the ordering of update, 10 ms and
-500 ms queries to the [dispatcher](app-timeslice-dispatch.md). It acknowledges each flag at entry
-to its corresponding timeslice, before invoking the typed application effect.
+500 ms checks to the [dispatcher](app-timeslice-dispatch.md). It consumes each
+flag atomically immediately before invoking the typed application effect, so
+a new interrupt during that effect can set a fresh pending flag.
 The 40 ms flag remains pending for a separate caller; it is not queried or
 dispatched by this main-loop iteration.
 

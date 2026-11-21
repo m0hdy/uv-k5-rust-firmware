@@ -13,15 +13,18 @@ in public `egzumer/uv-k5-firmware-custom` at commit
 allocation-free `run` for one iteration:
 
 1. Call `update` (`APP_Update`).
-2. Query `is_10ms_pending` (`gNextTimeslice`). If false, stop.
+2. Atomically take `gNextTimeslice`. If false, stop.
 3. Call `timeslice_10ms` (`APP_TimeSlice10ms`).
-4. Query the current `is_500ms_pending` (`gNextTimeslice_500ms`). If true,
+4. Atomically take the current `gNextTimeslice_500ms`. If true,
    call `timeslice_500ms` (`APP_TimeSlice500ms`).
 
-The queries occur at their respective positions, not as an upfront snapshot:
-the update can change either flag, and the 10 ms hook can change the 500 ms
-flag before it is read. The backend owns flag state and any effects. The
-dispatcher neither clears flags nor defines elapsed-time policy.
+Each pending check consumes its flag atomically when it returns true. The
+checks occur at their respective positions, not as an upfront snapshot: the
+update can change either flag, and the 10 ms hook can change the 500 ms flag
+before it is read. This lets an interrupt that arrives while a timeslice is
+running set a fresh pending flag without a later acknowledgement clearing it.
+The backend owns flag state and any effects. The dispatcher does not define
+elapsed-time policy.
 
 ## Focused validation
 
