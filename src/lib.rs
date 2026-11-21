@@ -5,6 +5,7 @@ pub mod adc_battery_register_adapter;
 pub mod adc_samples;
 pub mod app_500ms_service_timers;
 pub mod app_500ms_timeouts;
+pub mod app_channel_controls;
 #[allow(dead_code)]
 mod app_vfo_resume_timer;
 pub mod application_runtime;
