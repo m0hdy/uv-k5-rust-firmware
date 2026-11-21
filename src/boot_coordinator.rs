@@ -159,6 +159,7 @@ pub fn coordinate<IO: BootIo>(
 }
 
 /// Runs the concrete board/settings/battery startup and continues on its initialized display.
+#[inline(never)]
 pub fn coordinate_with_welcome<IO: BootIo + DisplayRegisterIo>(
     io: &mut IO,
     display_delay: &mut dyn DelayMs,
