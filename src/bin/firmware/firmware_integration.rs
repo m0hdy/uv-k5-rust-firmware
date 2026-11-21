@@ -15,7 +15,7 @@ use uv_k5_rust_firmware::boot_coordinator::{
 };
 use uv_k5_rust_firmware::eeprom_i2c_bridge::I2cBitbangTransport;
 use uv_k5_rust_firmware::i2c_bitbang_flow::target_gpio::{self, GpioI2cIo, TargetRegisters};
-use uv_k5_rust_firmware::keyboard_gpio_adapter::KeyboardGpioAdapter;
+use uv_k5_rust_firmware::keyboard_gpio_adapter::{self, KeyboardGpioAdapter};
 use uv_k5_rust_firmware::keyboard_poll_flow::{KeyEvent, KeypadEffects as KeypadEffectsTrait};
 use uv_k5_rust_firmware::scheduler::interrupt;
 use uv_k5_rust_firmware::scheduler_countdowns::{
@@ -30,7 +30,7 @@ use uv_k5_rust_firmware::systick_delay_adapter::{SysTickDelay, VolatileSysTickCo
 
 type Delay = SysTickDelay<VolatileSysTickCounter>;
 type I2cBus = GpioI2cIo<TargetRegisters, Delay>;
-type Keypad = KeyboardGpioAdapter<TargetRegisters, Delay>;
+type Keypad = KeyboardGpioAdapter<keyboard_gpio_adapter::TargetRegisters, Delay>;
 
 #[inline(never)]
 pub unsafe fn systick_interrupt() {

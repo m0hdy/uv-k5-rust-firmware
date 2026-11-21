@@ -1405,6 +1405,8 @@ def inspect_disassembly(disassembly: str, symbols: str, vector_dump: str) -> Non
     ):
         raise EntryError("SysTick scheduler transfer has no exception return")
     require_fail_closed_terminal(fail_closed)
+    if re.search(r"\bcpsie\s+i\b", fail_closed):
+        raise EntryError("firmware_fail_closed must not unmask interrupts")
 
     words = vector_words(vector_dump)
     if len(words) != 48:
