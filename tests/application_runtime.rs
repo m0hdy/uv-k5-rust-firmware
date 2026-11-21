@@ -17,15 +17,43 @@ fn context() -> Context {
 }
 
 #[test]
-fn digit_key_events_update_the_numeric_input_state() {
+fn digits_enter_on_unheld_release_not_press_or_held_repeat() {
     let mut state = State::new();
     state.on_key_event(KeyEvent::Pressed(Key::Digit4), 60);
-    state.on_key_event(KeyEvent::Pressed(Key::Digit2), 60);
+    assert_eq!(state.input_box().index(), 0);
+    state.on_key_event(
+        KeyEvent::Released {
+            key: Key::Digit4,
+            was_held: true,
+        },
+        60,
+    );
+    assert_eq!(state.input_box().index(), 0);
+    state.on_key_event(
+        KeyEvent::Released {
+            key: Key::Digit4,
+            was_held: false,
+        },
+        60,
+    );
+    state.on_key_event(
+        KeyEvent::Released {
+            key: Key::Digit2,
+            was_held: false,
+        },
+        60,
+    );
 
     assert_eq!(state.input_box().index(), 2);
     assert_eq!(&state.input_box().ascii_projection()[..2], b"42");
-    assert_eq!(state.last_key_event(), Some(KeyEvent::Pressed(Key::Digit2)));
-    assert_eq!(state.key_event_count(), 2);
+    assert_eq!(
+        state.last_key_event(),
+        Some(KeyEvent::Released {
+            key: Key::Digit2,
+            was_held: false
+        })
+    );
+    assert_eq!(state.key_event_count(), 4);
 }
 
 #[test]

@@ -1,5 +1,3 @@
-#![cfg_attr(not(test), no_std)]
-
 //! GPIOA-backed keypad polling through the existing keyboard and I2C flows.
 
 use crate::i2c_bitbang_flow::{

@@ -113,12 +113,17 @@ impl State {
                 self.input_box.reset_index();
                 effects.exit_menu = true;
             }
-            KeyEvent::Pressed(key) => {
+            KeyEvent::Released {
+                key,
+                was_held: false,
+            } => {
                 if let Some(digit) = digit_for_key(key) {
                     self.input_box.append(InputEvent::Digit(digit));
                 }
             }
-            KeyEvent::Released { .. } | KeyEvent::Held(_) => {}
+            KeyEvent::Pressed(_)
+            | KeyEvent::Released { was_held: true, .. }
+            | KeyEvent::Held(_) => {}
         }
         effects
     }
