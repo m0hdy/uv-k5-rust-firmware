@@ -11,6 +11,9 @@ use uv_k5_rust_firmware::boot_coordinator::{
 use uv_k5_rust_firmware::eeprom_i2c_bridge::I2cBitbangTransport;
 use uv_k5_rust_firmware::i2c_bitbang_flow::target_gpio::{self, GpioI2cIo, TargetRegisters};
 use uv_k5_rust_firmware::scheduler::interrupt;
+use uv_k5_rust_firmware::scheduler_countdowns::{
+    Features as SchedulerFeatures, ScanDirection, SchedulerFunction, TickContext,
+};
 use uv_k5_rust_firmware::settings_boot_composition::Features as SettingsFeatures;
 use uv_k5_rust_firmware::st7565_startup_executor::target_spi0::{
     DelayMs, RegisterIo as DisplayRegisterIo,
@@ -247,6 +250,20 @@ pub extern "C" fn firmware_integration_entry() -> ! {
     {
         firmware_fail_closed();
     }
+    interrupt::set_tick_context(TickContext {
+        features: SchedulerFeatures {
+            enable_noaa: config.settings.noaa_enabled,
+            enable_voice: false,
+            enable_fmradio: config.board.enable_fmradio,
+            enable_vox: config.settings.vox_enabled,
+        },
+        function: SchedulerFunction::Foreground,
+        scan_direction: ScanDirection::Off,
+        css_background_scan: false,
+        dual_watch_enabled: false,
+        is_noaa_mode: false,
+        fm_scan_active: false,
+    });
     firmware_fail_closed();
 }
 

@@ -6,16 +6,50 @@
 
 use core::cell::UnsafeCell;
 
+use super::dispatch::{self, Backend};
 use super::flags::PeriodicSchedulerFlags;
+use crate::scheduler_countdowns::{
+    self, CountdownState, Features, ScanDirection, SchedulerFunction, TickContext,
+};
 
-struct SharedFlags(UnsafeCell<PeriodicSchedulerFlags>);
+/// Application effects driven by the live target scheduler.
+pub trait ApplicationEffects {
+    fn update(&mut self);
+    fn timeslice_10ms(&mut self);
+    fn timeslice_500ms(&mut self);
+}
+
+struct InterruptState {
+    flags: PeriodicSchedulerFlags,
+    countdowns: CountdownState,
+    context: TickContext,
+}
+
+struct SharedState(UnsafeCell<InterruptState>);
 
 // SAFETY: The only unmasked access is `on_systick`, whose caller must be the
 // SysTick handler. Every mainline access holds `InterruptMask`, preventing the
 // handler from running while an access through the cell is live.
-unsafe impl Sync for SharedFlags {}
+unsafe impl Sync for SharedState {}
 
-static FLAGS: SharedFlags = SharedFlags(UnsafeCell::new(PeriodicSchedulerFlags::new()));
+static STATE: SharedState = SharedState(UnsafeCell::new(InterruptState {
+    flags: PeriodicSchedulerFlags::new(),
+    countdowns: CountdownState::new(),
+    context: TickContext {
+        features: Features {
+            enable_noaa: false,
+            enable_voice: false,
+            enable_fmradio: false,
+            enable_vox: false,
+        },
+        function: SchedulerFunction::Foreground,
+        scan_direction: ScanDirection::Off,
+        css_background_scan: false,
+        dual_watch_enabled: false,
+        is_noaa_mode: false,
+        fm_scan_active: false,
+    },
+}));
 
 /// Advances the scheduler once from the SysTick exception.
 ///
@@ -27,42 +61,64 @@ static FLAGS: SharedFlags = SharedFlags(UnsafeCell::new(PeriodicSchedulerFlags::
 pub unsafe fn on_systick() {
     // SAFETY: Guaranteed by this function's caller contract. The mainline
     // cannot execute while the SysTick exception is active.
-    unsafe { (&mut *FLAGS.0.get()).tick() };
+    unsafe {
+        let state = &mut *STATE.0.get();
+        state.flags.tick();
+        let context = state.context;
+        scheduler_countdowns::execute_countdowns(&mut state.countdowns, context);
+    };
 }
 
 pub fn counter() -> u32 {
-    with_flags(|flags| flags.counter())
+    with_state(|state| state.flags.counter())
 }
 
 pub fn pending_10ms() -> bool {
-    with_flags(|flags| flags.pending_10ms())
+    with_state(|state| state.flags.pending_10ms())
 }
 
 pub fn acknowledge_10ms() {
-    with_flags(|flags| flags.acknowledge_10ms());
+    with_state(|state| state.flags.acknowledge_10ms());
 }
 
 pub fn pending_40ms() -> bool {
-    with_flags(|flags| flags.pending_40ms())
+    with_state(|state| state.flags.pending_40ms())
 }
 
 pub fn acknowledge_40ms() {
-    with_flags(|flags| flags.acknowledge_40ms());
+    with_state(|state| state.flags.acknowledge_40ms());
 }
 
 pub fn pending_500ms() -> bool {
-    with_flags(|flags| flags.pending_500ms())
+    with_state(|state| state.flags.pending_500ms())
 }
 
 pub fn acknowledge_500ms() {
-    with_flags(|flags| flags.acknowledge_500ms());
+    with_state(|state| state.flags.acknowledge_500ms());
 }
 
-fn with_flags<T>(operation: impl FnOnce(&mut PeriodicSchedulerFlags) -> T) -> T {
+pub fn countdowns() -> CountdownState {
+    with_state(|state| state.countdowns)
+}
+
+pub fn set_countdowns(countdowns: CountdownState) {
+    with_state(|state| state.countdowns = countdowns);
+}
+
+pub fn set_tick_context(context: TickContext) {
+    with_state(|state| state.context = context);
+}
+
+/// Runs one main-loop iteration against the flags produced by SysTick.
+pub fn run_iteration(effects: &mut impl ApplicationEffects) {
+    dispatch::run(&mut InterruptBackend { effects });
+}
+
+fn with_state<T>(operation: impl FnOnce(&mut InterruptState) -> T) -> T {
     let _interrupt_mask = InterruptMask::acquire();
     // SAFETY: Holding the mask prevents the only concurrent writer from
     // running until the borrow ends.
-    unsafe { operation(&mut *FLAGS.0.get()) }
+    unsafe { operation(&mut *STATE.0.get()) }
 }
 
 struct InterruptMask(u32);
@@ -94,5 +150,33 @@ impl Drop for InterruptMask {
                 options(nostack, preserves_flags),
             );
         }
+    }
+}
+
+struct InterruptBackend<'a, E> {
+    effects: &'a mut E,
+}
+
+impl<E: ApplicationEffects> Backend for InterruptBackend<'_, E> {
+    fn update(&mut self) {
+        self.effects.update();
+    }
+
+    fn is_10ms_pending(&mut self) -> bool {
+        pending_10ms()
+    }
+
+    fn timeslice_10ms(&mut self) {
+        acknowledge_10ms();
+        self.effects.timeslice_10ms();
+    }
+
+    fn is_500ms_pending(&mut self) -> bool {
+        pending_500ms()
+    }
+
+    fn timeslice_500ms(&mut self) {
+        acknowledge_500ms();
+        self.effects.timeslice_500ms();
     }
 }

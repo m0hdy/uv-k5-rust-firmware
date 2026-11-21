@@ -20,10 +20,14 @@ The 40 ms flag remains pending for a separate caller; it is not queried or
 dispatched by this main-loop iteration.
 
 The tick callback passed to the 10 ms effect lets a host mock model an
-abstract tick during that effect. It only demonstrates sequential flag
-visibility and dispatch order: it is not ISR synchronization or timing
-evidence. This offline model adds no ISR, MMIO, startup wiring, countdown
-effects, RF behavior, or device tests. The parent
+abstract tick during that effect. It demonstrates sequential flag visibility
+and dispatch order; target interrupt safety is handled separately by
+[`scheduler::interrupt`](../src/scheduler/interrupt.rs), which uses brief
+PRIMASK critical sections for mainline flag and countdown access and applies
+the pinned countdown transitions from the SysTick handler. The target entry
+still masks interrupts and parks after welcome, so this integration bridge is
+not yet an active application loop or device timing evidence. It performs no
+RF operations. The parent
 [#52](https://github.com/m0hdy/uv-k5-rust-firmware/issues/52) remains open.
 
 ## Focused validation
