@@ -224,6 +224,10 @@ class FirmwareEntryTests(unittest.TestCase):
 
     def test_systick_transfer_after_unreachable_return_is_rejected(self):
         broken = DISASSEMBLY.replace(
+            " 902: bl 910 <firmware_integration::systick_interrupt>",
+            " 902: bl 930 <unrelated_handler>",
+            1,
+        ).replace(
             " 906: pop {r7, pc}",
             " 906: pop {r7, pc}\n 908: b.n 910 <firmware_integration::systick_interrupt>",
             1,
@@ -235,6 +239,10 @@ class FirmwareEntryTests(unittest.TestCase):
 
     def test_scheduler_transfer_after_unreachable_return_is_rejected(self):
         broken = DISASSEMBLY.replace(
+            " 912: bl 920 <uv_k5_rust_firmware::scheduler::interrupt::on_systick>",
+            " 912: bl 930 <unrelated_handler>",
+            1,
+        ).replace(
             " 916: pop {r7, pc}",
             " 916: pop {r7, pc}\n 918: b.n 920 "
             "<uv_k5_rust_firmware::scheduler::interrupt::on_systick>",
