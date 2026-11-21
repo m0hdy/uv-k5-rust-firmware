@@ -24,10 +24,12 @@ abstract tick during that effect. It demonstrates sequential flag visibility
 and dispatch order; target interrupt safety is handled separately by
 [`scheduler::interrupt`](../src/scheduler/interrupt.rs), which uses brief
 PRIMASK critical sections for mainline flag and countdown access and applies
-the pinned countdown transitions from the SysTick handler. The target entry
-still masks interrupts and parks after welcome, so this integration bridge is
-not yet an active application loop or device timing evidence. It performs no
-RF operations. The parent
+the pinned countdown transitions from the SysTick handler. The opt-in target
+entry now transfers successful startup into a Rust application loop, enables
+SysTick delivery, polls the keypad on the 10 ms timeslice, and advances the
+ported 500 ms states. This runtime shell does not yet implement the full
+foreground radio/display update, consume 40 ms scheduler work, or establish
+device timing evidence. The parent
 [#52](https://github.com/m0hdy/uv-k5-rust-firmware/issues/52) remains open.
 
 ## Focused validation
