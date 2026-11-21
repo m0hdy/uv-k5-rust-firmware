@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest a project improvement
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include private vulnerability details or sensitive device data in a public request.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What need or limitation would this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe what you would like the project to do.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Keep device details redacted and non-sensitive.
+    validations:
+      required: false
